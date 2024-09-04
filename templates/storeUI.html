@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="{{ css_files.all_css }}" rel="stylesheet">
+    <link href="{{ css_files.font_css }}" rel="stylesheet">
+    <link href="{{ css_files.bundle_css }}" rel="stylesheet">
+    <link href="{{ css_files.style_css }}" rel="stylesheet">
+    <link href="{{ css_files.phb_style_css }}" rel="stylesheet">
+    <link href="{{ css_files.store_ui_css }}" rel="stylesheet">
+    <title>DnD Stat Block</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/htmx.org@1.7.0/dist/htmx.min.js"></script>
+
+    <style>
+        @media print {
+        /* Hide everything by default */
+        body * {
+            visibility: hidden;
+        }
+
+        /* Specifically show the section you want to print */
+        #brewRenderer, #brewRenderer * {
+            visibility: visible;
+            page-break-before: auto;
+            page-break-after: avoid;
+            page-break-inside: avoid;
+        }
+
+        /* Ensure the printable section takes up the full page */
+        #brewRenderer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: auto;
+            padding-bottom: 20px; /* Add some padding at the bottom to prevent cropping */
+            box-sizing: border-box;
+        }
+
+        /* Scale the content to fit the page */
+        #brewRenderer {
+            zoom: 150%; /* Adjust this percentage as necessary */
+        }
+
+        /* Add space between pages */
+        .page {
+            page-break-after: always;
+            margin-bottom: 40px; /* Adjust this to control the space between pages */
+            margin-top: 40px; /* Adjust this to control the space between pages */
+        }
+
+        /* Optional: Add more space to ensure content doesn't get too close to the top of the next page */
+        .page:last-child {
+            margin-bottom: 0; /* Avoid extra space after the last page */
+        }
+    }
+        /* Modal styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed; /* Stay in place */
+            z-index: 1000; /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%; /* Full width */
+            height: 100%; /* Full height */
+            overflow: auto; /* Enable scroll if needed */
+            background-color: rgb(0,0,0); /* Fallback color */
+            background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto; /* 15% from the top and centered */
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%; /* Could be more or less, depending on screen size */
+            height: 80%; /* Set an appropriate height for the modal */
+            overflow-y: auto; /* Enable vertical scrolling */
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover, .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .button-with-image {
+            width: 100px; /* Adjust as needed */
+            height: 50px; /* Adjust as needed */
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-color: transparent;
+            border: none;
+            cursor: pointer;
+            text-indent: -9999px; /* Hide the button text */
+        }
+        
+        #submitButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorSubmitButton.png');
+            
+        }
+
+        #autofillButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorAutofillButton.png');
+        }
+
+        #toggleButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorToggleTextButton.png');
+            width: 75px;
+        }
+
+        #addPageButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorAddPageButton.png');
+            width: 60px;
+        }
+
+        #removePageButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorRemovePageButton.png');
+            width: 60px;
+        }
+
+        #resetButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorResetlButton.png');
+        }
+
+        #printButton {
+            background-image: url('storegenerator/static/images/StoreGeneratorPrintButton.png');
+            width: 80px;
+        }
+    
+
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div id="floatingToolbar" class="floatingToolbar">
+            
+            <div class="button-container button-container-top">
+                
+                <textarea id="user-description" class="user-description-textarea"
+                hx-post="/update-stats" hx-trigger="change"
+                hx-target="#user-description" hx-swap="outerHTML"
+                title="As much or as little description as you want to provide. You can provide specific employees, inventory etc">A very standard gear store run by a fae potted plant named Gorgeous
+                </textarea>
+                <button id="submitButton" class="button-with-image">
+                    <img src="storegenerator/static/images/StoreGeneratorSubmitButton.png" alt="Submit Button" aria-hidden="true">
+                </button>
+                
+            </div>
+            <img src="storegenerator/static/images/StoreGeneratorLogo.png" alt="Store Generator Logo" class="logo">
+            <div class="button-container button-container-bottom">
+                <button id="autofillButton" class="button-with-image">Autofill Pages</button>
+                <button id="addPageButton" class="button-with-image">Add New Page</button>
+                <button id="removePageButton" class="button-with-image">Remove Last Page</button>                
+                <button id="printButton" class="button-with-image">Print</button>
+                <button id="resetButton" class="button-with-image">Reset</button>
+                <button id="toggleButton" class="button-with-image">Toggle Image Descriptions</button>
+            </div>
+        </div>
+        <div class="grid-container">
+            <div class="block-container" id="blockContainer" >
+                <div id="loadingAnimation" class="blockContainer-loading-animation">
+                    <img id="loadingImage" src="storegenerator/static/images/loadingMimic/Mimic Chest1.png" alt="Loading...">
+                </div>
+                <div class="page" id = "block-page" data-page-id="block-container">
+                <!-- Blocks will be wrapped in a page div and loaded here -->
+                </div>
+            </div>
+            
+            <div class="page-container" id="pageContainer">
+                
+                        
+                <div class="brewRenderer" id="brewRenderer">
+                    
+                    <div class="pages" id="pages">
+                        <div id="page-1" class="page" data-page-id="page-0">
+                            <div class="columnWrapper">
+                                <div class="block monster frame wide">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="trash-area" id="trashArea"></div>
+
+        <!-- The Modal -->
+        <div id="imageModal" class="modal">
+            <span class="close">&times;</span>
+            <img class="modal-content" id="modalImage">
+            <div id="caption"></div>
+        </div>
+        <div id="printModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div id="modalPreviewContent"></div>
+            </div>
+        </div>
+        <div id="iFrameContainer" style="display:none;"></div>
+    </div>
+    <script src="storegenerator/scripts.js"></script>
+        
+    </script>
+</body>
+</html>
