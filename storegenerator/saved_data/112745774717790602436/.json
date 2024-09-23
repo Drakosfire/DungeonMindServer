@@ -1,0 +1,186 @@
+{
+    "storeData": {
+        "storeData": {
+            "block-0": {
+                "type": "title",
+                "dataPageId": "block-container",
+                "title": "Jolly Jumble's Emporium of Chaos",
+                "description": "A whirlwind of eccentricities and curiosities spirals around this vibrant little shop, promising both endless wonder and delightful perplexity. Every shelf is overloaded with peculiar artifacts that seem to whisper secrets from worlds unknown. Started by the enigmatic Jolly Jumble, a gnome renowned for his adventuring days and accumulation of bizarre collectibles. Jolly retired from quests and channeled all his chaotic energy into curating a store where everything has a story behind it. Notorious for having the most unpredictable stock, regulars know not to ask for specifics but to immerse themselves in the randomness that is the Emporium."
+            },
+            "block-1": {
+                "type": "store-properties",
+                "dataPageId": "block-container",
+                "store-size": "Small",
+                "store-location": "Mystic Glade",
+                "store-district": "Enigma Alley",
+                "store-street": "Whirlwind Way",
+                "store-type": "Curiosity Shop",
+                "store-hours": "Whenever the wind blows right (usually dawn to dusk)",
+                "store-services": [
+                    "Unpredictable Appraisal"
+                ],
+                "store-specialties": [
+                    "Cacophony Candles"
+                ],
+                "store-rumors": [
+                    "Some say Jolly Jumble's Emporium is a living entity, constantly reshuffling items around the store when no one is looking.",
+                    "It's whispered that the shop once hosted a 'Riddle Contest' judged by a talking skull."
+                ],
+                "store-reputation": "Notorious for having the most unpredictable stock, regulars know not to ask for specifics but to immerse themselves in the randomness that is the Emporium."
+            },
+            "block-2": {
+                "type": "image",
+                "dataPageId": "block-container",
+                "sdprompt": "A highly detailed fantasy artwork of a chaotic and colorful shop exterior. The building is covered in mosaic tiles, shifting patterns, and has a door that seems to change shape. Above the door, a sign reads 'Jolly Jumble's Emporium of Chaos' in swirly, whimsical letters. Bizarre clocks and spinning weathervanes adorn the roof.",
+                "imgUrl": "saved_data/112745774717790602436/Jolly_Jumble_s_Emporium_of_Chaos/block-2_image.jpeg"
+            },
+            "block-3": {
+                "type": "owner",
+                "dataPageId": "block-container",
+                "name": "Jolly Jumble",
+                "species": "Gnome",
+                "class": "Bard",
+                "description": "A sprightly gnome with a long, braided beard that seems to have a life of its own. His eyes sparkle with mischief as he darts around, animatedly spinning tales about every item in the store.",
+                "personality": "Bubbly, erratic, and endlessly enthusiastic",
+                "secrets": [
+                    "Claims he once owned a pet star that's now lost among the shelves",
+                    "Jolly's left shoe is enchanted to always find the oddest items"
+                ]
+            },
+            "block-4": {
+                "type": "image",
+                "dataPageId": "block-container",
+                "sdprompt": "A highly detailed fantasy illustration of a gnome shopkeeper with a dazzling smile. He's wearing a patchwork vest and oversized spectacles, surrounded by a myriad of swirling colors and eccentric gadgets.",
+                "imgUrl": "saved_data/112745774717790602436/Jolly_Jumble_s_Emporium_of_Chaos/block-4_image.jpeg"
+            },
+            "block-5": {
+                "type": "employee",
+                "dataPageId": "block-container",
+                "name": "Whizbang",
+                "role": "Assistant and Part-Time Troublemaker",
+                "species": "Kobold",
+                "description": "A vibrant green kobold with a propensity for getting tangled in the decorations, his enthusiasm for exploration often leaves chaos in his wake.",
+                "personality": "Inquisitive, hyperactive, and accident-prone"
+            },
+            "block-6": {
+                "type": "image",
+                "dataPageId": "block-container",
+                "sdprompt": "A highly detailed fantasy sketch of a small kobold with bright eyes and a mischievous grin, wearing a jacket two sizes too big and surrounded by scattered trinkets and oddities.",
+                "imgUrl": "saved_data/112745774717790602436/Jolly_Jumble_s_Emporium_of_Chaos/block-6_image.jpeg"
+            },
+            "block-7": {
+                "type": "quest",
+                "dataPageId": "block-container",
+                "name": "The Lost Limerick",
+                "description": "Jolly has misplaced an enchanted limerick that, when read aloud, opens a portal to a hidden realm. Recovering the limerick requires a listener who can handle the cacophony of curious creatures that guard it.",
+                "reward": "An ornate key-like object that unlocks a different mystery every time it's turned"
+            },
+            "block-8": {
+                "type": "customer",
+                "dataPageId": "block-container",
+                "name": "Madam Mistral",
+                "description": "An ethereal faerie with a penchant for peculiar plants; she's rumored to communicate with the oddities of the shop.",
+                "influence": "Rumored to know what each item truly desires"
+            },
+            "block-9": {
+                "type": "security",
+                "dataPageId": "block-container",
+                "name": "Clunk the Construct",
+                "description": "An animated suit of patchwork armor, cobbled together from mismatched plates, eternally clinking and clanking.",
+                "mechanics": "Will chase pranksters out with bumbling steps and a rustling metal shuffle"
+            },
+            "block-10": {
+                "type": "services",
+                "dataPageId": "block-container",
+                "name": "Unpredictable Appraisal",
+                "description": "Let Jolly examine your item\u2014who knows what quirks and histories he'll uncover?",
+                "price": "One eccentric song or a peculiar poem recited to the store"
+            },
+            "block-11": {
+                "type": "specialties",
+                "dataPageId": "block-container",
+                "name": "Cacophony Candles",
+                "description": "When lit, each candle emits the sound of its origin\u2014a seashore, a bustling market, or a quiet library.",
+                "price": "5 copper per candle"
+            },
+            "block-12": {
+                "type": "inventory",
+                "dataPageId": "block-container",
+                "core_inventory": [
+                    {
+                        "name": "Perpetual Puzzle Box",
+                        "type": "Mystical Item",
+                        "cost": "15 gold",
+                        "properties": "Shifts its design each midnight, Said to contain a clue to your heart's desire"
+                    },
+                    {
+                        "name": "Laughing Lenses",
+                        "type": "Eyewear",
+                        "cost": "10 gold",
+                        "properties": "Makes everything appear comically skewed, Great for parties and awkward social situations"
+                    },
+                    {
+                        "name": "Singing Spoon",
+                        "type": "Utensil",
+                        "cost": "2 silver",
+                        "properties": "Hums a merry tune while stirring, Adapts rhythm according to dish being cooked"
+                    },
+                    {
+                        "name": "Chameleon Chalk",
+                        "type": "Writing Tool",
+                        "cost": "1 gold",
+                        "properties": "Writes in colors dictated by the user's mood, Innocuous in appearance when left unattended"
+                    },
+                    {
+                        "name": "Whispering Wind-up Mouse",
+                        "type": "Toy",
+                        "cost": "3 silver",
+                        "properties": "Scuttles around whispering words from languages unknown, Perfect for baffling pets and houseguests"
+                    }
+                ],
+                "weapons": [
+                    {
+                        "name": "Bewildering Baton",
+                        "type": "Blunt Weapon",
+                        "cost": "25 gold",
+                        "properties": "Emits blinding lights with each swing, Leaves opponents temporarily disoriented"
+                    }
+                ],
+                "armor": [
+                    {
+                        "name": "Ephemeral Hood",
+                        "type": "Headgear",
+                        "cost": "18 gold",
+                        "properties": "Evaporates into mist when danger is imminent, Mystifies foes briefly before reappearing"
+                    }
+                ],
+                "potions": [],
+                "scrolls": [],
+                "magical_items": [
+                    {
+                        "name": "Cloud in a Jar",
+                        "type": "Weather Control Device",
+                        "cost": "30 gold",
+                        "properties": "Unleash a mini storm or a gentle breeze indoors, Refills after a rainfall"
+                    }
+                ],
+                "mundane_items": [
+                    {
+                        "name": "Infinite Inkwell",
+                        "type": "Stationery",
+                        "cost": "5 silver",
+                        "properties": "Never runs dry, Ink slowly shifts in hue over time"
+                    }
+                ],
+                "miscellaneous_items": [
+                    {
+                        "name": "Bouncing Berry Basket",
+                        "type": "Container",
+                        "cost": "12 silver",
+                        "properties": "Berries inside never bruise or spoil, Frequently jumps to follow its owner"
+                    }
+                ]
+            }
+        }
+    }
+}

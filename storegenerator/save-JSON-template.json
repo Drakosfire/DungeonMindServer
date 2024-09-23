@@ -1,0 +1,195 @@
+{
+  "block-container" :{
+    "block-1":{
+      "type": "title",
+      "title" : "",
+      "description" : ""
+    },
+    "block-2":{
+      "type":"image",
+      "sd-prompt" : "",
+      "img-url": ""
+    },
+    "block-3": {
+      "type":"store-properties",
+      "store-size": "",
+      "store-location": "",
+      "store-district": "",
+      "store-street": "",
+      "store-type": "",
+      "store-hours": "",
+      "store-owners": {
+        "owner-1":""
+      },
+      "store-employees":{
+        "employee-1":""
+      },
+      "store-services":{
+        "service-1":""
+      },
+      "store-specialties":{
+        "specialty-1":""
+      },
+      "store-rumors":{
+        "rumor-1":""
+      },
+      "store-reputation":""
+
+    },
+    "block-4": {
+      "type":"owner",
+      "owners":[
+        {
+          "name":"",
+          "species":"",
+          "class":"",
+          "description":"",
+          "personality":"",
+          "secrets":""
+        }
+      ]    
+    
+    },
+    "block-5":{
+      "type":"employee",
+      "employees":[
+        {
+          "name":"",
+          "species":"",
+          "class":"",
+          "description":"",
+          "personality":""
+        }
+      ]
+    },
+    "block-6":{
+      "type":"customer",
+      "customers":[
+        {
+          "name":"",
+          "description":"",
+          "influence":""
+        }
+      ]
+    },
+    "block-7":{
+      "type":"quests",
+      "quests":[
+        {
+          "name":"",
+          "description":"",
+          "reward":""
+        }
+      ]
+    },
+    "block-8":{
+      "type":"services",
+      "services":[
+        {
+          "name":"",
+          "description":"",
+          "price":""
+        }
+      ]
+    },
+    "block-9":{
+      "type":"specialties",
+      "specialties":[
+        {
+          "name":"",
+          "description":"",
+          "price":""
+        }
+      ]
+    },
+    "block-10":{
+      "type":"security",
+      "securities":[
+        {
+          "name":"",
+          "description":"",
+          "mechanics":""
+        }
+      ]
+    },
+    "block-11":{
+      "type":"inventory",
+      "core_inventory": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": ""
+          },
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "weapons": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "armor": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "potions": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "scrolls": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "magical_items": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "5 gold pieces per arrow",
+            "properties": [""]
+          }
+        ],
+        "mundane_items": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ],
+        "miscellaneous_items": [
+          {
+            "name": "",
+            "type": "",
+            "cost": "",
+            "properties": [""]
+          }
+        ]
+
+      }
+
+  },
+    "page-container":{
+      "page-0": {
+      }
+  }
+}
