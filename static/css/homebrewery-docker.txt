@@ -1,0 +1,1 @@
+docker run -it --rm -v ${PWD}:/app homebrewery node cli/process.js --input /app/my-brew.md --output /app/my-brew.html --renderer v3 --overwrite

@@ -27,3 +27,5 @@ replay_pid*
 .env
 
 #folder to ignore
+node_modules/
+__pycache__/
