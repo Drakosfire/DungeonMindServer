@@ -4,6 +4,9 @@ FROM python:3.10-slim
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user
 
+# Ensure the 'saved_data' and other writable directories are owned by the "user"
+RUN mkdir -p saved_data && chown -R user:user .
+
 # Switch to the "user" user
 USER user
 
@@ -19,9 +22,6 @@ COPY --chown=user . $HOME/app
 
 # Install any necessary dependencies specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Ensure the 'saved_data' and other writable directories are owned by the "user"
-RUN mkdir -p saved_data && chown -R user:user .
 
 # Expose port 7860 for the FastAPI app
 EXPOSE 7860
