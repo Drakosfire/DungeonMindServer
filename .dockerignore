@@ -7,7 +7,7 @@ Dockerfile
 .dockerignore
 
 # Ignore the environment file
-.env
+
 
 # Ignore test files
 Ebony, the Twisted Fairy_files

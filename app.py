@@ -30,7 +30,7 @@ app.mount("/storegenerator/static", StaticFiles(directory="storegenerator/static
 templates = Jinja2Templates(directory="templates")
 
 # Routers
-app.include_router(auth_router)
+app.include_router(auth_router, prefix='/auth')
 app.include_router(store_router)
 
 # Route to serve the landing page at the root URL
@@ -38,8 +38,8 @@ app.include_router(store_router)
 async def serve_landing_page(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="localhost", port=7860)
+    host = os.environ.get('APP_HOST', '0.0.0.0')
+    port = int(os.environ.get('APP_PORT', 7860))
+    uvicorn.run(app, host=host, port=port)
