@@ -36,6 +36,6 @@ docker build -t dungeonmind-image .
 
 # Run the Docker container with the specified environment file and port mapping
 echo "Running Docker container 'dungeonmind-container'..."
-sudo docker run -d -p 7860:7860 --name dungeonmind-container dungeonmind-image
+sudo docker run --env-file .env -d -p 7860:7860 --name dungeonmind-container dungeonmind-image
 
 echo "Script execution completed."

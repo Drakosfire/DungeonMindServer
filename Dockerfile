@@ -4,6 +4,7 @@ FROM python:3.10-slim
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user
 
+RUN chown -R user:user /var/www/DungeonMind/saved_data
 # Switch to the "user" user
 USER user
 
