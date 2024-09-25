@@ -16,7 +16,6 @@ WORKDIR $HOME/app
 
 # Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
-COPY --chown=user:user saved_data ./saved_data
 
 # Install any necessary dependencies specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
