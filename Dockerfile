@@ -14,21 +14,17 @@ ENV HOME=/home/user \
 # Set the working directory in the container
 WORKDIR $HOME/app
 
-# Copy the current directory contents into the container at $HOME/app setting the owner to the user
+# Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
-# Copy the current directory contents into the container at $HOME/app setting the owner to the user
-COPY --chown=user storegenerator $HOME/app/storegenerator
 
 # Install any necessary dependencies specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Ensure the 'saved_data' and other writable directories are owned by the "user"
+RUN mkdir -p saved_data && chown -R user:user .
 
-# Expose port 5000 for the Flask app
+# Expose port 7860 for the FastAPI app
 EXPOSE 7860
 
-# Define environment variable to ensure Flask runs the correct application
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production  
-
-# Command to run the Flask app
-CMD ["flask", "run", "--host=0.0.0.0", "--port=7860"]
+# Define the command to run the FastAPI app with Uvicorn, define host to dev.dungeonmind.net and port to 7860
+CMD ["python", "app.py", "--host", "dev.dungeonmind.net", "--port", "7860"]

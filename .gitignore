@@ -29,3 +29,4 @@ replay_pid*
 #folder to ignore
 node_modules/
 __pycache__/
+saved_data/
