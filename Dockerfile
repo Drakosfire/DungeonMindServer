@@ -9,13 +9,18 @@ USER user
 
 # Set home to the user's home directory
 ENV HOME=/home/user \
-	PATH=/home/user/.local/bin:$PATHls
+	PATH=/home/user/.local/bin:/usr/local/bin:$PATH
 
 # Set the working directory in the container
 WORKDIR $HOME/app
 
 # Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
+
+# Debug: Check Python installation
+RUN which python && \
+	python --version && \
+	echo $PATH
 
 # Upgrade pip and install dependencies
 RUN python -m pip install --upgrade pip && \
