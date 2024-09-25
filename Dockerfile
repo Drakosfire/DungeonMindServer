@@ -4,21 +4,19 @@ FROM python:3.10-slim
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user
 
-# Ensure the 'saved_data' and other writable directories are owned by the "user"
-RUN mkdir -p saved_data && chown -R user:user .
-
 # Switch to the "user" user
 USER user
 
 # Set home to the user's home directory
 ENV HOME=/home/user \
-	PATH=/home/user/.local/bin:$PATH
+	PATH=/home/user/.local/bin:$PATHls
 
 # Set the working directory in the container
 WORKDIR $HOME/app
 
 # Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
+COPY --chown=user:user saved_data ./saved_data
 
 # Install any necessary dependencies specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
