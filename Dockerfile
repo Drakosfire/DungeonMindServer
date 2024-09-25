@@ -17,8 +17,9 @@ WORKDIR $HOME/app
 # Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
 
-# Install any necessary dependencies specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and install dependencies
+RUN python -m pip install --upgrade pip && \
+	python -m pip install --no-cache-dir -r requirements.txt
 
 # Expose port 7860 for the FastAPI app
 EXPOSE 7860
