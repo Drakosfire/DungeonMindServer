@@ -20,15 +20,8 @@ cd /var/www/DungeonMind
 echo "Pulling the DungeonMind repository..."
 git pull
 
-# Navigate into the storegenerator directory
-cd storegenerator
-
-# Pull the latest changes from the dungeonmind-page branch
-git pull
-
-
-# Navigate back to /var/www/DungeonMind
-cd ..
+# Clone the storegenerator submodule
+git submodule update --init --recursive
 
 # Build the Docker image
 echo "Building Docker image 'dungeonmind-image'..."
