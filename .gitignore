@@ -30,3 +30,7 @@ replay_pid*
 node_modules/
 __pycache__/
 saved_data/
+
+# files to ignore
+secrets.txt
+API Keys
