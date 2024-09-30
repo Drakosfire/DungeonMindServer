@@ -35,7 +35,7 @@ saved_data/
 secrets.txt
 API Keys
 sshdungeonmind.sh
-
-# But don't ignore these specific .tar.gz files
-!images_main.tar.gz
-!images_storegenerator.tar.gz
+checksums_main_compressed.txt
+checksums_main_uncompressed.txt
+checksums_storegenerator_compressed.txt
+checksums_storegenerator_uncompressed.txt
