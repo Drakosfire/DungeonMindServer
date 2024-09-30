@@ -22,13 +22,9 @@ echo "Creating checksums for compressed images..."
 sha256sum images_main.tar.gz > checksums_main_compressed.txt
 sha256sum images_storegenerator.tar.gz > checksums_storegenerator_compressed.txt
 
-# Add compressed files to git
-echo "Adding compressed files to git..."
-git add images_main.tar.gz images_storegenerator.tar.gz
-
-# Push to remote repository
-echo "Pushing to remote repository..."
-git push
+# SCP the compressed files and checksums to the server
+echo "Copying files to server..."
+scp images_main.tar.gz images_storegenerator.tar.gz checksums_*.txt alan@191.101.14.169:/var/www/DungeonMind/
 
 # SSH into server and run deploy script
 echo "SSHing into server and running deploy script..."
