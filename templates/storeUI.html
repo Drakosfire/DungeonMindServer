@@ -4,12 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="../static/styles/all.css" rel="stylesheet">
-    <link href="../static/styles/font.css" rel="stylesheet">
-    <link href="../static/styles/bundle.css" rel="stylesheet">
-    <link href="../static/styles/style.css" rel="stylesheet">
-    <link href="../static/styles/phb_style.css" rel="stylesheet">
-    <link href="../static/store_ui_css" rel="stylesheet">
+    <link href="../storegenerator/static/css/all.css" rel="stylesheet">
+    <link href="../storegenerator/static/css/font.css" rel="stylesheet">
+    <link href="../storegenerator/static/css/bundle.css" rel="stylesheet">
+    <link href="../storegenerator/static/css/style.css" rel="stylesheet">
+    <link href="../storegenerator/static/css/phb_style.css" rel="stylesheet">
+    <link href="../storegenerator/static/css/store_ui_css" rel="stylesheet">
+
     <title>DnD Store Generator</title>
     <script src="https://unpkg.com/htmx.org@1.7.0/dist/htmx.min.js"></script>
 
@@ -116,45 +117,45 @@
         }
 
         #submitButton {
-            background-image: url('/static/images/StoreGeneratorSubmitButton.png');
+            background-image: url('../static/images/StoreGeneratorSubmitButton.png');
 
         }
 
         #autofillButton {
-            background-image: url('/static/images/StoreGeneratorAutofillButton.png');
+            background-image: url('../static/images/StoreGeneratorAutofillButton.png');
         }
 
         #toggleButton {
-            background-image: url('/static/images/StoreGeneratorToggleTextButton.png');
+            background-image: url('../static/images/StoreGeneratorToggleTextButton.png');
             width: 75px;
         }
 
         #addPageButton {
-            background-image: url('/static/images/StoreGeneratorAddPageButton.png');
+            background-image: url('../static/images/StoreGeneratorAddPageButton.png');
             width: 60px;
         }
 
         #removePageButton {
-            background-image: url('/static/images/StoreGeneratorRemovePageButton.png');
+            background-image: url('../static/images/StoreGeneratorRemovePageButton.png');
             width: 60px;
         }
 
         #resetButton {
-            background-image: url('/static/images/StoreGeneratorResetlButton.png');
+            background-image: url('../static/images/StoreGeneratorResetlButton.png');
         }
 
         #printButton {
-            background-image: url('/static/images/StoreGeneratorPrintButton.png');
+            background-image: url('../static/images/StoreGeneratorPrintButton.png');
             width: 80px;
         }
 
         #saveButton {
-            background-image: url('/static/images/storeGeneratorSaveButton.png');
+            background-image: url('../static/images/storeGeneratorSaveButton.png');
             width: 80px;
         }
 
         #loadButton {
-            background-image: url('/static/images/storeGeneratorLoadButton.png');
+            background-image: url('../static/images/storeGeneratorLoadButton.png');
             width: 80px;
         }
 
@@ -211,11 +212,11 @@
                     title="As much or as little description as you want to provide. You can provide specific employees, inventory etc">A very standard gear store run by a fae potted plant named Gorgeous
                 </textarea>
                 <button id="submitButton" class="button-with-image">
-                    <img src="/static/images/StoreGeneratorSubmitButton.png" alt="Submit Button" aria-hidden="true">
+                    <img src="../static/images/StoreGeneratorSubmitButton.png" alt="Submit Button" aria-hidden="true">
                 </button>
 
             </div>
-            <img src="/static/images/StoreGeneratorLogo.png" alt="Store Generator Logo" class="logo">
+            <img src="../static/images/StoreGeneratorLogo.png" alt="Store Generator Logo" class="logo">
             <div class="button-container button-container-bottom">
                 <button id="autofillButton" class="button-with-image">Autofill Pages</button>
                 <button id="addPageButton" class="button-with-image">Add New Page</button>
@@ -233,7 +234,7 @@
         <div class="grid-container">
             <div class="block-container" id="blockContainer">
                 <div id="loadingAnimation" class="blockContainer-loading-animation">
-                    <img id="loadingImage" src="/static/images/loadingMimic/MimicChest1.png" alt="Loading...">
+                    <img id="loadingImage" src="../static/images/loadingMimic/MimicChest1.png" alt="Loading...">
                 </div>
                 <div class="page" id="block-page" data-page-id="block-container">
                     <!-- Blocks will be wrapped in a page div and loaded here -->
