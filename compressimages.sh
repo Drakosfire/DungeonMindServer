@@ -26,11 +26,6 @@ sha256sum images_storegenerator.tar.gz > checksums_storegenerator_compressed.txt
 echo "Adding compressed files to git..."
 git add images_main.tar.gz images_storegenerator.tar.gz
 
-# Commit changes
-echo "Committing changes..."
-read -p "Enter commit message: " commit_message
-git commit -m "$commit_message"
-
 # Push to remote repository
 echo "Pushing to remote repository..."
 git push
