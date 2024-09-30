@@ -14,7 +14,7 @@ verify_checksums() {
 
     echo "Verifying checksums for uncompressed files in $uncompressed_dir..."
     pushd "$uncompressed_dir" > /dev/null
-    sha256sum -c "$uncompressed_checksum_file"
+    sha256sum -c "../../$uncompressed_checksum_file"
     popd > /dev/null
 }
 # Stop the Docker container
