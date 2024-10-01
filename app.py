@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from auth_router import router as auth_router
@@ -9,6 +10,8 @@ from storegenerator.store_router import router as store_router
 import os
 
 app = FastAPI()
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["www.dungeonmind.net"])
+
 
 # CORS Middleware
 app.add_middleware(
@@ -17,6 +20,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    max_age=600
+)
+# Increase the maximum upload size to 10 MB
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["www.dungeonmind.net"],
+    max_body_size=10 * 1024 * 1024  # 10 MB
 )
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
