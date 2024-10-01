@@ -17,7 +17,7 @@ else:
 
 oauth = OAuth(config)
 
-REDIRECT_URI = os.environ.get('OAUTH_REDIRECT_URI', 'http://dungeonmind.net/auth/callback')
+REDIRECT_URI = os.environ.get('OAUTH_REDIRECT_URI', 'https://www.dungeonmind.net/auth/callback')
 
 google = oauth.register(
     name='google',

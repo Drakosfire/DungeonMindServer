@@ -39,3 +39,5 @@ checksums_main_compressed.txt
 checksums_main_uncompressed.txt
 checksums_storegenerator_compressed.txt
 checksums_storegenerator_uncompressed.txt
+checksums_storegenerator_assets_compressed.txt
+checksums_storegenerator_assets_uncompressed.txt
