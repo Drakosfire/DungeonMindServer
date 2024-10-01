@@ -17,7 +17,11 @@ else:
 
 oauth = OAuth(config)
 
-REDIRECT_URI = os.environ.get('OAUTH_REDIRECT_URI', 'https://www.dungeonmind.net/auth/callback')
+# Use different redirect URIs for local development and production
+if os.environ.get('ENVIRONMENT') == 'production':
+    REDIRECT_URI = 'https://www.dungeonmind.net/auth/callback'
+else:
+    REDIRECT_URI = 'http://localhost:7860/auth/callback'
 
 google = oauth.register(
     name='google',
@@ -26,7 +30,6 @@ google = oauth.register(
     authorize_url='https://accounts.google.com/o/oauth2/auth',
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     access_token_url='https://oauth2.googleapis.com/token',
-    authorize_redirect_uri=REDIRECT_URI,
     client_kwargs={'scope': 'openid profile email'},
 )
 
@@ -39,14 +42,14 @@ logger = logging.getLogger(__name__)
 @router.get('/login')
 async def login(request: Request):
     logger.debug(f"Login route accessed. Client ID: {google.client_id}")
-    redirect_uri = request.url_for('auth_callback')
-    logger.debug(f"Redirect URI: {redirect_uri}")
-    return await google.authorize_redirect(request, redirect_uri)
+    logger.debug(f"Redirect URI: {REDIRECT_URI}")
+    return await google.authorize_redirect(request, REDIRECT_URI)
 
-# The callback route should be at /auth/callback
 @router.get('/callback')
 async def auth_callback(request: Request):
     logger.debug("Callback route accessed")
+    logger.debug(f"Request URL: {request.url}")
+    logger.debug(f"Request query params: {request.query_params}")
     try:
         token = await google.authorize_access_token(request)
         logger.debug("Access token obtained")
@@ -57,9 +60,6 @@ async def auth_callback(request: Request):
         return RedirectResponse(url='/storegenerator')
     except Exception as e:
         logger.error(f"Error during authorization: {str(e)}", exc_info=True)
-        # Log more details about the request
-        logger.error(f"Request URL: {request.url}")
-        logger.error(f"Request query params: {request.query_params}")
         raise HTTPException(status_code=400, detail=f"Error during authorization: {str(e)}")
 
 @router.get('/profile')
