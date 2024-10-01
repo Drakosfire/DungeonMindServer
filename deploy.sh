@@ -43,7 +43,7 @@ git submodule update --init --recursive
 # Verify and decompress images
 verify_checksums "images_main.tar.gz" "./static" "checksums_main_compressed.txt" "checksums_main_uncompressed.txt"
 verify_checksums "images_storegenerator.tar.gz" "./storegenerator/static" "checksums_storegenerator_compressed.txt" "checksums_storegenerator_uncompressed.txt"
-
+verify_checksums "images_storegenerator_assets.tar.gz" "./storegenerator/static/themes/assets" "checksums_storegenerator_assets_compressed.txt" "checksums_storegenerator_assets_uncompressed.txt"
 # Build the Docker image
 echo "Building Docker image 'dungeonmind-image'..."
 docker build -t dungeonmind-image .
