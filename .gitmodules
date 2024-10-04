@@ -2,3 +2,4 @@
 	path = storegenerator
 	url = git@github.com:Drakosfire/StoreGenerator.git
 	branch = dungeonmind
+	dungeonmind = main
