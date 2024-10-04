@@ -26,7 +26,7 @@ app.add_middleware(
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=["www.dungeonmind.net"],
-    max_body_size=10 * 1024 * 1024  # 10 MB
+    
 )
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
