@@ -1,32 +1,27 @@
-from fastapi import APIRouter, Request, HTTPException
-from authlib.integrations.starlette_client import OAuth
-from starlette.config import Config
-from starlette.responses import RedirectResponse
 import os
+from fastapi import APIRouter, Request, HTTPException
+from authlib.integrations.starlette_client import OAuth, OAuthError
+from starlette.responses import RedirectResponse
 import logging
 
 router = APIRouter()
 
-# Configuration for OAuth
-config_file = '.env'
-if not os.path.exists(config_file):
-    print(f"Warning: Config file '{config_file}' not found. Using environment variables.")
-    config = Config(environ=os.environ)
+# Load configuration based on environment
+env = os.getenv('ENVIRONMENT', 'development')
+if env == 'production':
+    from config_production import CONFIG
 else:
-    config = Config(config_file)
+    from config_development import CONFIG
 
-oauth = OAuth(config)
+# Initialize OAuth without passing CONFIG directly
+oauth = OAuth()
 
-# Use different redirect URIs for local development and production
-if os.environ.get('ENVIRONMENT') == 'production':
-    REDIRECT_URI = 'https://www.dungeonmind.net/auth/callback'
-else:
-    REDIRECT_URI = 'http://localhost:7860/auth/callback'
-
+# Register the Google client
 google = oauth.register(
     name='google',
-    client_id=config('GOOGLE_CLIENT_ID', default=None),
-    client_secret=config('GOOGLE_CLIENT_SECRET', default=None),
+    client_id=CONFIG['GOOGLE_CLIENT_ID'],
+    client_secret=CONFIG['GOOGLE_CLIENT_SECRET'],
+    redirect_uri=CONFIG['OAUTH_REDIRECT_URI'],
     authorize_url='https://accounts.google.com/o/oauth2/auth',
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     access_token_url='https://oauth2.googleapis.com/token',
@@ -42,8 +37,8 @@ logger = logging.getLogger(__name__)
 @router.get('/login')
 async def login(request: Request):
     logger.debug(f"Login route accessed. Client ID: {google.client_id}")
-    logger.debug(f"Redirect URI: {REDIRECT_URI}")
-    return await google.authorize_redirect(request, REDIRECT_URI)
+    logger.debug(f"Redirect URI: {CONFIG['OAUTH_REDIRECT_URI']}")
+    return await google.authorize_redirect(request, CONFIG['OAUTH_REDIRECT_URI'])
 
 @router.get('/callback')
 async def auth_callback(request: Request):

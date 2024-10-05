@@ -10,8 +10,18 @@ from storegenerator.store_router import router as store_router
 import os
 
 app = FastAPI()
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["www.dungeonmind.net"])
 
+# Get the current environment
+env = os.getenv('ENVIRONMENT', 'development')
+
+# Set allowed hosts based on the environment
+if env == 'production':
+    allowed_hosts = ["www.dungeonmind.net"]
+else:
+    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860"]
+
+# Add the middleware with the appropriate allowed hosts
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # CORS Middleware
 app.add_middleware(
@@ -21,12 +31,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     max_age=600
-)
-# Increase the maximum upload size to 10 MB
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["www.dungeonmind.net"],
-    
 )
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
@@ -50,6 +54,4 @@ async def serve_landing_page(request: Request):
 
 if __name__ == "__main__":
     import uvicorn
-    host = os.environ.get('APP_HOST', '0.0.0.0')
-    port = int(os.environ.get('APP_PORT', 7860))
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host="0.0.0.0", port=7860)
