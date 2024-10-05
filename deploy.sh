@@ -34,7 +34,7 @@ echo "Extracting images..."
 
 # Build the Docker image
 echo "Building Docker image 'dungeonmind-image'..."
-docker build -t dungeonmind-image .
+docker build --build-arg ENVIRONMENT=production-t dungeonmind-image .
 
 # Run the Docker container with the specified environment file and port mapping
 echo "Running Docker container 'dungeonmind-container'..."
