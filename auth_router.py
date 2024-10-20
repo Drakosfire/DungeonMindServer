@@ -46,6 +46,7 @@ async def login(request: Request):
 async def auth_callback(request: Request):
     try:
         token = await google.authorize_access_token(request)
+        logger.debug(f"Token: {token}")
         user_info = token.get('userinfo')
         if not user_info:
             raise ValueError("User info not found in token")
@@ -56,6 +57,7 @@ async def auth_callback(request: Request):
             'exp': (datetime.utcnow() + timedelta(days=1)).timestamp()  # Set session to expire in 1 day
         }
         request.session.update(session_data)
+        logger.info(f"Session updated with user data: {session_data}")
         
         return RedirectResponse(url='/')
     except Exception as e:
@@ -102,14 +104,30 @@ async def protected_route(current_user: dict = Depends(get_current_user)):
 
 @router.get('/current-user')
 async def get_current_user(request: Request):
+    logger.info("'/current-user' endpoint accessed")
+    
+    # Log the request details
+    logger.debug(f"Request headers: {request.headers}")
+    logger.debug(f"Request method: {request.method}")
+    logger.debug(f"Request URL: {request.url}")
+
+    # Log session information
+    logger.debug(f"Session data: {request.session}")
+    
     user = request.session.get('user')
     if not user:
+        logger.warning("User not authenticated - no user in session")
         return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
     
     # Check if session has expired
     exp = request.session.get('exp')
-    if exp and datetime.utcnow().timestamp() > exp:
+    current_time = datetime.utcnow().timestamp()
+    logger.debug(f"Session expiration: {exp}, Current time: {current_time}")
+    
+    if exp and current_time > exp:
+        logger.warning(f"Session expired. Exp: {exp}, Current time: {current_time}")
         request.session.clear()
         return JSONResponse(status_code=401, content={"detail": "Session expired"})
     
+    logger.info(f"User authenticated successfully: {user}")
     return user

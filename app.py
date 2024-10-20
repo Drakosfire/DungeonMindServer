@@ -5,6 +5,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from auth_router import router as auth_router
+from store_router import router as store_router
 import os
 
 app = FastAPI()
@@ -37,6 +38,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(auth_router, prefix='/auth')
+app.include_router(store_router, prefix="/store")
 
 # Health check route
 @app.get("/health", response_class=JSONResponse)
