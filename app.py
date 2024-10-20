@@ -5,10 +5,12 @@ from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from auth_router import router as auth_router
-from storegenerator.store_router import router as store_router
 import os
 
 app = FastAPI()
+
+# Add SessionMiddleware
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
 
 # Get the current environment
 env = os.getenv('ENVIRONMENT', 'development')
@@ -33,11 +35,8 @@ app.add_middleware(
     max_age=600
 )
 
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
-
 # Routers
 app.include_router(auth_router, prefix='/auth')
-app.include_router(store_router)
 
 # Health check route
 @app.get("/health", response_class=JSONResponse)
@@ -52,10 +51,6 @@ async def redirect_to_react():
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/saved_data", StaticFiles(directory="saved_data"), name="saved_data")
-app.mount("/storegenerator/static", StaticFiles(directory="storegenerator/static"), name="storegenerator_static")
-
-# Mount React build directory at a specific path
-app.mount("/react-landing", StaticFiles(directory="react-landing/build", html=True), name="react_landing")
 
 if __name__ == "__main__":
     import uvicorn
