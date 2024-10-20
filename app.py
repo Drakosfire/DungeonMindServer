@@ -16,6 +16,7 @@ env = os.getenv('ENVIRONMENT', 'development')
 # Set allowed hosts based on the environment
 if env == 'production':
     allowed_hosts = ["www.dungeonmind.net"]
+    react_landing_url = "https://www.dungeonmind.net"
 else:
     allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000"]
     react_landing_url = "http://localhost:3000"
