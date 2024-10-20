@@ -35,6 +35,9 @@ saved_data/
 #React build folder
 react-landing/
 
+# Except don't ignore this directory in react-landing
+!react-landing/build/
+
 # files to ignore
 secrets.txt
 API Keys
