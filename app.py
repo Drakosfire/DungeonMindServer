@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from auth_router import router as auth_router
 from store_router import router as store_router
 import os
@@ -11,7 +11,12 @@ import os
 app = FastAPI()
 
 # Add SessionMiddleware
-app.add_middleware(SessionMiddleware, secret_key=os.getenv("SESSION_SECRET_KEY"))
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key=os.getenv("SESSION_SECRET_KEY"),
+    same_site="lax",  # This allows cookies to be sent in cross-site requests
+    https_only=False  # Set to True in production
+)
 
 # Get the current environment
 env = os.getenv('ENVIRONMENT', 'development')
@@ -21,19 +26,19 @@ if env == 'production':
     allowed_hosts = ["www.dungeonmind.net"]
     react_landing_url = "https://www.dungeonmind.net"
 else:
-    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000"]
-    react_landing_url = "http://localhost:3000"
+    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000", "dungeonmind", "storegenerator"]
+    react_landing_url = "http://dev.dungeonmind.net"
+
 # Add the middleware with the appropriate allowed hosts
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to specific origins in production
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://dev.dungeonmind.net", "https://www.dungeonmind.net"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    max_age=600
 )
 
 # Routers
@@ -45,10 +50,19 @@ app.include_router(store_router, prefix="/store")
 async def health_check():
     return {"status": "ok"}
 
-# Redirect root to React app on port 3000
-@app.get("/", response_class=HTMLResponse)
-async def redirect_to_react():
-    return HTMLResponse(content=f'<meta http-equiv="refresh" content="0; url={react_landing_url}" />')
+# Serve React app directly
+@app.get("/", response_class=RedirectResponse)
+async def serve_react_app():
+    return RedirectResponse(url=react_landing_url)
+
+# Configuration endpoint
+@app.get("/config", response_class=JSONResponse)
+async def get_config():
+    return {
+        "DUNGEONMIND_BASE_URL": "https://www.dungeonmind.net" if env == 'production' else "http://dev.dungeonmind.net",
+        "DUNGEONMIND_API_URL": "https://www.dungeonmind.net" if env == 'production' else "http://localhost:7860",
+        "ENVIRONMENT": env
+    }
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
