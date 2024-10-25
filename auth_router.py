@@ -37,32 +37,19 @@ logger = logging.getLogger(__name__)
 
 @router.get('/login')
 async def login(request: Request):
-    logger.debug(f"Login route accessed. Client ID: {google.client_id}")
-    logger.debug(f"Redirect URI: {CONFIG['OAUTH_REDIRECT_URI']}")
-    redirect_uri = await google.authorize_redirect(request, CONFIG['OAUTH_REDIRECT_URI'])
-    return redirect_uri  # Return the RedirectResponse directly
+    redirect_uri = request.url_for('auth_callback')
+    return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
 
 @router.get('/callback')
 async def auth_callback(request: Request):
     try:
-        token = await google.authorize_access_token(request)
-        logger.debug(f"Token: {token}")
-        user_info = token.get('userinfo')
-        if not user_info:
-            raise ValueError("User info not found in token")
-        
-        # Create a session with user info and expiration
-        session_data = {
-            'user': dict(user_info),
-            'exp': (datetime.utcnow() + timedelta(days=1)).timestamp()  # Set session to expire in 1 day
-        }
-        request.session.update(session_data)
-        logger.info(f"Session updated with user data: {session_data}")
-        
+        token = await oauth.google.authorize_access_token(request)
+        user = await oauth.google.parse_id_token(token, nonce=request.session.get('nonce'))
+        request.session['user'] = dict(user)
         return RedirectResponse(url='/')
     except Exception as e:
         logger.error(f"Error during authorization: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=400, detail=f"Error during authorization: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get('/profile')
 async def profile(request: Request):
