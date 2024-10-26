@@ -4,8 +4,10 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from starlette.responses import RedirectResponse, JSONResponse
 import logging
 from datetime import datetime, timedelta
+from fastapi.security import OAuth2PasswordBearer
 
 router = APIRouter()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Load configuration based on environment
 env = os.getenv('ENVIRONMENT', 'development')
@@ -37,15 +39,29 @@ logger = logging.getLogger(__name__)
 
 @router.get('/login')
 async def login(request: Request):
+    # Generate a new nonce for each login attempt
+    nonce = os.urandom(16).hex()
+    request.session['nonce'] = nonce
     redirect_uri = request.url_for('auth_callback')
-    return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
+    return await oauth.google.authorize_redirect(request, redirect_uri, nonce=nonce)
 
 @router.get('/callback')
 async def auth_callback(request: Request):
     try:
         token = await oauth.google.authorize_access_token(request)
-        user = await oauth.google.parse_id_token(token, nonce=request.session.get('nonce'))
+        nonce = request.session.pop('nonce', None)
+        user = await oauth.google.parse_id_token(token, nonce=nonce)
+        
+        logger.info(f"Received user information: {user}")
+        
+        # Set user information in the session
         request.session['user'] = dict(user)
+        
+        # Set session expiration (e.g., 1 hour from now)
+        request.session['exp'] = (datetime.utcnow() + timedelta(hours=1)).timestamp()
+        
+        logger.info(f"Session after setting user: {request.session}")
+        
         return RedirectResponse(url='/')
     except Exception as e:
         logger.error(f"Error during authorization: {str(e)}", exc_info=True)
@@ -74,47 +90,12 @@ async def logout(request: Request):
 async def get_current_user(request: Request):
     user = request.session.get('user')
     if not user:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    
-    # Check if session has expired
-    exp = request.session.get('exp')
-    if exp and datetime.utcnow().timestamp() > exp:
-        request.session.clear()
-        raise HTTPException(status_code=401, detail="Session expired")
-    
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
-# Use this dependency in routes that require authentication
-@router.get('/protected-route')
-async def protected_route(current_user: dict = Depends(get_current_user)):
-    return {"message": "This is a protected route", "user": current_user}
+def get_current_user_dependency():
+    return Depends(get_current_user)
 
-@router.get('/current-user')
-async def get_current_user(request: Request):
-    logger.info("'/current-user' endpoint accessed")
-    
-    # Log the request details
-    logger.debug(f"Request headers: {request.headers}")
-    logger.debug(f"Request method: {request.method}")
-    logger.debug(f"Request URL: {request.url}")
-
-    # Log session information
-    logger.debug(f"Session data: {request.session}")
-    
-    user = request.session.get('user')
-    if not user:
-        logger.warning("User not authenticated - no user in session")
-        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
-    
-    # Check if session has expired
-    exp = request.session.get('exp')
-    current_time = datetime.utcnow().timestamp()
-    logger.debug(f"Session expiration: {exp}, Current time: {current_time}")
-    
-    if exp and current_time > exp:
-        logger.warning(f"Session expired. Exp: {exp}, Current time: {current_time}")
-        request.session.clear()
-        return JSONResponse(status_code=401, content={"detail": "Session expired"})
-    
-    logger.info(f"User authenticated successfully: {user}")
+@router.get("/current-user")
+async def current_user(user: dict = get_current_user_dependency()):
     return user
