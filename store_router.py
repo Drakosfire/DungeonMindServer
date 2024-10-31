@@ -8,7 +8,7 @@ import storegenerator.block_builder as block_builder
 import storegenerator.store_helper as store_helper
 import storegenerator.sd_generator as sd
 import httpx
-# import logging
+import logging
 from cloudflare.handle_images import upload_image_to_cloudflare
 
 # Cloudflare credentials
@@ -33,8 +33,8 @@ class ImageUploadRequest(BaseModel):
 router = APIRouter()
 
 # Configure logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @router.get("/list-saved-stores")
 async def list_saved_stores(current_user: dict = Depends(get_current_user)):
@@ -131,9 +131,16 @@ async def generate_image(data: GenerateImageRequest):
     try:
         image_url = sd.preview_and_generate_image(sd_prompt)
         # logger.info("Generated image URL: %s", image_url)
-        uploaded_image = await upload_image_to_cloudflare(image_url)
+        # uploaded_image = await upload_image_to_cloudflare(image_url)
         # logger.info("Uploaded image: %s", uploaded_image)
-        return {"image_url": uploaded_image}
+        return {"image_url": image_url}
     except Exception as e:
         # logger.error("Error generating image: %s", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.post('/upload-image')
+async def upload_image(image_data: dict):
+    # logger.info("Uploading image: %s", image_data)
+    image_url = image_data['image_url']
+    uploaded_image = await upload_image_to_cloudflare(image_url)
+    return {"image_url": uploaded_image}
