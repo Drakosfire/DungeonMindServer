@@ -8,7 +8,8 @@ import storegenerator.block_builder as block_builder
 import storegenerator.store_helper as store_helper
 import storegenerator.sd_generator as sd
 import httpx
-
+# import logging
+from cloudflare.handle_images import upload_image_to_cloudflare
 
 # Cloudflare credentials
 cloudflare_account_id = os.getenv('CLOUDFLARE_ACCOUNT_ID')
@@ -30,6 +31,10 @@ class ImageUploadRequest(BaseModel):
     image_url: str
 
 router = APIRouter()
+
+# Configure logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 @router.get("/list-saved-stores")
 async def list_saved_stores(current_user: dict = Depends(get_current_user)):
@@ -73,56 +78,6 @@ async def save_store(store_data: dict, current_user: dict = Depends(get_current_
 def allowed_file(filename):
     allowed_extensions = {'png', 'jpg', 'jpeg', 'gif'}
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
-
-# @router.post('/upload-image')
-# async def upload_image(
-#     request: Request,
-#     image: UploadFile = File(...),
-#     directoryName: str = Form(...),
-#     blockId: str = Form(...),
-#     current_user: dict = Depends(get_current_user)
-# ):
-#     if not allowed_file(image.filename):
-#         raise HTTPException(status_code=400, detail="File type not allowed")
-    
-#     user_id = current_user['sub']
-#     user_directory = os.path.join('saved_data', user_id, directoryName)
-#     os.makedirs(user_directory, exist_ok=True)
-
-#     filename = f"{blockId}_{image.filename}"
-#     image_path = os.path.join(user_directory, filename)
-
-#     try:
-#         with open(image_path, "wb") as buffer:
-#             shutil.copyfileobj(image.file, buffer)
-#         return {"fileUrl": f"/saved_data/{user_id}/{directoryName}/{filename}"}
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/upload-image")
-async def upload_image_to_cloudflare(request: ImageUploadRequest):
-    url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1/"
-    print(f"URL: {url}")
-    headers = {
-        "Authorization": f"Bearer {cloudflare_api_token}",
-    }
-    
-    form_data = {
-        'url': request.image_url,
-        'requireSignedURLs': 'false'
-    }
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, data=form_data)
-        
-        if response.status_code != 200:
-            error_text = response.text
-            raise HTTPException(status_code=response.status_code, detail=f"Cloudflare API error: {error_text}")
-        
-        data = response.json()
-        return data   # Return the upload URL and associated data back to the client
-
 
 @router.get("/list-loading-images")
 async def list_loading_images():
@@ -171,6 +126,10 @@ async def generate_image(data: GenerateImageRequest):
         raise HTTPException(status_code=400, detail="Missing sd_prompt")
     try:
         image_url = sd.preview_and_generate_image(sd_prompt)
-        return {"image_url": image_url}
+        # logger.info("Generated image URL: %s", image_url)
+        uploaded_image = await upload_image_to_cloudflare(image_url)
+        # logger.info("Uploaded image: %s", uploaded_image)
+        return {"image_url": uploaded_image}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # logger.error("Error generating image: %s", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
