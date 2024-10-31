@@ -15,7 +15,8 @@ app.add_middleware(
     SessionMiddleware, 
     secret_key=os.getenv("SESSION_SECRET_KEY"),
     same_site="lax",  # This allows cookies to be sent in cross-site requests
-    https_only=False  # Set to True in production
+    https_only=False, 
+    domain=".dungeonmind.net" # Set to True in production
 )
 
 # Get the current environment
@@ -26,7 +27,7 @@ if env == 'production':
     allowed_hosts = ["www.dungeonmind.net"]
     react_landing_url = "https://www.dungeonmind.net"
 else:
-    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000", "dungeonmind", "storegenerator"]
+    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000", "dev.dungeonmind.net", "storegenerator"]
     react_landing_url = "http://dev.dungeonmind.net"
 
 # Add the middleware with the appropriate allowed hosts
@@ -59,8 +60,8 @@ async def serve_react_app():
 @app.get("/config", response_class=JSONResponse)
 async def get_config():
     return {
-        "DUNGEONMIND_BASE_URL": "https://www.dungeonmind.net" if env == 'production' else "http://dev.dungeonmind.net",
-        "DUNGEONMIND_API_URL": "https://www.dungeonmind.net" if env == 'production' else "http://localhost:7860",
+        "DUNGEONMIND_BASE_URL": "https://www.dungeonmind.net" if env == 'production' else "https://dev.dungeonmind.net",
+        "DUNGEONMIND_API_URL": "https://www.dungeonmind.net" if env == 'production' else "https://dev.dungeonmind.net",
         "ENVIRONMENT": env
     }
 
