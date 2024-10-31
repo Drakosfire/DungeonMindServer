@@ -49,3 +49,4 @@ checksums_storegenerator_uncompressed.txt
 checksums_storegenerator_assets_compressed.txt
 checksums_storegenerator_assets_uncompressed.txt
 copy_build.sh
+serviceAccountKey.json
