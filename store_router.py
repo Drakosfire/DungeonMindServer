@@ -119,6 +119,10 @@ def extract_title(json_data):
 
     return sanitized_title  
 
+# Generate image and upload to Cloudflare
+# This is called from the saveLoadHandler.js file
+# It is called when the user clicks the "Generate Image" button
+# I should manage the upload to Cloudflare in the saveLoadHandler.js file
 @router.post('/generate-image')
 async def generate_image(data: GenerateImageRequest):
     sd_prompt = data.sd_prompt
