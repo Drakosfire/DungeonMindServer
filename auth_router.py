@@ -32,8 +32,8 @@ google = oauth.register(
 if not google.client_id or not google.client_secret:
     raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env file or environment variables")
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+# logging.basicConfig(level=logging.DEBUG)
+# logger = logging.getLogger(__name__)
 
 @router.get('/login')
 async def login(request: Request):
@@ -48,7 +48,7 @@ async def auth_callback(request: Request):
         request.session['user'] = dict(user)
         return RedirectResponse(url='/')
     except Exception as e:
-        logger.error(f"Error during authorization: {str(e)}", exc_info=True)
+        # logger.error(f"Error during authorization: {str(e)}", exc_info=True)
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get('/profile')
@@ -91,30 +91,30 @@ async def protected_route(current_user: dict = Depends(get_current_user)):
 
 @router.get('/current-user')
 async def get_current_user(request: Request):
-    logger.info("'/current-user' endpoint accessed")
+    # logger.info("'/current-user' endpoint accessed")
     
-    # Log the request details
-    logger.debug(f"Request headers: {request.headers}")
-    logger.debug(f"Request method: {request.method}")
-    logger.debug(f"Request URL: {request.url}")
+    # # Log the request details
+    # logger.debug(f"Request headers: {request.headers}")
+    # logger.debug(f"Request method: {request.method}")
+    # logger.debug(f"Request URL: {request.url}")
 
-    # Log session information
-    logger.debug(f"Session data: {request.session}")
+    # # Log session information
+    # logger.debug(f"Session data: {request.session}")
     
     user = request.session.get('user')
     if not user:
-        logger.warning("User not authenticated - no user in session")
+        # logger.warning("User not authenticated - no user in session")
         return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
     
     # Check if session has expired
     exp = request.session.get('exp')
     current_time = datetime.utcnow().timestamp()
-    logger.debug(f"Session expiration: {exp}, Current time: {current_time}")
+    # logger.debug(f"Session expiration: {exp}, Current time: {current_time}")
     
     if exp and current_time > exp:
-        logger.warning(f"Session expired. Exp: {exp}, Current time: {current_time}")
+        # logger.warning(f"Session expired. Exp: {exp}, Current time: {current_time}")
         request.session.clear()
         return JSONResponse(status_code=401, content={"detail": "Session expired"})
     
-    logger.info(f"User authenticated successfully: {user}")
+    # logger.info(f"User authenticated successfully: {user}")
     return user
