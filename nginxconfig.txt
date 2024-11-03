@@ -1,0 +1,195 @@
+sudo nano /etc/nginx/sites-available/dungeonmind.net
+
+Attempting self signed certificate to address issue moving between API server and Store Generator Server
+
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/nginx/ssl/nginx.key -out /etc/nginx/ssl/nginx.crt
+
+Here’s how to set up a local HTTPS server with Nginx using a self-signed SSL certificate:
+
+Step 1: Create a Self-Signed SSL Certificate
+
+Generate a self-signed certificate and private key on your development machine.
+
+    Open a terminal and run the following commands to create a certificate and key:
+
+    bash
+
+    sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/dev.local.key -out /etc/ssl/certs/dev.local.crt
+
+    During the process, you’ll be prompted to enter details like Country Name, State, Locality, etc. You can skip or add dummy values for these fields since this certificate is for development.
+
+    Once generated, the certificate (dev.local.crt) and key (dev.local.key) will be saved in /etc/ssl/certs/ and /etc/ssl/private/, respectively.
+
+Step 2: Configure Nginx for HTTPS with the Self-Signed Certificate
+
+Edit your Nginx configuration file to serve your local development server over HTTPS.
+
+    Open your Nginx configuration file (likely in /etc/nginx/sites-available/) and update it to use the SSL certificate.
+
+    Here’s an example configuration with HTTPS enabled for dev.dungeonmind.net:
+
+    nginx
+
+server {
+    listen 443 ssl;
+    server_name dev.dungeonmind.net;
+
+    ssl_certificate /etc/ssl/certs/dev.local.crt;
+    ssl_certificate_key /etc/ssl/private/dev.local.key;
+
+    root /var/www/dungeonmind;
+    index index.html;
+
+    # Set the maximum allowed size of the client request body to 10MB
+    # This is necessary to handle larger file uploads without getting a 413 error
+    client_max_body_size 10M;
+
+    # Proxy requests to StoreGenerator FastAPI server on port 3001
+    location /storegenerator {
+        proxy_pass http://localhost:3001/;  # Forward requests to StoreGenerator server on port 3001
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Add debug logging
+        error_log /var/log/nginx/storegenerator-debug.log debug;
+
+        # Ensure cookies are forwarded properly
+        proxy_cookie_path / "/; Secure; HttpOnly; SameSite=None";
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Set-Cookie $upstream_http_set_cookie;
+    }
+
+    # Serve static files from root_store directory
+    location /root_store/ {
+        alias /var/www/dungeonmind/root_store/;
+        autoindex on;  # Optional, enables directory listing
+
+        # Add CORS headers
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS";
+        add_header Access-Control-Allow-Headers "Origin, X-Requested-With, Content-Type, Accept, Authorization";
+
+        # Correct MIME types for common file types (optional but helpful)
+        types {
+            image/jpeg jpeg jpg;
+            image/png png;
+            image/gif gif;
+            text/css css;
+            application/javascript js;
+        }
+    }
+
+    # Route /config directly to the FastAPI backend
+    location /config {
+        proxy_pass http://localhost:7860/config;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ @backend;
+    }
+
+    location /debug/ {
+        proxy_pass http://localhost:7860/debug/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @backend {
+        proxy_pass http://localhost:7860;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Add SameSite=None for all cookies to ensure they work in cross-site contexts
+        proxy_cookie_path / "/; Secure; HttpOnly; SameSite=None";
+
+        # Forward cookies
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Set-Cookie $upstream_http_set_cookie;
+    }
+}
+
+server {
+    listen 80;
+    server_name dev.dungeonmind.net;
+
+    # Redirect all HTTP traffic to HTTPS
+    return 301 https://$host$request_uri;
+}
+
+Save the file and restart Nginx:
+
+bash
+
+    sudo systemctl restart nginx
+
+Step 3: Update /etc/hosts for Local Domain Resolution
+
+To test this setup locally, map dev.dungeonmind.net to 127.0.0.1 in your hosts file:
+
+    Open the hosts file:
+
+    bash
+
+sudo nano /etc/hosts
+
+Add the following line:
+
+plaintext
+
+    127.0.0.1 dev.dungeonmind.net
+
+    Save and close the file.
+
+Step 4: Trust the Self-Signed Certificate (Browser-Specific)
+
+Since the certificate is self-signed, browsers will flag it as untrusted. Here’s how to proceed with different browsers:
+
+    Chrome:
+        Visit https://dev.dungeonmind.net.
+        Chrome will warn about the untrusted certificate. Click Advanced and proceed to the website (unsafe).
+        You can also manually import the certificate into Chrome’s trusted certificate store if you prefer.
+
+    Firefox:
+        Visit https://dev.dungeonmind.net.
+        Firefox will show a warning; click Advanced > Accept the Risk and Continue.
+
+After trusting the self-signed certificate in your browser, you should be able to access https://dev.dungeonmind.net locally over HTTPS.
+Step 5: Update FastAPI and OAuth Configuration
+
+With HTTPS enabled locally, you can now set your application’s OAuth configuration to use https://dev.dungeonmind.net/auth/callback as the redirect URI. Update the SessionMiddleware and OAuth redirect settings accordingly:
+
+python
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET_KEY"),
+    same_site="none",  # Allows cookies in cross-site contexts
+    https_only=True     # Ensures cookies are only sent over HTTPS
+)
+
+In your OAuth config:
+
+python
+
+CONFIG = {
+    'GOOGLE_CLIENT_ID': os.getenv('GOOGLE_CLIENT_ID'),
+    'GOOGLE_CLIENT_SECRET': os.getenv('GOOGLE_CLIENT_SECRET'),
+    'OAUTH_REDIRECT_URI': 'https://dev.dungeonmind.net/auth/callback',
+}
+
+Summary
+
+    Self-signed HTTPS: Set up a self-signed SSL certificate for local HTTPS.
+    Nginx Configuration: Use HTTPS in Nginx and redirect HTTP to HTTPS.
+    Browser Trust: Bypass or accept the self-signed certificate warning in your browser.
+    Update App Settings: Use same_site="none" and https_only=True in your session middleware, and set the OAuth redirect URI to https://dev.dungeonmind.net/auth/callback.

@@ -1,0 +1,96 @@
+# DungeonMind Nginx configuration Production
+server {
+    listen 443 ssl;
+    server_name dungeonmind.net www.dungeonmind.net;
+
+    ssl_certificate /etc/letsencrypt/live/dungeonmind.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dungeonmind.net/privkey.pem;
+
+    root /var/www/DungeonMind/LandingPage/build;
+    index index.html;
+
+    # Set the maximum allowed size of the client request body to 10MB
+    # This is necessary to handle larger file uploads without getting a 413 error
+    client_max_body_size 10M;
+
+    # Proxy requests to StoreGenerator FastAPI server on port 3001
+    location /storegenerator {
+        proxy_pass http://localhost:3001;  # Forward requests to StoreGenerator server on port 3001
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Add debug logging
+        error_log /var/log/nginx/storegenerator-debug.log debug;
+
+        # Ensure cookies are forwarded properly
+        proxy_cookie_path / "/; Secure; HttpOnly; SameSite=None";
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Set-Cookie $upstream_http_set_cookie;
+    }
+
+    # Serve static files from root_store directory
+    location /root_store/ {
+        alias /var/www/dungeonmind/root_store/;
+        autoindex on;  # Optional, enables directory listing
+
+        # Add CORS headers
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, OPTIONS";
+        add_header Access-Control-Allow-Headers "Origin, X-Requested-With, Content-Type, Accept, Authorization";
+
+        # Correct MIME types for common file types (optional but helpful)
+        types {
+            image/jpeg jpeg jpg;
+            image/png png;
+            image/gif gif;
+            text/css css;
+            application/javascript js;
+        }
+    }
+
+    # Route /config directly to the FastAPI backend
+    location /config {
+        proxy_pass http://localhost:7860/config;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ @backend;
+    }
+
+    location /debug/ {
+        proxy_pass http://localhost:7860/debug/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @backend {
+        proxy_pass http://localhost:7860;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Add SameSite=None for all cookies to ensure they work in cross-site contexts
+        proxy_cookie_path / "/; Secure; HttpOnly; SameSite=None";
+
+        # Forward cookies
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Set-Cookie $upstream_http_set_cookie;
+    }
+}
+
+server {
+    listen 80;
+    server_name dungeonmind.net www.dungeonmind.net;
+
+    # Redirect all HTTP traffic to HTTPS
+    return 301 https://$host$request_uri;
+}

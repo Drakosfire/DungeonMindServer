@@ -1,0 +1,32 @@
+services:
+  dungeonmind:
+    build:
+      context: ./DungeonMindServer
+      args:
+        ENVIRONMENT: ${ENVIRONMENT:-development}
+    extra_hosts:
+      - "www.dungeonmind.net:127.0.0.1"
+    env_file:
+      - ./DungeonMindServer/.env.${ENVIRONMENT} # Environment-specific variables
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./DungeonMindServer/saved_data:/home/user/app/saved_data
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT}
+
+  storegenerator:
+    build:
+      context: ./StoreGenerator
+      args:
+        ENVIRONMENT: ${ENVIRONMENT:-development}
+    extra_hosts:
+      - "www.dungeonmind.net:127.0.0.1"
+    env_file:
+      - ./StoreGenerator/.env.${ENVIRONMENT}
+    ports:
+      - "3001:3001"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT}
+    depends_on:
+      - dungeonmind
