@@ -1,0 +1,36 @@
+# Ignore Python bytecode files
+*.pyc
+__pycache__/
+
+# Ignore the Dockerfile and .dockerignore themselves (optional)
+Dockerfile
+.dockerignore
+
+# Ignore the environment file
+
+
+# Ignore test files
+Ebony, the Twisted Fairy_files
+galleries
+output
+app copy.py
+block_builder copy.py
+example_templates.py
+morogors_meaty_inventory.py
+morgors_meaty_marvels.py
+old app.py
+process_text.py
+README.md
+sd_generator copy.py
+sd_generator copy 2.py
+store_json_example.py
+storeUI copy.html
+template.html
+template.py
+utilites.py
+deploy.sh
+sfs-compose-env.sh
+compressimages.sh
+robots.txt
+secret.txt
+serviceAccountKey.json

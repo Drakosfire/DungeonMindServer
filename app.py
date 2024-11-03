@@ -4,12 +4,24 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from auth_router import router as auth_router
-from store_router import router as store_router
 import os
 import logging
+from dotenv import load_dotenv
+
 
 logger = logging.getLogger(__name__)
+
+# Get the current environment
+env = os.environ.get('ENVIRONMENT', 'development')
+if env == 'production':
+    load_dotenv('.env.production')
+    logger.info(f"Production environment detected.")
+else:
+    load_dotenv('.env.development')
+    logger.info(f"Development environment detected.")
+
+from auth_router import router as auth_router
+from store_router import router as store_router
 
 app = FastAPI()
 
@@ -22,19 +34,13 @@ app.add_middleware(
     domain=".dungeonmind.net" # Set to .dungeonmind.net in production
 )
 
-# Get the current environment
-env = os.environ.get('ENVIRONMENT', 'development')
 
 # Set allowed hosts based on the environment
-if env == 'production':
-    allowed_hosts = ["www.dungeonmind.net"]
-    react_landing_url = "https://www.dungeonmind.net"
-    logger.info(f"Production environment detected. React landing URL: {react_landing_url}")
-
-else:
-    allowed_hosts = ["localhost", "127.0.0.1", "0.0.0.0", "localhost:7860", "localhost:3000", "dev.dungeonmind.net", "storegenerator"]
-    react_landing_url = "http://dev.dungeonmind.net"
-    logger.info(f"Development environment detected. React landing URL: {react_landing_url}")
+# This is a comma-separated list of hosts, so we need to split it
+allowed_hosts = os.environ.get('ALLOWED_HOSTS', '').split(',')
+logger.info(f"Allowed hosts: {allowed_hosts}")
+react_landing_url = os.environ.get('REACT_LANDING_URL')
+logger.info(f"React landing URL: {react_landing_url}")
 
 # Add the middleware with the appropriate allowed hosts
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
@@ -42,7 +48,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://dev.dungeonmind.net", "https://www.dungeonmind.net"],
+    allow_origins=allowed_hosts,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
