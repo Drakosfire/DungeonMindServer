@@ -34,7 +34,9 @@ if not google.client_id or not google.client_secret:
 
 @router.get('/login')
 async def login(request: Request):
-    redirect_uri = request.url_for('auth_callback')
+    redirect_uri = os.environ.get('DUNGEONMIND_API_URL') + '/auth/callback'
+    logger.info(f"Login request from: {request.headers.get('x-forwarded-proto', 'unknown')}://{request.headers.get('host', 'unknown')}")
+    logger.info(f"Using redirect URI: {redirect_uri}")
     return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
 
 @router.get('/callback')
