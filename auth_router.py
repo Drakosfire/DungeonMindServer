@@ -28,7 +28,7 @@ google = oauth.register(
 )
 
 # Check if the required environment variables are set
-logger.info(f"Redirect URI: {google.redirect_uri}")
+logger.info(f"Redirect URI: {os.environ.get('DUNGEONMIND_API_URL') + '/auth/callback'}")
 if not google.client_id or not google.client_secret:
     raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env file or environment variables")
 
