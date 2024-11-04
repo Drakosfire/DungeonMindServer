@@ -1,6 +1,5 @@
 import { getState, updateState } from "./state.js";
 import { initializeTextareaResizing } from "./handleTextareas.js";
-import { uploadImages } from "./imageHandler.js";
 import { iterateThroughBlocks } from "./jsonToBlocks.js";
 import { clearBlocks } from "./utils.js";
 
