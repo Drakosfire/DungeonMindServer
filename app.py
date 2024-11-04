@@ -68,14 +68,6 @@ async def health_check():
 async def serve_react_app():
     return RedirectResponse(url=react_landing_url)
 
-# Configuration endpoint
-@app.get("/config", response_class=JSONResponse)
-async def get_config():
-    return {
-        "DUNGEONMIND_BASE_URL": "https://www.dungeonmind.net" if env == 'production' else "https://dev.dungeonmind.net",
-        "DUNGEONMIND_API_URL": "https://www.dungeonmind.net" if env == 'production' else "https://dev.dungeonmind.net",
-        "ENVIRONMENT": env
-    }
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
