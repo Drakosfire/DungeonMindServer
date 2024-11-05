@@ -1,8 +1,4 @@
 import { handleDragStart, handleDragEnd } from "./dragDropHandler.js";
-import { getConfig } from './config.js';
-
-
-
 
 // iterate through container blocks, identify their type, and build the html
 export function buildBlock(block, blockId) {
@@ -85,11 +81,10 @@ export function buildTitleBlock(block, blockId) {
 }
 
 export function buildImageBlock(block, blockId) {
-    const config = getConfig();
 
     // Prepend the DUNGEONMIND_API_URL to the image source if it's a relative URL
     const imageUrl = block.imgUrl && !block.imgUrl.startsWith('http')
-        ? `${config.DUNGEONMIND_API_URL}${block.imgUrl}`
+        ? `${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}${block.imgUrl}`
         : block.imgUrl || '';
 
     let imageBlockHtml = `
