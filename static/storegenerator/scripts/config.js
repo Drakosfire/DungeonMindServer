@@ -1,16 +1,25 @@
-import dotenv from 'dotenv';
+/**
+ * @typedef {Object} DungeonMindConfig
+ * @property {string} DUNGEONMIND_API_URL - The base URL for the DungeonMind API
+ */
 
-// Load environment variables from a .env file into process.env
-dotenv.config();
-
-let config = {
-    DUNGEONMIND_BASE_URL: process.env.DUNGEONMIND_BASE_URL || '',
-    DUNGEONMIND_API_URL: process.env.DUNGEONMIND_API_URL || '',
-    ENVIRONMENT: process.env.ENVIRONMENT || '',
-    CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
-    CLOUDFLARE_IMAGES_API_TOKEN: process.env.CLOUDFLARE_IMAGES_API_TOKEN || ''
-};
-
-export function getConfig() {
-    return config;
+/** 
+ * Fetches the DungeonMind configuration
+ * @returns {Promise<DungeonMindConfig>}
+ */
+async function getConfig() {
+    try {
+        const response = await fetch('/config');
+        if (!response.ok) {
+            throw new Error(`Failed to fetch config: ${response.statusText}`);
+        }
+        const config = await response.json();
+        // console.log('Config loaded:', config); // Debug log
+        return config;
+    } catch (error) {
+        console.error('Error fetching config:', error);
+        throw error;
+    }
 }
+
+export { getConfig };

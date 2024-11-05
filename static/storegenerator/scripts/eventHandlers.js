@@ -128,7 +128,7 @@ export function handleClick(event, elements) {
         // console.log('State before:', state);
 
 
-        fetch('store/process-description', {
+        fetch('/store/process-description', {
 
             method: 'POST',
             headers: {
@@ -196,7 +196,7 @@ export function generateImage(blockId) {
     // console.log('sdPrompt:', sdPrompt);
 
     // Proceed with generating the image
-    fetch('store/generate-image', {
+    fetch('/store/generate-image', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

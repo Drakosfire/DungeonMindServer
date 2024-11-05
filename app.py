@@ -68,6 +68,11 @@ async def health_check():
 async def serve_react_app():
     return RedirectResponse(url=react_landing_url)
 
+#return the dungeonmind server api root url
+@app.get("/config")
+async def get_config():
+    return {"DUNGEONMIND_API_URL": os.environ.get('DUNGEONMIND_API_URL')}
+
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

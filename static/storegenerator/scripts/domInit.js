@@ -22,11 +22,10 @@ export function initializeDOMElements() {
 
 // Load JSON data from the server into the state as jsonData
 export async function initialLoadJSON() {
-    const config = getConfig();
     console.log('Loading JSON data from the server');
     try {
-        console.log('DUNGEONMIND_BASE_URL:', config.DUNGEONMIND_BASE_URL);
-        const response = await fetch(`${config.DUNGEONMIND_API_URL}/static/root_store/Enchanted_Roots_Gear_Emporium/Enchanted_Roots_Gear_Emporium.json`);
+        // console.log('DUNGEONMIND_BASE_URL:', window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL);
+        const response = await fetch(`${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}/static/root_store/Enchanted_Roots_Gear_Emporium/Enchanted_Roots_Gear_Emporium.json`);
         if (!response.ok) {
             throw new Error('Network response was not ok ' + response.statusText);
         }
