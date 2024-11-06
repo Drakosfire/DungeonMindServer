@@ -14,6 +14,7 @@ import { loadHandler, saveHandler, fetchSavedStores } from './saveLoadHandler.js
 import { convertToBlockFormat } from './jsonToBlocks.js';
 import { loadSelectedStore, initializeSavedStoresDropdown } from './saveLoadHandler.js';
 import { getConfig } from './config.js';
+import { preloadedLoadingGeneratedImage } from './loadingImage.js';
 
 // Function to handle click events
 export function handleClick(event, elements) {
@@ -165,14 +166,12 @@ export function generateImage(blockId) {
 
     // Check if state.jsonData exists
     if (!state.jsonData) {
-        // console.error('Error: jsonData is undefined in the state.');
         return;
     }
 
     // Check if the blockId exists in jsonData
     let block = state.jsonData.storeData[blockId];
     if (!block) {
-        // console.error(`Error: No block found with ID ${blockId} in jsonData.`);
         return;
     }
 
@@ -181,19 +180,16 @@ export function generateImage(blockId) {
     const imageElement = document.getElementById(`generated-image-${blockId}`);
 
     // Check if the required elements exist
-    if (!sdPromptElement) {
-        // console.error(`Error: Element with ID sd-prompt-${blockId} not found.`);
+    if (!sdPromptElement || !imageElement) {
         return;
     }
 
-    if (!imageElement) {
-        // console.error(`Error: Element with ID generated-image-${blockId} not found.`);
-        return;
-    }
+    // Use the cached loading image
+    imageElement.src = preloadedLoadingGeneratedImage.src;
+    imageElement.style.display = 'block';
 
     // Get the prompt text
     const sdPrompt = sdPromptElement.value;
-    // console.log('sdPrompt:', sdPrompt);
 
     // Proceed with generating the image
     fetch('/store/generate-image', {
@@ -204,14 +200,12 @@ export function generateImage(blockId) {
         body: JSON.stringify({ sd_prompt: sdPrompt })
     })
         .then(response => {
-            // Check if response is OK (status 200-299)
             if (!response.ok) {
                 throw new Error(`Server error: ${response.status} ${response.statusText}`);
             }
             return response.json();
         })
         .then(data => {
-            // Check if the data contains the image URL
             if (!data.image_url) {
                 throw new Error('Error: Image URL not found in the response.');
             }
@@ -220,14 +214,9 @@ export function generateImage(blockId) {
             block['imgUrl'] = data.image_url;
             block['isNewImage'] = true;
             imageElement.src = data.image_url;
-            imageElement.style.display = 'block';
-
-            // Log the updated image element's HTML structure
-            // console.log('Updated imageElement HTML:', imageElement.outerHTML);
         })
         .catch((error) => {
-            // Catch and log any errors
-            // console.error('Error:', error.message || error);
+            // Handle errors
         });
 }
 

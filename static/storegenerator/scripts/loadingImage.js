@@ -12,6 +12,11 @@ function preloadImages(imageUrls) {
     });
 }
 
+// Preload a specific loading image
+const loadingImageUrl = 'https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/7f2453f9-5ff8-4c52-1d77-f2d0d23c0800/public';
+export const preloadedLoadingGeneratedImage = new Image();
+preloadedLoadingGeneratedImage.src = loadingImageUrl;
+
 export function changeImage() {
     let state = getState();
     const loadingImage = document.getElementById('loadingImage');
