@@ -7,7 +7,7 @@ import { clearBlocks } from "./utils.js";
 
 // Function to save JSON data to the server
 async function saveJson(dataToSend) {
-    return fetch('store/save-store', {
+    return fetch('/store/save-store', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -28,7 +28,7 @@ async function saveJson(dataToSend) {
 async function uploadImageToCloudflare(image_url) {
     console.log('Uploading image:', image_url);
     try {
-        const response = await fetch('store/upload-image', {
+        const response = await fetch('/store/upload-image', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
