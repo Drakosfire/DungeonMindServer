@@ -13,7 +13,7 @@ function preloadImages(imageUrls) {
 }
 
 // Preload a specific loading image
-const loadingImageUrl = 'https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/7f2453f9-5ff8-4c52-1d77-f2d0d23c0800/public';
+const loadingImageUrl = 'https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/d7ee86b6-6744-40a2-690d-acb9ae965300/public';
 export const preloadedLoadingGeneratedImage = new Image();
 preloadedLoadingGeneratedImage.src = loadingImageUrl;
 
