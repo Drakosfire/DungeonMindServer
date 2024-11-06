@@ -682,7 +682,7 @@ div[contenteditable="true"] p::first-letter {
     justify-content: center;
 
     cursor: pointer;
-    background-image: url('/static/storegenerator/storegenerator/images/closed-mimic-trashcan.png');
+    background-image: url('/static/storegenerator/images/closed-mimic-trashcan.png');
     /* Adjust the path to your image file */
     background-size: contain;
     background-repeat: no-repeat;
@@ -690,12 +690,12 @@ div[contenteditable="true"] p::first-letter {
 }
 
 .trash-area:hover {
-    background-image: url('/static/storegenerator/storegenerator/images/mimic_trashcan.png');
+    background-image: url('/static/storegenerator/images/mimic_trashcan.png');
 }
 
 .trash-area.over {
     color: white;
-    background-image: url('/static/storegenerator/storegenerator/images/mimic_trashcan.png');
+    background-image: url('/static/storegenerator/images/mimic_trashcan.png');
     /* Example image change */
 }
 
