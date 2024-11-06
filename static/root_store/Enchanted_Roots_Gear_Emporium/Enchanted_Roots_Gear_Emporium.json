@@ -1,0 +1,236 @@
+{
+    "storeData": {
+        "block-0": {
+            "type": "title",
+            "dataPageId": "block-container",
+            "title": "Enchanted Roots Gear Emporium",
+            "description": "Nestled in the heart of the bustling Market District, Enchanted Roots Gear Emporium is a veritable Eden for adventurers seeking gear with a twist of magic and a dash of the unexpected. A vivid cacophony of wild, glowing flora complements the vast inventory of essential equipment and enchanting curiosities. Enchanted Roots was established by Gorgeous, an intelligent fae plant, after it was discovered by a wandering druid in a mystical forest. With an innate understanding of magical flora and fauna, Gorgeous decided to settle in town and share its treasures with the world. Renowned for its unique owner and unusual collection, adventurers and local townsfolk alike swear by the quality and charm of the items sold here."
+        },
+        "block-1": {
+            "type": "image",
+            "dataPageId": "block-container",
+            "sdprompt": "A highly detailed fantasy painting of the exterior of a greenhouse with a store sign that says \"Enchanted Roots Gear Emporium\" that serves double duty as a adventuring gear shop, that is also a greenhouse and is overflowing with plants as well as equipment",
+            "imgUrl": "/static/root_store/Enchanted_Roots_Gear_Emporium/block-1_image.jpeg"
+        },
+        "block-2": {
+            "type": "store-properties",
+            "dataPageId": "block-container",
+            "store-size": "Medium",
+            "store-location": "Everbright",
+            "store-district": "Market District",
+            "store-street": "Wanderer's Way",
+            "store-type": "Gear Shop",
+            "store-hours": "9 AM - 6 PM, daily",
+            "store-services": [
+                "Plant Whispering",
+                "Enchantment Infusion"
+            ],
+            "store-specialties": [
+                "Fae Light Compass"
+            ],
+            "store-rumors": [
+                "It's whispered that if a seed from Gorgeous's pot is planted under a full moon, it will sprout a magical beanstalk leading to another realm."
+            ],
+            "store-reputation": "Renowned for its unique owner and unusual collection, adventurers and local townsfolk alike swear by the quality and charm of the items sold here."
+        },
+        "block-3": {
+            "type": "image",
+            "dataPageId": "block-container",
+            "sdprompt": "A highly detailed fantasy drawing of a sentient potted plant with glowing tendrils, set in an enchanting gear shop filled with vibrant flora and a myriad of magical items.",
+            "imgUrl": "/static/root_store/Enchanted_Roots_Gear_Emporium/block-3_image.jpeg"
+        },
+        "block-4": {
+            "type": "owner",
+            "dataPageId": "block-container",
+            "name": "Gorgeous",
+            "species": "Fae Plant",
+            "class": "Druid",
+            "description": "A vibrant potted plant with bioluminescent tendrils and a captivating aura.",
+            "personality": "Charming, knowledgeable, with a dry sense of humor.",
+            "secrets": [
+                "Contains hidden seeds of a rare, sentient forest.",
+                "Can communicate with other plants within a mile radius."
+            ]
+        },
+        "block-5": {
+            "type": "image",
+            "dataPageId": "block-container",
+            "sdprompt": "A highly detailed fantasy image of a half-elf shopkeeper with forest-green eyes and flower-adorned hair, set in a magical gear shop filled with glowing plants and enchanted equipment.",
+            "imgUrl": "/static/root_store/Enchanted_Roots_Gear_Emporium/block-5_image.jpeg"
+        },
+        "block-6": {
+            "type": "employee",
+            "dataPageId": "block-container",
+            "name": "Briar",
+            "role": "Shopkeeper",
+            "species": "Half-Elf",
+            "description": "A lithe figure with forest-green eyes and hair adorned with tiny flowers.",
+            "personality": "Warm, effervescent, with an encyclopedic knowledge of magical flora."
+        },
+        "block-7": {
+            "type": "customer",
+            "dataPageId": "block-container",
+            "name": "Thistle",
+            "description": "A mischievous forest sprite often seen fluttering among the flora displays.",
+            "influence": "Helps attract other mythical creatures to the shop."
+        },
+        "block-8": {
+            "type": "quest",
+            "dataPageId": "block-container",
+            "name": "The Lost Seed",
+            "description": "Gorgeous has lost a mystical seed that grants immense power to the one who plants it. Locate the seed somewhere in the mystical forest, but beware of the enchanted creatures residing there.",
+            "reward": "An enchanted satchel that holds double its volume without increasing in weight."
+        },
+        "block-9": {
+            "type": "services",
+            "dataPageId": "block-container",
+            "name": "Plant Whispering",
+            "description": "A unique service where Gorgeous communicates with the plants brought in by customers, diagnosing their needs and healing them.",
+            "price": "5 gold pieces per session"
+        },
+        "block-10": {
+            "type": "services",
+            "dataPageId": "block-container",
+            "name": "Enchantment Infusion",
+            "description": "Infuse your regular gear with minor enchantments for enhanced performance.",
+            "price": "20 gold pieces per item"
+        },
+        "block-11": {
+            "type": "specialties",
+            "dataPageId": "block-container",
+            "name": "Fae Light Compass",
+            "description": "A magical compass that not only points north but also glows brightly in the presence of nearby hidden treasures.",
+            "price": "35 gold pieces"
+        },
+        "block-12": {
+            "type": "security",
+            "dataPageId": "block-container",
+            "name": "Root Sentinels",
+            "description": "Invisible roots that prevent theft by entangling or tripping would-be thieves.",
+            "mechanics": "Automatically triggered by any unauthorized attempt to take an item, they immobilize and alert the staff."
+        },
+        "block-13": {
+            "type": "inventory",
+            "dataPageId": "block-container",
+            "core_inventory": [
+                {
+                    "name": "Traveler's Cloak",
+                    "type": "Apparel",
+                    "cost": "12 gold pieces",
+                    "properties": [
+                        "Weather-resistant",
+                        "Self-cleaning"
+                    ]
+                },
+                {
+                    "name": "Explorer's Rope",
+                    "type": "Equipment",
+                    "cost": "8 gold pieces",
+                    "properties": [
+                        "Unbreakable",
+                        "50 feet long"
+                    ]
+                },
+                {
+                    "name": "Glowing Map",
+                    "type": "Navigational Aid",
+                    "cost": "15 gold pieces",
+                    "properties": [
+                        "Illuminates in the dark",
+                        "Self-updating"
+                    ]
+                },
+                {
+                    "name": "Mystic Lantern",
+                    "type": "Tool",
+                    "cost": "10 gold pieces",
+                    "properties": [
+                        "Ever-burning flame",
+                        "Detects magical auras"
+                    ]
+                },
+                {
+                    "name": "Waterproof Satchel",
+                    "type": "Bag",
+                    "cost": "18 gold pieces",
+                    "properties": [
+                        "Waterproof",
+                        "Pockets that adjust for extra space"
+                    ]
+                }
+            ],
+            "weapons": [
+                {
+                    "name": "Verdant Blade",
+                    "type": "Sword",
+                    "cost": "50 gold pieces",
+                    "properties": [
+                        "Chlorophyll-infused edge",
+                        "Regenerates minor damage over time"
+                    ]
+                }
+            ],
+            "armor": [
+                {
+                    "name": "Barkskin Armor",
+                    "type": "Light Armor",
+                    "cost": "40 gold pieces",
+                    "properties": [
+                        "Provides moderate protection",
+                        "Camouflauge in forested areas"
+                    ]
+                }
+            ],
+            "potions": [
+                {
+                    "name": "Elixir of Root Strength",
+                    "type": "Potion",
+                    "cost": "25 gold pieces",
+                    "properties": [
+                        "Temporarily grants enhanced strength and resistance"
+                    ]
+                }
+            ],
+            "scrolls": [
+                {
+                    "name": "",
+                    "type": "",
+                    "cost": "",
+                    "properties": [
+                        ""
+                    ]
+                }
+            ],
+            "magical_items": [
+                {
+                    "name": "Seed of Instant Growth",
+                    "type": "Seed",
+                    "cost": "30 gold pieces",
+                    "properties": [
+                        "Grows into a full-sized tree within minutes, Can be used once"
+                    ]
+                }
+            ],
+            "mundane_items": [
+                {
+                    "name": "",
+                    "type": "",
+                    "cost": "",
+                    "properties": [
+                        ""
+                    ]
+                }
+            ],
+            "miscellaneous_items": [
+                {
+                    "name": "",
+                    "type": "",
+                    "cost": "",
+                    "properties": [
+                        ""
+                    ]
+                }
+            ]
+        }
+    }
+}
