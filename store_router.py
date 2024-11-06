@@ -89,7 +89,7 @@ async def list_loading_images():
         files = os.listdir(loading_images_folder)
         print(f"Files in loading images folder: {files}")
         # Filter and get only the image files
-        image_files = [f"{loading_images_folder}/{file}" for file in files if file.endswith(('.png', '.jpg', '.jpeg', '.gif'))]
+        image_files = [f"/{loading_images_folder}/{file}" for file in files if file.endswith(('.png', '.jpg', '.jpeg', '.gif'))]
         return {"images": image_files}
     except FileNotFoundError:
         print(f"Loading images folder not found: {loading_images_folder}")
