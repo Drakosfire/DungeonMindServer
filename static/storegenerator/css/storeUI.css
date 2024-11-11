@@ -67,16 +67,15 @@ textarea {
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    /* top: 20px; */
-    /* left: 475px; */
+    max-height: 100px;
     z-index: 1001;
     background-color: #f9f9f9;
-    padding: 10px;
+    padding: 15px 20px;
     box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     /* height: 118px; */
     /* background-image: url('/static/storegenerator/storegenerator/images/StoreGeneratorScroll.png'); */
-    background-size: cover;
+    /* background-size: cover; */
 }
 
 
@@ -128,35 +127,42 @@ textarea {
 
 #user-description {
     display: flex;
-    position: left;
-    width: 60%;
-    /* Adjusts the width of the textarea */
-    height: 100px;
-    /* Adjust the height as needed */
-    resize: none;
-    /* Prevent resizing */
+    align-items: center;
+    /* Vertically center content */
+    flex: 1;
+    /* Take up available space */
+    min-width: 200px;
+    /* Minimum width */
+    max-width: 400px;
+    /* Maximum width */
+    height: auto;
+    /* Auto height */
+    min-height: 40px;
+    /* Minimum height */
     margin-right: 20px;
-    /* Space between the textarea and buttons */
+    /* Keep space between textarea and buttons */
+    padding: 8px;
+    /* Add some padding */
+    box-sizing: border-box;
+    /* Include padding in dimensions */
+}
+
+.navigation-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 30%;
+    /* Adjust as needed */
 }
 
 .button-container {
     display: flex;
-    gap: 10px;
-    /* Space between buttons */
-    width: 40%;
-
-}
-
-.button-container-top {
-    justify-content: flex-start;
-    /* Align top row buttons to the left */
-    margin-bottom: 10px;
-    /* Space between first and second row of buttons */
-}
-
-.button-container-bottom {
+    gap: 15px;
+    /* Increased gap between buttons */
+    align-items: center;
     justify-content: flex-end;
-    /* Align bottom row buttons to the left */
+    width: 100%;
+    /* Takes up remaining space */
 }
 
 .page {
@@ -700,10 +706,18 @@ div[contenteditable="true"] p::first-letter {
 }
 
 .button-with-image {
-    width: 100px;
-    /* Adjust as needed */
-    height: 50px;
-    /* Adjust as needed */
+    min-width: 70px;
+    /* Set minimum width */
+    min-height: 70px;
+    /* Set minimum height */
+    width: auto;
+    /* Allow natural sizing */
+    height: auto;
+    /* Allow natural sizing */
+    max-width: 150px;
+    /* Maximum width */
+    max-height: 100px;
+    /* Maximum height */
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
@@ -711,7 +725,6 @@ div[contenteditable="true"] p::first-letter {
     border: none;
     cursor: pointer;
     text-indent: -9999px;
-    /* Hide the button text */
 }
 
 /* Hover effects */
