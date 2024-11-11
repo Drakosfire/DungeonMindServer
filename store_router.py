@@ -3,6 +3,7 @@ from auth_router import get_current_user
 import os
 import json
 from pydantic import BaseModel
+import firestore.firestore_utils as firestore_utils
 import storegenerator.block_builder as block_builder
 import storegenerator.store_helper as store_helper
 import storegenerator.sd_generator as sd
@@ -36,38 +37,47 @@ logger = logging.getLogger(__name__)
 @router.get("/list-saved-stores")
 async def list_saved_stores(current_user: dict = Depends(get_current_user)):
     user_id = current_user['sub']
-    user_directory = os.path.join('saved_data', user_id)
+    # logger.info(f"User ID: {user_id}")
+    # Retrieve a list of all store names for the user, using store_name = extract_title(store_data) from each store    
     try:
-        saved_stores = [store for store in os.listdir(user_directory) if os.path.isdir(os.path.join(user_directory, store))]
-        return {"stores": saved_stores}
-    except FileNotFoundError:
-        return {"stores": []}
+        stores = firestore_utils.query_collection('stores', 'user_id', '==', user_id)
+        logger.info(f"Store 0: {stores[0]}")
+        if stores:
+            store_names = [extract_title(list(store.values())[0]) for store in stores]
+            logger.info(f"Stores: {store_names}")
+            return {"stores": store_names}
+        else:
+            return {"stores": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/load-store")
 async def load_store(storeName: str, current_user: dict = Depends(get_current_user)):
     user_id = current_user['sub']
-    store_directory = os.path.join('saved_data', user_id, storeName)
-    store_file_path = os.path.join(store_directory, f'{storeName}.json')
-    
+    document_id = f"{user_id}_{storeName}"
     try:
-        with open(store_file_path, 'r') as json_file:
-            store_data = json.load(json_file)
-        return store_data
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Store not found")
+        store_data = firestore_utils.get_document('stores', document_id)
+        if store_data:
+            logger.info(f"Store data: {store_data}")
+            return store_data
+        else:
+            raise HTTPException(status_code=404, detail="Store not found")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    
 
 @router.post("/save-store")
 async def save_store(store_data: dict, current_user: dict = Depends(get_current_user)):
     user_id = current_user['sub']
-    print(f"store_data: {store_data}")
+    # print(f"store_data: {store_data}")
     store_name = extract_title(store_data)
-    user_directory = os.path.join('saved_data', user_id, store_name)
-    os.makedirs(user_directory, exist_ok=True)
 
-    file_path = os.path.join(user_directory, f'{store_name}.json')
     try:
-        with open(file_path, 'w') as json_file:
-            json.dump(store_data, json_file, indent=4)
+        #create a unique document ID
+        document_id = f"{user_id}_{store_name}"
+        store_data['user_id'] = user_id
+        firestore_utils.add_document('stores', document_id, store_data)
         return {"message": "Store saved successfully!"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -100,21 +110,6 @@ async def process_description(data: DescriptionRequest):
     llm_output = store_helper.call_llm_and_cleanup(user_input)
     processed_blocks = block_builder.build_blocks(llm_output, block_builder.block_id)
     return {"html_blocks": processed_blocks, "llm_output": llm_output}
-    
-def extract_title(json_data):
-    title = ''
-
-    for block_id, block_data in json_data['storeData'].items():
-        print(f'Block ID: {block_id}, Type: {block_data["type"]}')
-        if block_data['type'] == 'title':
-            print(f'Title found: {block_data["title"]}')
-            title = block_data['title']
-            break
-
-    sanitized_title = ''.join('_' if not c.isalnum() else c for c in title).strip('_')
-    # print(f'Sanitized title: {sanitized_title}')
-
-    return sanitized_title  
 
 # Generate image and upload to Cloudflare
 # This is called from the saveLoadHandler.js file
@@ -141,3 +136,18 @@ async def upload_image(image_data: dict):
     image_url = image_data['image_url']
     uploaded_image = await upload_image_to_cloudflare(image_url)
     return {"image_url": uploaded_image}
+
+def extract_title(json_data):
+    title = ''
+
+    for block_id, block_data in json_data['storeData'].items():
+        print(f'Block ID: {block_id}, Type: {block_data["type"]}')
+        if block_data['type'] == 'title':
+            print(f'Title found: {block_data["title"]}')
+            title = block_data['title']
+            break
+
+    sanitized_title = ''.join('_' if not c.isalnum() else c for c in title).strip('_')
+    # print(f'Sanitized title: {sanitized_title}')
+
+    return sanitized_title  

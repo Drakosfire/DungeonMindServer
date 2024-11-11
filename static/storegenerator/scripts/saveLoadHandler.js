@@ -187,6 +187,7 @@ export async function loadSelectedStore() {
         try {
             const response = await fetch(`/store/load-store?storeName=${encodeURIComponent(selectedStore)}`);
             if (response.ok) {
+                console.log('Response:', response);
                 const responseData = await response.json();
                 console.log('Loaded response data:', responseData);
                 updateState('jsonData', responseData);
