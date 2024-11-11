@@ -30,15 +30,8 @@ export function handleClick(event, elements) {
 
     if (event.target.id === 'dungeonmindButton') {
         console.log('DungeonMind button clicked. Element ID:', event.target.id);
-        const { DUNGEONMIND_BASE_URL } = getConfig();
-
-        // Ensure the URL is absolute
-        if (DUNGEONMIND_BASE_URL.startsWith('http://') || DUNGEONMIND_BASE_URL.startsWith('https://')) {
-            window.location.href = DUNGEONMIND_BASE_URL;
-        } else {
-            // If it doesn't start with a protocol, assume http://
-            window.location.href = `http://${DUNGEONMIND_BASE_URL}`;
-        }
+        // Redirect to the DUNGEONMIND_API_URL that is stored in the window object
+        window.location.href = window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL;
     }
 
     if (event.target.id === 'loginButton') {
