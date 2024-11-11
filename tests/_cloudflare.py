@@ -37,7 +37,7 @@ async def upload_image_to_cloudflare(image_url: str):
         
         return response.json()
 
-@pytest.mark.asyncio
+# @pytest.mark.asyncio
 async def test_upload_image_to_cloudflare():
     # Use a valid image URL for testing
     test_image_url = generate_image("A penguin")

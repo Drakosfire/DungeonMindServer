@@ -13,7 +13,7 @@ from cloudflare.handle_images import upload_image_to_cloudflare
 cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
 cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
 
-# Models
+# Define the request models
 class DescriptionRequest(BaseModel):
     user_input: str
 
@@ -24,7 +24,6 @@ class SaveJsonRequest(BaseModel):
     filename: str
     jsonData: dict
 
-# Define the request model
 class ImageUploadRequest(BaseModel):
     image_url: str
 
