@@ -688,7 +688,7 @@ div[contenteditable="true"] p::first-letter {
     justify-content: center;
 
     cursor: pointer;
-    background-image: url('/static/storegenerator/images/closed-mimic-trashcan.png');
+    background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/af6623b4-6096-4b3f-af24-34d56bc73000/blogpost');
     /* Adjust the path to your image file */
     background-size: contain;
     background-repeat: no-repeat;
@@ -696,12 +696,12 @@ div[contenteditable="true"] p::first-letter {
 }
 
 .trash-area:hover {
-    background-image: url('/static/storegenerator/images/mimic_trashcan.png');
+    background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/bb561156-18cb-4206-5e88-2509f13f7c00/blogpost');
 }
 
 .trash-area.over {
     color: white;
-    background-image: url('/static/storegenerator/images/mimic_trashcan.png');
+    background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/af6623b4-6096-4b3f-af24-34d56bc73000/blogpost');
     /* Example image change */
 }
 
