@@ -1,5 +1,5 @@
 // eventHandlers.js
-import { printScreen, handleReset } from './utils.js';
+import { printScreen, handleReset, shareStore } from './utils.js';
 import { addPage, removePage } from './pageHandler.js';
 import {
     toggleAllTextBlocks,
@@ -60,6 +60,13 @@ export function handleClick(event, elements) {
         // console.log('Print button clicked. Element ID:', event.target.id);
         printScreen();
     }
+
+    // Handle share button click
+    if (event.target.id === 'shareButton') {
+        console.log('Share button clicked. Element ID:', event.target.id);
+        shareStore();
+    }
+
     // Handle generate image button click
 
     const button = event.target.closest('.generate-image-button');

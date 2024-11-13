@@ -92,7 +92,7 @@ export function buildImageBlock(block, blockId) {
         <img id="generated-image-${blockId}" alt="" src="${imageUrl}" class="store-image" style="cursor: pointer; ${imageUrl ? '' : 'display: none;'}">
         <textarea class="image-textarea" data-property="sdprompt" id="sd-prompt-${blockId}" hx-post="/update-stats" hx-trigger="change" hx-target="#user-store-image" hx-swap="outerHTML" title="Store Image">${block.sdprompt || ''}</textarea>
         <button class="generate-image-button" data-block-id="${blockId}">
-            <img src="/static/storegenerator/images/StoreGeneratorGenerateButton.png" alt="Generate Image">
+            <img src="https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/f0bbc7ea-5c80-437d-b98c-6611fd15e400/public" alt="Generate Image">
         </button>        
     </div>`;
     const newBlock = finishBlockProcessing(imageBlockHtml);
