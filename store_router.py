@@ -9,7 +9,7 @@ import storegenerator.store_helper as store_helper
 import storegenerator.sd_generator as sd
 import logging
 from cloudflare.handle_images import upload_image_to_cloudflare
-
+from cloudflareR2.cloudflareR2_utils import upload_html_and_get_url
 # Cloudflare credentials
 cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
 cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
@@ -151,3 +151,11 @@ def extract_title(json_data):
     # print(f'Sanitized title: {sanitized_title}')
 
     return sanitized_title  
+
+# Share store
+@router.post('/share-store')
+async def share_store(html_content: dict):
+    # logger.info(f"html_content: {html_content}")
+    share_url = upload_html_and_get_url(html_content)
+    # print(f"Share URL: {share_url}")
+    return {"share_url": share_url}
