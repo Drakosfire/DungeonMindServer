@@ -95,11 +95,32 @@ export async function saveHandler() {
     initializeSavedStoresDropdown();
 }
 
+// Function to ensure the blocks are in ascending order by ID
+export function ensureAscendingOrder(blocks) {
+    // console.log('Blocks before sorting:', blocks);
+    // Convert block keys to array and sort by numeric portion of block-X
+    const sortedKeys = Object.keys(blocks).sort((a, b) => {
+        const numA = parseInt(a.split('-')[1]);
+        const numB = parseInt(b.split('-')[1]);
+        return numA - numB;
+    });
+
+    // Rebuild object with sorted keys
+    const rebuiltBlocks = {};
+    sortedKeys.forEach(key => {
+        rebuiltBlocks[key] = blocks[key];
+    });
+
+    // console.log('Blocks after sorting:', rebuiltBlocks);
+    return rebuiltBlocks;
+}
+
+// Function to load the store
 export function loadHandler() {
     clearBlocks();
     let state = getState();
     // console.log('State:', state);
-    let blocks = state.jsonData.storeData;
+    let blocks = ensureAscendingOrder(state.jsonData.storeData);
     // console.log('jsonData:', state.jsonData);
     console.log('Blocks:', blocks);
     let ownerCount = 0;
