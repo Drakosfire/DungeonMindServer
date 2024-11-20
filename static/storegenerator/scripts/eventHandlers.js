@@ -20,6 +20,37 @@ import { preloadedLoadingGeneratedImage } from './loadingImage.js';
 export function handleClick(event, elements) {
     console.log('Click detected:', event.target);
 
+    const videoModal = document.getElementById('videoModal');
+    const closeVideo = document.getElementsByClassName('close-video')[0];
+
+    // Check if user has seen the video
+    function hasSeenVideo() {
+        return document.cookie.split('; ').some(row => row.startsWith('hasSeenVideo='));
+    }
+
+    // Set cookie that user has seen the video
+    function setVideoSeen() {
+        document.cookie = 'hasSeenVideo=true; max-age=31536000; path=/'; // Expires in 1 year
+    }
+
+    // Show video if user hasn't seen it
+    if (!hasSeenVideo()) {
+        videoModal.style.display = 'block';
+        setVideoSeen();
+    }
+
+    // Close modal when clicking X
+    closeVideo.onclick = function () {
+        videoModal.style.display = 'none';
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function (event) {
+        if (event.target == videoModal) {
+            videoModal.style.display = 'none';
+        }
+    }
+
     // Handle image clicks for modal display
     if (event.target.tagName === 'IMG' && event.target.id.startsWith('generated-image-')) {
         console.log('Image clicked for modal display. Image ID:', event.target.id);
@@ -120,6 +151,19 @@ export function handleClick(event, elements) {
 
     }
 
+    if (event.target.id === 'tutorialButton') {
+        console.log('Tutorial button clicked');
+        const videoModal = document.getElementById('videoModal');
+        const youtubeFrame = document.getElementById('youtubeFrame');
+
+        // Reset video src to restart it
+        const videoSrc = youtubeFrame.src;
+        youtubeFrame.src = videoSrc;
+
+        // Show modal
+        videoModal.style.display = 'block';
+    }
+
     if (event.target.id === 'submitButton') {
         let state = getState();
         // console.log('Submit description button clicked. Element ID:', event.target.id);
@@ -141,8 +185,6 @@ export function handleClick(event, elements) {
             .then(data => {
                 // console.log('Success:', data);
                 // Store the llm_output in the state for future use
-
-
 
                 updateState('jsonData', convertToBlockFormat(data.llm_output));
 
