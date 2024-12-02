@@ -1,0 +1,627 @@
+Captured store HTML:
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/all.css" rel="stylesheet">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/css.css?family=Open+Sans:400,300,600,700"
+        rel="stylesheet">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/bundle.css" rel="stylesheet">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/style.css" rel="stylesheet">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/5ePHBstyle.css" rel="stylesheet">
+    <link href="https://www.dungeonmind.net/static/storegenerator/css/storeUI.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="brewRenderer" id="brewRenderer">
+
+        <div class="pages" id="pages">
+
+            <div class="page" data-page-id="page-0" id="page-1">
+                <div class="columnWrapper">
+                    <div class="block monster frame wide">
+                        <div class="block-page" type="title" data-block-id="block-0" data-page-id="page-0"
+                            draggable="true">
+                            <h1>
+                                <textarea class="title-textarea" data-property="title" id="user-store-title"
+                                    hx-swap="outerHTML" title="Name of store"
+                                    style="height: 67px;">Enchanted Roots Gear Emporium</textarea>
+                            </h1>
+                            <div contenteditable="true" class="description-textarea" data-property="description"
+                                id="user-store-description" hx-post="/update-stats" hx-trigger="change"
+                                hx-target="#user-monster-description" hx-swap="outerHTML"
+                                title="Any amount or style of description">
+                                <p>Enchanted Roots Gear Emporium Nestled in the heart of the bustling Market District,
+                                    Enchanted Roots Gear Emporium is a veritable Eden for adventurers seeking gear with
+                                    a twist of magic and a dash of the unexpected. A vivid cacophony of wild, glowing
+                                    flora complements the vast inventory of essential equipment and enchanting
+                                    curiosities. Enchanted Roots was established by Gorgeous, an intelligent fae plant,
+                                    after it was discovered by a wandering druid in a mystical forest. With an innate
+                                    understanding of magical flora and fauna, Gorgeous decided to settle in town and
+                                    share its treasures with the world. Renowned for its unique owner and unusual
+                                    collection, adventurers and local townsfolk alike swear by the quality and charm of
+                                    the items sold here. </p>
+                            </div>
+                        </div>
+                        <div class="block-page" type="image" data-block-id="block-1" data-page-id="page-0"
+                            draggable="true">
+                            <img id="generated-image-block-1" alt=""
+                                src="https://dev.dungeonmind.net/static/root_store/Enchanted_Roots_Gear_Emporium/block-1_image.jpeg"
+                                class="store-image" style="cursor: pointer; ">
+                            <textarea class="image-textarea" data-property="sdprompt" id="sd-prompt-block-1"
+                                hx-post="/update-stats" hx-trigger="change" hx-target="#user-store-image"
+                                hx-swap="outerHTML" title="Store Image"
+                                style="height: 80px;">A highly detailed fantasy painting of the exterior of a greenhouse with a store sign that says "Enchanted Roots Gear Emporium" that serves double duty as a adventuring gear shop, that is also a greenhouse and is overflowing with plants as well as equipment</textarea>
+                            <button class="generate-image-button" data-block-id="block-1">
+                                <img src="/static/storegenerator/images/StoreGeneratorGenerateButton.png"
+                                    alt="Generate Image">
+                            </button>
+                        </div>
+                        <div class="block-page" type="store-properties" data-block-id="block-2" data-page-id="page-0"
+                            draggable="true">
+                            <div class="block classTable frame decoration">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th align="left"></th>
+                                            <th align="center"></th>
+                                            <th align="center"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td align="left"><strong> Size</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-size" id="user-store-store-size-block-2"
+                                                    hx-post="/update-stats" hx-trigger="change"
+                                                    hx-target="#user-store-store-size-block-2t" hx-swap="outerHTML"
+                                                    title="store-size">Medium</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Location</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-location"
+                                                    id="user-store-store-location-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change" hx-target="#user-store-store-location-block-2t"
+                                                    hx-swap="outerHTML" title="store-location">Everbright</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> District</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-district"
+                                                    id="user-store-store-district-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change" hx-target="#user-store-store-district-block-2t"
+                                                    hx-swap="outerHTML"
+                                                    title="store-district">Market District</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Street</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-street" id="user-store-store-street-block-2"
+                                                    hx-post="/update-stats" hx-trigger="change"
+                                                    hx-target="#user-store-store-street-block-2t" hx-swap="outerHTML"
+                                                    title="store-street">Wanderer's Way</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Type</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-type" id="user-store-store-type-block-2"
+                                                    hx-post="/update-stats" hx-trigger="change"
+                                                    hx-target="#user-store-store-type-block-2t" hx-swap="outerHTML"
+                                                    title="store-type">Gear Shop</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Hours</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-hours" id="user-store-store-hours-block-2"
+                                                    hx-post="/update-stats" hx-trigger="change"
+                                                    hx-target="#user-store-store-hours-block-2t" hx-swap="outerHTML"
+                                                    title="store-hours">9 AM - 6 PM, daily</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Services</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    id="user-store-store-services-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change" hx-target="#user-store-store-services-block-2t"
+                                                    hx-swap="outerHTML" title=" Services"
+                                                    style="height: 32px;">Plant Whispering, Enchantment Infusion</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Specialties</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    id="user-store-store-specialties-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change"
+                                                    hx-target="#user-store-store-specialties-block-2t"
+                                                    hx-swap="outerHTML"
+                                                    title=" Specialties">Fae Light Compass</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Rumors</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    id="user-store-store-rumors-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change" hx-target="#user-store-store-rumors-block-2t"
+                                                    hx-swap="outerHTML" title=" Rumors"
+                                                    style="height: 64px;">It's whispered that if a seed from Gorgeous's pot is planted under a full moon, it will sprout a magical beanstalk leading to another realm.</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="left"><strong> Reputation</strong></td>
+                                            <td align="right"><textarea class="string-action-description-textarea"
+                                                    data-property="store-reputation"
+                                                    id="user-store-store-reputation-block-2" hx-post="/update-stats"
+                                                    hx-trigger="change"
+                                                    hx-target="#user-store-store-reputation-block-2t"
+                                                    hx-swap="outerHTML" title="store-reputation"
+                                                    style="height: 80px;">Renowned for its unique owner and unusual collection, adventurers and local townsfolk alike swear by the quality and charm of the items sold here.</textarea>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="block-page" type="image" data-block-id="block-3" data-page-id="page-0"
+                            draggable="true">
+                            <img id="generated-image-block-3" alt=""
+                                src="https://dev.dungeonmind.net/static/root_store/Enchanted_Roots_Gear_Emporium/block-3_image.jpeg"
+                                class="store-image" style="cursor: pointer; ">
+                            <textarea class="image-textarea" data-property="sdprompt" id="sd-prompt-block-3"
+                                hx-post="/update-stats" hx-trigger="change" hx-target="#user-store-image"
+                                hx-swap="outerHTML" title="Store Image"
+                                style="height: 65px;">A highly detailed fantasy drawing of a sentient potted plant with glowing tendrils, set in an enchanting gear shop filled with vibrant flora and a myriad of magical items.</textarea>
+                            <button class="generate-image-button" data-block-id="block-3">
+                                <img src="/static/storegenerator/images/StoreGeneratorGenerateButton.png"
+                                    alt="Generate Image">
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="page" data-page-id="page-2" id="page-2">
+                <div class="columnWrapper">
+                    <div class="block monster frame wide">
+                        <div class="block-page" type="owner" ownerid="1" data-block-id="block-4" data-page-id="page-2"
+                            draggable="true">
+                            <h2>Owner</h2>
+                            <h3 id="owner-1"><textarea class="subtitle-textarea" data-property="name"
+                                    id="user-store-owner-1" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-owner-1" hx-swap="outerHTML" title="Owner Name"
+                                    style="height: 43px;">Gorgeous</textarea></h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th align="center"></th>
+                                        <th align="center"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td align="left"><strong>Name</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="name" id="user-store-name-block-4"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="user-store-name-block-4t" hx-swap="outerHTML"
+                                                title="name">Gorgeous</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Species</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="species" id="user-store-species-block-4"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="user-store-species-block-4t" hx-swap="outerHTML"
+                                                title="species">Fae Plant</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Class</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="class" id="user-store-class-block-4"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="user-store-class-block-4t" hx-swap="outerHTML"
+                                                title="class">Druid</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Description</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="description" id="user-store-description-block-4"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="user-store-description-block-4t" hx-swap="outerHTML"
+                                                title="description"
+                                                style="height: 32px;">A vibrant potted plant with bioluminescent tendrils and a captivating aura.</textarea>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Personality</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="personality" id="user-store-personality-block-4"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="user-store-personality-block-4t" hx-swap="outerHTML"
+                                                title="personality"
+                                                style="height: 32px;">Charming, knowledgeable, with a dry sense of humor.</textarea>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Secrets</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                id="user-store-secrets-block-4" hx-post="/update-stats"
+                                                hx-trigger="change" hx-target="#user-store-secrets-block-4t"
+                                                hx-swap="outerHTML" title="Secrets"
+                                                style="height: 48px;">Contains hidden seeds of a rare, sentient forest., Can communicate with other plants within a mile radius.</textarea>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="block-page" type="image" data-block-id="block-5" data-page-id="page-2"
+                            draggable="true">
+                            <img id="generated-image-block-5" alt=""
+                                src="https://dev.dungeonmind.net/static/root_store/Enchanted_Roots_Gear_Emporium/block-5_image.jpeg"
+                                class="store-image" style="cursor: pointer; ">
+                            <textarea class="image-textarea" data-property="sdprompt" id="sd-prompt-block-5"
+                                hx-post="/update-stats" hx-trigger="change" hx-target="#user-store-image"
+                                hx-swap="outerHTML" title="Store Image"
+                                style="height: 65px;">A highly detailed fantasy image of a half-elf shopkeeper with forest-green eyes and flower-adorned hair, set in a magical gear shop filled with glowing plants and enchanted equipment.</textarea>
+                            <button class="generate-image-button" data-block-id="block-5">
+                                <img src="/static/storegenerator/images/StoreGeneratorGenerateButton.png"
+                                    alt="Generate Image">
+                            </button>
+                        </div>
+                        <div class="block-page" type="employee" employeeid="1" data-block-id="block-6"
+                            data-page-id="page-2" draggable="true">
+                            <h2>Employee</h2>
+                            <h3 id="employee-1"><textarea class="subtitle-textarea" data-property="name" id="employee-1"
+                                    hx-post="/update-stats" hx-trigger="change" hx-target="#employee-1"
+                                    hx-swap="outerHTML" title="Employee Name" style="height: 43px;">Briar</textarea>
+                            </h3>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th align="center"></th>
+                                        <th align="center"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td align="left"><strong>Name</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="name" id="name-block-6" hx-post="/update-stats"
+                                                hx-trigger="change" hx-target="#name-block-6" hx-swap="outerHTML"
+                                                title="name">Briar</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Role</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="role" id="role-block-6" hx-post="/update-stats"
+                                                hx-trigger="change" hx-target="#role-block-6" hx-swap="outerHTML"
+                                                title="role">Shopkeeper</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Species</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="species" id="species-block-6" hx-post="/update-stats"
+                                                hx-trigger="change" hx-target="#species-block-6" hx-swap="outerHTML"
+                                                title="species">Half-Elf</textarea></td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Description</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="description" id="description-block-6"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="#description-block-6" hx-swap="outerHTML" title="description"
+                                                style="height: 32px;">A lithe figure with forest-green eyes and hair adorned with tiny flowers.</textarea>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="left"><strong>Personality</strong></td>
+                                        <td align="right"><textarea class="string-action-description-textarea"
+                                                data-property="personality" id="personality-block-6"
+                                                hx-post="/update-stats" hx-trigger="change"
+                                                hx-target="#personality-block-6" hx-swap="outerHTML" title="personality"
+                                                style="height: 32px;">Warm, effervescent, with an encyclopedic knowledge of magical flora.</textarea>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="block-page" type="block-9" "block-9id"="1" data-block-id="block-9"
+                            data-page-id="page-2" draggable="true">
+                            <h1 id="store-services">services</h1>
+                            <h3 id="services-1">
+                                <textarea class="subtitle-textarea" data-property="name" id="services-1"
+                                    hx-post="/update-stats" hx-trigger="change" hx-target="#services-1t"
+                                    hx-swap="outerHTML" title="services"
+                                    style="height: 43px;">Plant Whispering</textarea>
+                            </h3>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="description"
+                                    id="user-store-services-block-9" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-services-block-9t" hx-swap="outerHTML" title="services"
+                                    style="height: 48px;">Description: A unique service where Gorgeous communicates with the plants brought in by customers, diagnosing their needs and healing them.</textarea>
+                            </p>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="price"
+                                    id="user-store-services-block-9" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-services-block-9t" hx-swap="outerHTML"
+                                    title="services">Price: 5 gold pieces per session</textarea>
+                            </p>
+                        </div>
+                        <div class="block-page" type="block-10" "block-10id"="2" data-block-id="block-10"
+                            data-page-id="page-2" draggable="true">
+                            <h3 id="services-2">
+                                <textarea class="subtitle-textarea" data-property="name" id="services-2"
+                                    hx-post="/update-stats" hx-trigger="change" hx-target="#services-2t"
+                                    hx-swap="outerHTML" title="services"
+                                    style="height: 43px;">Enchantment Infusion</textarea>
+                            </h3>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="description"
+                                    id="user-store-services-block-10" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-services-block-10t" hx-swap="outerHTML" title="services"
+                                    style="height: 32px;">Description: Infuse your regular gear with minor enchantments for enhanced performance.</textarea>
+                            </p>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="price"
+                                    id="user-store-services-block-10" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-services-block-10t" hx-swap="outerHTML"
+                                    title="services">Price: 20 gold pieces per item</textarea>
+                            </p>
+                        </div>
+                        <div class="block-page" type="block-11" "block-11id"="1" data-block-id="block-11"
+                            data-page-id="page-2" draggable="true">
+                            <h1 id="store-specialties">specialties</h1>
+                            <h3 id="specialties-1">
+                                <textarea class="subtitle-textarea" data-property="name" id="specialties-1"
+                                    hx-post="/update-stats" hx-trigger="change" hx-target="#specialties-1t"
+                                    hx-swap="outerHTML" title="specialties"
+                                    style="height: 43px;">Fae Light Compass</textarea>
+                            </h3>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="description"
+                                    id="user-store-specialties-block-11" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-specialties-block-11t" hx-swap="outerHTML"
+                                    title="specialties"
+                                    style="height: 48px;">Description: A magical compass that not only points north but also glows brightly in the presence of nearby hidden treasures.</textarea>
+                            </p>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="price"
+                                    id="user-store-specialties-block-11" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-specialties-block-11t" hx-swap="outerHTML"
+                                    title="specialties">Price: 35 gold pieces</textarea>
+                            </p>
+                        </div>
+                        <div class="block-page" type="block-12" "block-12id"="1" data-block-id="block-12"
+                            data-page-id="page-2" draggable="true">
+                            <h1 id="store-security">security</h1>
+                            <h3 id="security-1">
+                                <textarea class="subtitle-textarea" data-property="name" id="security-1"
+                                    hx-post="/update-stats" hx-trigger="change" hx-target="#security-1t"
+                                    hx-swap="outerHTML" title="security" style="height: 43px;">Root Sentinels</textarea>
+                            </h3>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="description"
+                                    id="user-store-security-block-12" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-security-block-12t" hx-swap="outerHTML" title="security"
+                                    style="height: 32px;">Description: Invisible roots that prevent theft by entangling or tripping would-be thieves.</textarea>
+                            </p>
+                            <p>
+                                <textarea class="string-action-description-textarea" data-property="mechanics"
+                                    id="user-store-security-block-12" hx-post="/update-stats" hx-trigger="change"
+                                    hx-target="#user-store-security-block-12t" hx-swap="outerHTML" title="security"
+                                    style="height: 32px;">Mechanics: Automatically triggered by any unauthorized attempt to take an item, they immobilize and alert the staff.</textarea>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="page" data-page-id="page-3" id="page-3">
+                <div class="columnWrapper">
+                    <div class="block monster frame wide">
+                        <div class="block-page" data-block-id="block-13" data-page-id="page-3" draggable="true">
+                            <div class="block classTable frame decoration">
+                                <h5 id="inventory">Inventory</h5>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th align="center">Name</th>
+                                            <th align="center">Type</th>
+                                            <th align="center">Cost</th>
+                                            <th align="center">Properties</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-0-name"
+                                                    id="user-store-item-name-block-13-0" hx-post="/update-stats"
+                                                    title="Item Name" style="height: 32px;">Traveler's Cloak</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-0-type"
+                                                    id="user-store-item-type-block-13-0" hx-post="/update-stats"
+                                                    title="Item Type">Apparel</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-0-cost"
+                                                    id="user-store-item-cost-block-13-0" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">12 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-0-properties"
+                                                    id="user-store-item-properties-block-13-0" title="Item Properties"
+                                                    style="height: 48px;">Weather-resistant, Self-cleaning</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-1-name"
+                                                    id="user-store-item-name-block-13-1" hx-post="/update-stats"
+                                                    title="Item Name" style="height: 32px;">Explorer's Rope</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-1-type"
+                                                    id="user-store-item-type-block-13-1" hx-post="/update-stats"
+                                                    title="Item Type">Equipment</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-1-cost"
+                                                    id="user-store-item-cost-block-13-1" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">8 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-1-properties"
+                                                    id="user-store-item-properties-block-13-1" title="Item Properties"
+                                                    style="height: 32px;">Unbreakable, 50 feet long</textarea></td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-2-name"
+                                                    id="user-store-item-name-block-13-2" hx-post="/update-stats"
+                                                    title="Item Name" style="height: 32px;">Glowing Map</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-2-type"
+                                                    id="user-store-item-type-block-13-2" hx-post="/update-stats"
+                                                    title="Item Type" style="height: 32px;">Navigational Aid</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-2-cost"
+                                                    id="user-store-item-cost-block-13-2" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">15 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-2-properties"
+                                                    id="user-store-item-properties-block-13-2" title="Item Properties"
+                                                    style="height: 48px;">Illuminates in the dark, Self-updating</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-3-name"
+                                                    id="user-store-item-name-block-13-3" hx-post="/update-stats"
+                                                    title="Item Name" style="height: 32px;">Mystic Lantern</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-3-type"
+                                                    id="user-store-item-type-block-13-3" hx-post="/update-stats"
+                                                    title="Item Type">Tool</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-3-cost"
+                                                    id="user-store-item-cost-block-13-3" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">10 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-3-properties"
+                                                    id="user-store-item-properties-block-13-3" title="Item Properties"
+                                                    style="height: 48px;">Ever-burning flame, Detects magical auras</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-4-name"
+                                                    id="user-store-item-name-block-13-4" hx-post="/update-stats"
+                                                    title="Item Name"
+                                                    style="height: 32px;">Waterproof Satchel</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-4-type"
+                                                    id="user-store-item-type-block-13-4" hx-post="/update-stats"
+                                                    title="Item Type">Bag</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-4-cost"
+                                                    id="user-store-item-cost-block-13-4" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">18 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="core_inventory-4-properties"
+                                                    id="user-store-item-properties-block-13-4" title="Item Properties"
+                                                    style="height: 64px;">Waterproof, Pockets that adjust for extra space</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="weapons-0-name" id="user-store-item-name-block-13-0"
+                                                    hx-post="/update-stats" title="Item Name"
+                                                    style="height: 32px;">Verdant Blade</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="weapons-0-type" id="user-store-item-type-block-13-0"
+                                                    hx-post="/update-stats" title="Item Type">Sword</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="weapons-0-cost" id="user-store-item-cost-block-13-0"
+                                                    hx-post="/update-stats" title="Item Cost"
+                                                    style="height: 32px;">50 gold pieces</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="weapons-0-properties"
+                                                    id="user-store-item-properties-block-13-0" title="Item Properties"
+                                                    style="height: 80px;">Chlorophyll-infused edge, Regenerates minor damage over time</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="armor-0-name" id="user-store-item-name-block-13-0"
+                                                    hx-post="/update-stats" title="Item Name"
+                                                    style="height: 32px;">Barkskin Armor</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="armor-0-type" id="user-store-item-type-block-13-0"
+                                                    hx-post="/update-stats" title="Item Type"
+                                                    style="height: 32px;">Light Armor</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="armor-0-cost" id="user-store-item-cost-block-13-0"
+                                                    hx-post="/update-stats" title="Item Cost"
+                                                    style="height: 32px;">40 gold pieces</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="armor-0-properties"
+                                                    id="user-store-item-properties-block-13-0" title="Item Properties"
+                                                    style="height: 96px;">Provides moderate protection, Camouflauge in forested areas</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="potions-0-name" id="user-store-item-name-block-13-0"
+                                                    hx-post="/update-stats" title="Item Name"
+                                                    style="height: 32px;">Elixir of Root Strength</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="potions-0-type" id="user-store-item-type-block-13-0"
+                                                    hx-post="/update-stats" title="Item Type">Potion</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="potions-0-cost" id="user-store-item-cost-block-13-0"
+                                                    hx-post="/update-stats" title="Item Cost"
+                                                    style="height: 32px;">25 gold pieces</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="potions-0-properties"
+                                                    id="user-store-item-properties-block-13-0" title="Item Properties"
+                                                    style="height: 80px;">Temporarily grants enhanced strength and resistance</textarea>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="magical_items-0-name"
+                                                    id="user-store-item-name-block-13-0" hx-post="/update-stats"
+                                                    title="Item Name"
+                                                    style="height: 48px;">Seed of Instant Growth</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="magical_items-0-type"
+                                                    id="user-store-item-type-block-13-0" hx-post="/update-stats"
+                                                    title="Item Type">Seed</textarea></td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="magical_items-0-cost"
+                                                    id="user-store-item-cost-block-13-0" hx-post="/update-stats"
+                                                    title="Item Cost" style="height: 32px;">30 gold pieces</textarea>
+                                            </td>
+                                            <td align="center"><textarea class="string-action-description-textarea"
+                                                    data-property="magical_items-0-properties"
+                                                    id="user-store-item-properties-block-13-0" title="Item Properties"
+                                                    style="height: 80px;">Grows into a full-sized tree within minutes, Can be used once</textarea>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+
+</html>
+utils.js:110:13
