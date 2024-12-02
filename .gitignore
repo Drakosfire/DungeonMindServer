@@ -35,6 +35,7 @@ replay_pid*
 node_modules/
 __pycache__/
 saved_data/
+models--BAAI--bge-m3/
 
 #React build folder
 react-landing/
