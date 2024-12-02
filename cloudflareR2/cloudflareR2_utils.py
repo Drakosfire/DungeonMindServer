@@ -8,28 +8,28 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def convert_pdf_to_single_image(path_to_pdf):
-    """Test converting a PDF to a single long image."""
-    # Convert PDF pages to images
-    images = convert_from_path(path_to_pdf)
+# def convert_pdf_to_single_image(path_to_pdf):
+#     """Test converting a PDF to a single long image."""
+#     # Convert PDF pages to images
+#     images = convert_from_path(path_to_pdf)
     
-    # Get dimensions for the combined image
-    width = images[0].width
-    total_height = sum(img.height for img in images)
+#     # Get dimensions for the combined image
+#     width = images[0].width
+#     total_height = sum(img.height for img in images)
     
-    # Create a new blank image with the combined height
-    combined_image = Image.new('RGB', (width, total_height), 'white')
+#     # Create a new blank image with the combined height
+#     combined_image = Image.new('RGB', (width, total_height), 'white')
     
-    # Paste each page image at the appropriate vertical position
-    current_height = 0
-    for img in images:
-        combined_image.paste(img, (0, current_height))
-        current_height += img.height
+#     # Paste each page image at the appropriate vertical position
+#     current_height = 0
+#     for img in images:
+#         combined_image.paste(img, (0, current_height))
+#         current_height += img.height
     
-    # Save the combined image
-    output_path = "tests/cloudflareR2/combined_pages.jpg"
-    combined_image.save(output_path, "JPEG", quality=95)
-    print(f"Created single combined image at: {output_path}")
+#     # Save the combined image
+#     output_path = "tests/cloudflareR2/combined_pages.jpg"
+#     combined_image.save(output_path, "JPEG", quality=95)
+#     print(f"Created single combined image at: {output_path}")
 
 def upload_html_and_get_url(html_content, bucket_name='store-generator'):
     html = html_content['html']
