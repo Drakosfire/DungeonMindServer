@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+
+
 import os
 import logging
 from dotenv import load_dotenv
@@ -20,8 +22,10 @@ else:
     load_dotenv('.env.development')
     logger.info(f"Development environment detected.")
 
+# Import routers AFTER loading the environment variables
 from auth_router import router as auth_router
-from store_router import router as store_router
+from storegenerator.store_router import router as store_router
+from ruleslawyer.ruleslawyer_router import router as lawyer_router
 
 app = FastAPI()
 
@@ -57,6 +61,7 @@ app.add_middleware(
 # Routers
 app.include_router(auth_router, prefix='/auth')
 app.include_router(store_router, prefix="/store")
+app.include_router(lawyer_router, prefix="/ruleslawyer")
 
 # Health check route
 @app.get("/health", response_class=JSONResponse)
