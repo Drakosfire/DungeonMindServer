@@ -1,5 +1,5 @@
 import pytest
-from firestore_utils import add_document, get_document, update_document, delete_document, query_collection
+from firestore.firestore_utils import add_document, get_document, update_document, delete_document, query_collection
 
 COLLECTION_NAME = "test_collection"
 
