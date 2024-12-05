@@ -59,9 +59,9 @@ app.add_middleware(
 )
 
 # Routers
-app.include_router(auth_router, prefix='/auth')
-app.include_router(store_router, prefix="/store")
-app.include_router(lawyer_router, prefix="/ruleslawyer")
+app.include_router(auth_router, prefix='/api/auth')
+app.include_router(store_router, prefix="/api/store")
+app.include_router(lawyer_router, prefix="/api/ruleslawyer")
 
 # Health check route
 @app.get("/health", response_class=JSONResponse)
