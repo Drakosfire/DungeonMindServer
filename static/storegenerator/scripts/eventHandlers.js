@@ -67,13 +67,13 @@ export function handleClick(event, elements) {
 
     if (event.target.id === 'loginButton') {
         console.log('Login button clicked. Element ID:', event.target.id);
-        window.location.href = '/auth/login';
+        window.location.href = '/api/auth/login';
     }
 
     if (event.target.id === 'logoutButton') {
         console.log('Logout button clicked. Element ID:', event.target.id);
         resetState();
-        window.location.href = '/auth/logout';
+        window.location.href = '/api/auth/logout';
     }
     // Handle modal close button
     if (event.target.id === 'closeModal') {
