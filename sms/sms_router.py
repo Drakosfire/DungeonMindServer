@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Request, Response, HTTPException
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.request_validator import RequestValidator
 import httpx
 import logging
 import os
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 EXTERNAL_API_KEY = os.getenv("EXTERNAL_MESSAGE_API_KEY")
 EXTERNAL_ENDPOINT = os.getenv("EXTERNAL_SMS_ENDPOINT")
+TWILIO_API_KEY = os.getenv("TWILIO_API_KEY")  # API Key (username)
+TWILIO_API_SECRET = os.getenv("TWILIO_API_SECRET")  # API Key Secret (password)
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # seconds
 
@@ -50,7 +53,23 @@ async def receive_sms(request: Request) -> Response:
     resp = MessagingResponse()
 
     try:
+        # Get the raw request body for Twilio validation
+        body = await request.body()
         form_data = await request.form()
+        
+        # Validate the request is from Twilio using API Key authentication
+        if not TWILIO_API_KEY or not TWILIO_API_SECRET:
+            logger.error("Missing Twilio API credentials")
+            raise HTTPException(status_code=500, detail="Server configuration error")
+
+        validator = RequestValidator(TWILIO_API_SECRET)  # Use API Secret for validation
+        url = str(request.url)
+        signature = request.headers.get("X-Twilio-Signature", "")
+        
+        if not validator.validate(url, form_data, signature):
+            logger.warning(f"Invalid Twilio signature for request from {request.client.host}")
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
         message_body = form_data.get("Body", "")
         from_number = form_data.get("From", "")
         message_sid = form_data.get("MessageSid", "")  # Twilio's unique message ID
@@ -96,6 +115,8 @@ async def receive_sms(request: Request) -> Response:
             }
             return Response(content=str(resp), media_type="application/xml", status_code=202)  # Accepted but not processed
 
+    except HTTPException as he:
+        raise he
     except Exception as e:
         logger.error(f"Error processing SMS: {str(e)}")
         return Response(content=str(resp), media_type="application/xml", status_code=500)
