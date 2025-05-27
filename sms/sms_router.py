@@ -31,9 +31,16 @@ def get_cached_response(message_id: str) -> Optional[dict]:
 async def forward_message(payload: dict, headers: dict, retry_count: int = 0) -> bool:
     """Forward message to external API with retry logic"""
     try:
+        logger.info(f"=== Forwarding Message to External API ===")
+        logger.info(f"Endpoint: {EXTERNAL_ENDPOINT}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+        logger.info(f"Headers: {json.dumps(headers, indent=2)}")
+        
         async with httpx.AsyncClient(timeout=10.0) as client:  # 10 second timeout
             logger.info(f"Making request to {EXTERNAL_ENDPOINT}")
             response = await client.post(EXTERNAL_ENDPOINT, json=payload, headers=headers)
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response body: {response.text}")
             response.raise_for_status()
             logger.info(f"External API response: {response.status_code}")
             return True
@@ -57,6 +64,7 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
             return False
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error {e.response.status_code}: {str(e)}")
+        logger.error(f"Response body: {e.response.text}")
         if retry_count < MAX_RETRIES:
             logger.warning(f"Retry {retry_count + 1}/{MAX_RETRIES} for message forwarding: HTTP {e.response.status_code}")
             await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
@@ -87,6 +95,14 @@ async def receive_sms(request: Request) -> Response:
         body = await request.body()
         form_data = await request.form()
         
+        # Log incoming request details
+        logger.info("=== Incoming SMS Request ===")
+        logger.info(f"Request URL: {request.url}")
+        logger.info(f"Request method: {request.method}")
+        logger.info(f"Request headers: {dict(request.headers)}")
+        logger.info(f"Request body: {body}")
+        logger.info(f"Form data: {dict(form_data)}")
+        
         # Validate the request is from Twilio using API Key authentication
         if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
             logger.error("Missing Twilio API credentials")
@@ -99,16 +115,30 @@ async def receive_sms(request: Request) -> Response:
         # Get the form data as a dict for validation
         form_dict = dict(form_data)
         
+        # Debug logging for validation
+        logger.info("=== Twilio Validation Details ===")
+        logger.info(f"URL for validation: {url}")
+        logger.info(f"Received signature: {signature}")
+        logger.info(f"Form data for validation: {form_dict}")
+        logger.info(f"Auth token present: {bool(TWILIO_AUTH_TOKEN)}")
+        
         # Validate the request
-        if not validator.validate(url, form_dict, signature):
+        is_valid = validator.validate(url, form_dict, signature)
+        logger.info(f"Validation result: {'Valid' if is_valid else 'Invalid'}")
+        
+        if not is_valid:
             logger.warning(f"Invalid Twilio signature for request from {request.client.host}")
+            logger.warning(f"Validation failed with URL: {url}")
             return Response(content=str(resp), media_type="application/xml", status_code=403)
 
         message_body = form_data.get("Body", "")
         from_number = form_data.get("From", "")
         message_sid = form_data.get("MessageSid", "")  # Twilio's unique message ID
         
-        logger.info(f"Received SMS from {from_number}: {message_body}")
+        logger.info(f"=== Message Details ===")
+        logger.info(f"From: {from_number}")
+        logger.info(f"Body: {message_body}")
+        logger.info(f"MessageSid: {message_sid}")
 
         if not EXTERNAL_API_KEY or not EXTERNAL_ENDPOINT:
             logger.error("Missing EXTERNAL_MESSAGE_API_KEY or EXTERNAL_SMS_ENDPOINT")
@@ -124,7 +154,8 @@ async def receive_sms(request: Request) -> Response:
             "from": from_number,
             "body": message_body,
             "message_sid": message_sid,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "conversationId": "default"  # Add a default conversation ID if none is provided
         }
         headers = {
             "Authorization": f"Bearer {EXTERNAL_API_KEY}",
@@ -132,8 +163,10 @@ async def receive_sms(request: Request) -> Response:
         }
 
         # Log the forwarding attempt
-        logger.info(f"Attempting to forward message to {EXTERNAL_ENDPOINT}")
-        logger.debug(f"Forwarding payload: {json.dumps(payload)}")
+        logger.info(f"=== Forwarding Message ===")
+        logger.info(f"Forwarding to: {EXTERNAL_ENDPOINT}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+        logger.info(f"Headers: {json.dumps(headers, indent=2)}")
 
         # Attempt to forward the message
         success = await forward_message(payload, headers)
