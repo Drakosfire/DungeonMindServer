@@ -10,17 +10,26 @@ import os
 import logging
 from dotenv import load_dotenv
 
-
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get the current environment
 env = os.environ.get('ENVIRONMENT', 'development')
 if env == 'production':
-    load_dotenv('.env.production')
+    load_dotenv('.env.production', override=True)
     logger.info(f"Production environment detected.")
 else:
-    load_dotenv('.env.development')
+    load_dotenv('.env.development', override=True)
     logger.info(f"Development environment detected.")
+
+# Debug logging for environment variables
+logger.info(f"EXTERNAL_MESSAGE_API_KEY present: {bool(os.getenv('EXTERNAL_MESSAGE_API_KEY'))}")
+logger.info(f"EXTERNAL_MESSAGE_API_KEY value: {'*' * len(os.getenv('EXTERNAL_MESSAGE_API_KEY', '')) if os.getenv('EXTERNAL_MESSAGE_API_KEY') else 'None'}")
+logger.info(f"EXTERNAL_SMS_ENDPOINT present: {bool(os.getenv('EXTERNAL_SMS_ENDPOINT'))}")
+logger.info(f"EXTERNAL_SMS_ENDPOINT value: {os.getenv('EXTERNAL_SMS_ENDPOINT', 'None')}")
+logger.info(f"TWILIO_ACCOUNT_SID present: {bool(os.getenv('TWILIO_ACCOUNT_SID'))}")
+logger.info(f"TWILIO_AUTH_TOKEN present: {bool(os.getenv('TWILIO_AUTH_TOKEN'))}")
 
 # Import routers AFTER loading the environment variables
 from auth_router import router as auth_router
