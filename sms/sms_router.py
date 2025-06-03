@@ -121,6 +121,12 @@ async def receive_sms(request: Request) -> Response:
         logger.info(f"Received signature: {signature}")
         logger.info(f"Form data for validation: {form_dict}")
         logger.info(f"Auth token present: {bool(TWILIO_AUTH_TOKEN)}")
+        logger.info(f"Auth token length: {len(TWILIO_AUTH_TOKEN) if TWILIO_AUTH_TOKEN else 0}")
+        
+        # Calculate expected signature for debugging
+        expected_signature = validator.compute_signature(url, form_dict)
+        logger.info(f"Expected signature: {expected_signature}")
+        logger.info(f"Signature match: {signature == expected_signature}")
         
         # Validate the request
         is_valid = validator.validate(url, form_dict, signature)
@@ -155,7 +161,10 @@ async def receive_sms(request: Request) -> Response:
             "body": message_body,
             "message_sid": message_sid,
             "timestamp": datetime.utcnow().isoformat(),
-            "conversationId": "default"  # Add a default conversation ID if none is provided
+            "conversationId": "",
+            "metadata": {
+                "phoneNumber": from_number
+            }
         }
         headers = {
             "Authorization": f"Bearer {EXTERNAL_API_KEY}",
