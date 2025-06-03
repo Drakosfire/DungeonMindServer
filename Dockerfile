@@ -23,12 +23,12 @@ WORKDIR $HOME/app
 # Copy the current directory contents into the container at $HOME/app
 COPY --chown=user . $HOME/app
 
-# Install Poetry
+# Install uv
 RUN python -m pip install --upgrade pip && \
-	pip install poetry
+    pip install uv
 
-# Install dependencies using Poetry
-RUN poetry install --no-root --only main
+# Install dependencies using uv
+RUN uv pip install .
 
 # Expose port 7860 for the FastAPI app
 EXPOSE 7860
