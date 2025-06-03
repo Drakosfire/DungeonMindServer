@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Install necessary networking tools
 RUN apt-get update && apt-get install -y iputils-ping
@@ -20,15 +20,19 @@ ENV HOME=/home/user \
 # Set the working directory in the container
 WORKDIR $HOME/app
 
-# Copy the current directory contents into the container at $HOME/app
-COPY --chown=user . $HOME/app
-
 # Install uv
 RUN python -m pip install --upgrade pip && \
     pip install uv
 
+# Copy dependency files first for better caching
+COPY --chown=user pyproject.toml .
+COPY --chown=user uv.lock .
+
 # Install dependencies using uv
-RUN uv pip install .
+RUN uv venv && uv pip install -r uv.lock
+
+# Copy the rest of the application
+COPY --chown=user . .
 
 # Expose port 7860 for the FastAPI app
 EXPOSE 7860
