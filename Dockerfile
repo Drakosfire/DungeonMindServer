@@ -10,6 +10,18 @@ RUN useradd -m -u 1000 user
 # Create the saved_data directory and set correct permissions
 RUN mkdir -p /home/user/app/saved_data && chown user:user /home/user/app/saved_data
 
+# Install uv
+RUN python -m pip install --upgrade pip && \
+    pip install uv
+
+# Copy dependency files first for better caching
+COPY --chown=user pyproject.toml .
+
+# Install dependencies using uv
+RUN uv venv \
+    && uv pip compile --quiet --no-emit-index-url --no-emit-find-links pyproject.toml > requirements.txt \
+    && uv pip install -r requirements.txt
+
 # Switch to the "user" user
 USER user
 
@@ -19,17 +31,6 @@ ENV HOME=/home/user \
 
 # Set the working directory in the container
 WORKDIR $HOME/app
-
-# Install uv
-RUN python -m pip install --upgrade pip && \
-    pip install uv
-
-# Copy dependency files first for better caching
-COPY --chown=user pyproject.toml .
-COPY --chown=user uv.lock .
-
-# Install dependencies using uv
-RUN uv venv && uv pip install -r uv.lock
 
 # Copy the rest of the application
 COPY --chown=user . .
