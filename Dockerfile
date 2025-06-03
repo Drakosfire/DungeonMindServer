@@ -34,4 +34,4 @@ RUN poetry install --no-root --only main
 EXPOSE 7860
 
 # Define the command to run the FastAPI app with Uvicorn
-CMD ["poetry", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
