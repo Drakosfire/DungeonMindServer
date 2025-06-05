@@ -146,15 +146,16 @@ async def receive_sms(request: Request) -> Response:
         logger.info(f"Body: {message_body}")
         logger.info(f"MessageSid: {message_sid}")
 
-        if not EXTERNAL_API_KEY or not EXTERNAL_ENDPOINT:
-            logger.error("Missing EXTERNAL_MESSAGE_API_KEY or EXTERNAL_SMS_ENDPOINT")
-            return Response(content=str(resp), media_type="application/xml", status_code=500)
-
         # Check cache first
         cached_response = get_cached_response(message_sid)
         if cached_response:
             logger.info(f"Using cached response for message {message_sid}")
             return Response(content=str(resp), media_type="application/xml")
+
+        # Only check external API key and endpoint when forwarding
+        if not EXTERNAL_ENDPOINT:
+            logger.error("Missing EXTERNAL_SMS_ENDPOINT")
+            return Response(content=str(resp), media_type="application/xml", status_code=500)
 
         payload = {
             "from": from_number,
@@ -167,7 +168,6 @@ async def receive_sms(request: Request) -> Response:
             }
         }
         headers = {
-            "Authorization": f"Bearer {EXTERNAL_API_KEY}",
             "Content-Type": "application/json"
         }
 
