@@ -171,7 +171,8 @@ async def receive_sms(request: Request) -> Response:
             }
         }
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {EXTERNAL_API_KEY}"
         }
 
         # Log the forwarding attempt
