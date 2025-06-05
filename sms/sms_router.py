@@ -14,7 +14,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 EXTERNAL_API_KEY = os.getenv("EXTERNAL_MESSAGE_API_KEY")
-EXTERNAL_ENDPOINT = os.getenv("EXTERNAL_SMS_ENDPOINT")
+EXTERNAL_ENDPOINT = os.getenv("EXTERNAL_SMS_ENDPOINT", "http://100.92.179.100:3081/api/receive-sms")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")  # API Key (username)
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")  # Changed from TWILIO_API_SECRET to TWILIO_AUTH_TOKEN
 MAX_RETRIES = 3
@@ -36,7 +36,10 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
         logger.info(f"Payload: {json.dumps(payload, indent=2)}")
         logger.info(f"Headers: {json.dumps(headers, indent=2)}")
         
-        async with httpx.AsyncClient(timeout=10.0) as client:  # 10 second timeout
+        # Use system certificate but disable hostname verification since we're using an IP
+        ssl_context = httpx.create_ssl_context(verify="/media/drakosfire/Projects/Projects/Sizzek/mcp-servers/twilio-sms/ssl/dev.local.crt")
+        
+        async with httpx.AsyncClient(timeout=10.0, verify=ssl_context, trust_env=False) as client:  # 10 second timeout
             logger.info(f"Making request to {EXTERNAL_ENDPOINT}")
             response = await client.post(EXTERNAL_ENDPOINT, json=payload, headers=headers)
             logger.info(f"Response status: {response.status_code}")
