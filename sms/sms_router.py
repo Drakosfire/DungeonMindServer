@@ -109,7 +109,10 @@ async def receive_sms(request: Request) -> Response:
             raise HTTPException(status_code=500, detail="Server configuration error")
 
         validator = RequestValidator(TWILIO_AUTH_TOKEN)  # Use API Secret for validation
-        url = str(request.url)
+        
+        # Use the production URL for validation
+        url = "https://www.dungeonmind.net/api/sms/receive"
+        
         signature = request.headers.get("X-Twilio-Signature", "")
         
         # Get the form data as a dict for validation

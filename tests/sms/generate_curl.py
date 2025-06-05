@@ -26,12 +26,15 @@ print(f"Successfully loaded TWILIO_AUTH_TOKEN: {'*' * len(auth_token)}")
 validator = RequestValidator(auth_token)
 
 # Test parameters - matching exactly what the server receives
-url = 'http://localhost:7860/api/sms/receive'
+url = 'http://www.dungeonmind.net/api/sms/receive'
 params = {
-    'Body': 'Hello World',
-    'From': ' 1234567890',  # Note the space before the number
-    'MessageSid': 'SM123456789',
-    'To': ' 18005551212'    # Note the space before the number
+    'MessageSid': 'SM12345678901234567890123456789012',
+    'AccountSid': 'AC14b4f3b47bc469e92852e3971c33851c',
+    'From': ' 14017122661',
+    'To': ' 15558675310',
+    'Body': 'Hello from Twilio test',
+    'NumMedia': '0',
+    'NumSegments': '1'
 }
 
 # Compute signature
@@ -40,8 +43,8 @@ signature = validator.compute_signature(url, params)
 # Generate curl command
 curl_cmd = f"""curl -X POST {url} \\
   -H "Content-Type: application/x-www-form-urlencoded" \\
-  -H "X-Twilio-Signature: {signature}" \\
-  -d "Body=Hello World&From= 1234567890&MessageSid=SM123456789&To= 18005551212"
+  -H "x-twilio-signature: {signature}" \\
+  -d "MessageSid=SM12345678901234567890123456789012&AccountSid=AC14b4f3b47bc469e92852e3971c33851c&From= 14017122661&To= 15558675310&Body=Hello from Twilio test&NumMedia=0&NumSegments=1"
 """
 
 print("\nGenerated curl command:")
