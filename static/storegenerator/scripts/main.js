@@ -11,7 +11,7 @@ import { getConfig } from './config.js';
 async function checkAuthAndUpdateUI() {
     console.log('DUNGEONMIND_API_URL:', window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL);
     try {
-        const response = await fetch(`${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}/auth/current-user`, {
+        const response = await fetch(`${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}/api/auth/current-user`, {
             credentials: 'include'
         });
         if (response.ok) {
