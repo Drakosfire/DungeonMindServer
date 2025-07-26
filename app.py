@@ -79,14 +79,9 @@ app.add_middleware(
 )
 
 
-# Add SessionMiddleware
-app.add_middleware(
-    SessionMiddleware, 
-    secret_key=os.environ.get("SESSION_SECRET_KEY"),
-    same_site="lax",  # This allows cookies to be sent in cross-site requests
-    https_only=True, # Set to True in production
-    domain=".dungeonmind.net" # Set to .dungeonmind.net in production
-)
+# Add standardized session middleware
+from session_config import add_session_middleware
+add_session_middleware(app)
 # Add the middleware with the appropriate allowed hosts (this used to be first)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
@@ -100,8 +95,7 @@ app.include_router(
 app.include_router(
     auth_router, 
     prefix='/api/auth',
-    tags=["auth"],
-    dependencies=[Depends(get_session)]
+    tags=["auth"]
 )
 
 app.include_router(
