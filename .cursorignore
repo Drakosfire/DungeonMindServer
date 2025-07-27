@@ -1,0 +1,129 @@
+# Cursor IDE ignore file to prevent memory leaks and indexing issues
+
+# Build and cache directories
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.env/
+
+# Large asset directories
+static/images/
+static/storegenerator/themes/assets/
+static/storegenerator/themes/assets/watercolor/
+static/storegenerator/themes/assets/waterColorMasks/
+static/storegenerator/themes/assets/Journal/
+static/storegenerator/themes/fonts/
+static/storegenerator/themes/V3/
+static/storegenerator/themes/Legacy/
+static/storegenerator/themes/codeMirror/
+
+# Model files and large data
+models--BAAI--bge-m3/
+saved_data/
+*.tar.gz
+*.zip
+*.rar
+
+# Generated files
+*.log
+*.lock
+poetry.lock
+uv.lock
+package-lock.json
+yarn.lock
+
+# Large image files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+*.bmp
+*.tiff
+
+# Font files
+*.ttf
+*.otf
+*.woff
+*.woff2
+*.eot
+
+# Temporary and cache files
+.tmp/
+.temp/
+.cache/
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# Documentation and large text files
+*.md
+*.txt
+*.pdf
+*.doc
+*.docx
+
+# API keys and secrets
+API Keys
+secrets.txt
+serviceAccountKey.json
+.env*
+
+# Test files and coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+
+# Docker and deployment
+Dockerfile
+.dockerignore
+deploy*.sh
+deploy*.bat
+
+# Checksum files
+checksums_*.txt
+
+# Large data files
+*.csv
+*.json
+*.xml
+*.yaml
+*.yml
+
+# Exclude specific heavy directories
+cardgenerator/fonts/
+cardgenerator/image_temp/
+cardgenerator/output/
+cardgenerator/ExampleCards/
+
+# Exclude specific files that are known to be large
+DungeonMind_Object_Structure.md
+Session_Progress_Report_2025_01_26.md
+CardGenerator_Design_Document.md
+CardGenerator_System_Refresh_Document.md
+CardGenerator_Visual_Refresh_Document.md
+DungeonMind_Architecture_Overview.md
+pixel_art_landing_page_plan.md 
