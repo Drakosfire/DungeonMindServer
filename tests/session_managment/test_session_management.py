@@ -2,8 +2,8 @@ import pytest
 from fastapi.testclient import TestClient
 from datetime import datetime, timedelta
 from session_management import (
-    GlobalSession,
-    GlobalSessionManager,
+    EnhancedGlobalSession,
+    EnhancedGlobalSessionManager,
     session_manager,
     get_session
 )
@@ -15,20 +15,20 @@ def test_client():
 
 @pytest.fixture
 def session_mgr():
-    return GlobalSessionManager(session_timeout_minutes=1)
+    return EnhancedGlobalSessionManager(session_timeout_hours=1)
 
 class TestSessionManagement:
     def test_create_session(self, session_mgr):
         session_id = session_mgr.create_session()
         assert session_id is not None
         assert session_id in session_mgr.sessions
-        assert isinstance(session_mgr.sessions[session_id], GlobalSession)
+        assert isinstance(session_mgr.sessions[session_id], EnhancedGlobalSession)
 
     def test_get_session(self, session_mgr):
         session_id = session_mgr.create_session()
         session = session_mgr.get_session(session_id)
         assert session is not None
-        assert isinstance(session, GlobalSession)
+        assert isinstance(session, EnhancedGlobalSession)
 
     def test_session_timeout(self, session_mgr):
         session_id = session_mgr.create_session()

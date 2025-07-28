@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from app import app
-from session_management import GlobalSessionManager
+from session_management import EnhancedGlobalSessionManager
 import os
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import logging
@@ -27,7 +27,7 @@ def test_client(test_app):
 
 @pytest.fixture(scope="function")
 def session_manager():
-    return GlobalSessionManager(session_timeout_minutes=1)
+    return EnhancedGlobalSessionManager(session_timeout_hours=1)
 
 # Print confirmation that this module is being loaded
 logger.debug("conftest.py loaded")

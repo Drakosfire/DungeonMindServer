@@ -42,6 +42,10 @@ from routers import (
     cardgenerator_router
 )
 
+# Import new global session and object routers
+from routers.global_session_router import router as global_session_router
+from routers.global_objects_router import router as global_objects_router
+
 # Import session_manager
 from session_management import get_session
 
@@ -125,6 +129,17 @@ app.include_router(
     cardgenerator_router, 
     prefix="/api/cardgenerator",
     tags=["cardgenerator"]
+)
+
+# Include new global session and object routers
+app.include_router(
+    global_session_router,
+    tags=["Global Session Management"]
+)
+
+app.include_router(
+    global_objects_router,
+    tags=["Global Object Management"]
 )
 
 # Health check route

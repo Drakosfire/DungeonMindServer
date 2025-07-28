@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from session_management import (
     session_manager, 
     get_session, 
-    GlobalSession, 
+    EnhancedGlobalSession, 
     SessionStatus
 )
 import logging
@@ -29,7 +29,7 @@ async def initialize_session():
         )
 
 @router.get("/status", response_model=SessionStatus)
-async def get_session_status(session: GlobalSession = Depends(get_session)):
+async def get_session_status(session: EnhancedGlobalSession = Depends(get_session)):
     """Get the current status of a session"""
     try:
         return session_manager.get_session_status(session)
