@@ -67,7 +67,7 @@ export function handleClick(event, elements) {
 
     if (event.target.id === 'loginButton') {
         console.log('Login button clicked. Element ID:', event.target.id);
-        window.location.href = '/api/auth/login';
+        window.location.href = `${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}/api/auth/login`;
     }
 
     if (event.target.id === 'logoutButton') {

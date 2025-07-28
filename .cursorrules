@@ -1,0 +1,383 @@
+# DungeonMind Development Rules
+## Philosophical & Architectural Guidelines for TTRPG Content Creation Platform
+
+---
+
+## 🎯 **Core Philosophy**
+
+### **User-Centric Development**
+- Start with real user workflows, not technical assumptions
+- Build → Test with real usage → Refine iteratively
+- Prioritize intuitive user experience over technical elegance
+- Trace complete data flows to understand user impact
+
+### **Vibecode Collaborative Approach**
+- Fix root causes, not symptoms
+- Add comprehensive logging for rapid diagnosis
+- Remove legacy code rather than patch when possible
+- Build intelligent systems that adapt to user needs
+
+### **Technical Craftsmanship**
+- Maintain clean, readable, well-documented code
+- Preserve user experience while modernizing architecture
+- Create maintainable solutions with clear boundaries
+- Balance robustness with development velocity
+
+---
+
+## 🏗️ **Architecture Principles**
+
+### **Design System Hierarchy (NEVER VIOLATE)**
+```
+Layer 4: Modals & Overlays (z-index: 1000+)
+Layer 3: Primary Navigation (z-index: 1000) - NavBar fixed left, 80px width
+Layer 2: Secondary Navigation (z-index: 500) - FloatingHeader, tool controls  
+Layer 1: Content Areas (z-index: 100) - Respect 80px left margin
+```
+
+### **Component Architecture**
+- Smart components: Handle state, API calls, business logic
+- Dumb components: Pure presentation, props in → JSX out
+- Use composition over inheritance
+- Keep component responsibilities single and clear
+
+### **State Management Patterns**
+```typescript
+// Stable, memoized functions to prevent recreation loops
+const stableFunction = useCallback(async (params) => {
+  // Implementation
+}, [stableReferences]); // Only primitive or stable object references
+
+// Derived state from multiple sources
+const getReliableValue = useCallback(() => {
+  return primaryValue || fallbackValue || defaultValue;
+}, [primaryValue, fallbackValue]);
+
+// Debounced operations for expensive actions
+const debouncedAction = useCallback(debounce(action, 5000), [action]);
+```
+
+---
+
+## 🎨 **Design System Standards**
+
+### **CSS Variables & Design Tokens**
+```css
+/* Always use design system variables */
+--space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+--primary-blue: #3b82f6; --success-green: #10b981; --warning-amber: #f59e0b;
+--text-xs: 0.75rem; --text-sm: 0.875rem; --text-base: 1rem; --text-lg: 1.125rem;
+```
+
+### **Z-Index Management**
+- NavBar: Always z-index 1000 (sacred, never override)
+- FloatingHeader/Secondary Nav: z-index 500
+- Dropdowns/Tooltips: z-index 600-999
+- Modals/Overlays: z-index 1000+
+- Content: z-index 100 or lower
+
+### **Responsive Design**
+- Mobile-first approach with progressive enhancement
+- Respect 80px left margin for NavBar on all screen sizes
+- Use CSS Grid/Flexbox for layouts
+- Test on mobile, tablet, desktop breakpoints
+
+---
+
+## 🔐 **Authentication & Security**
+
+### **OAuth Integration**
+```typescript
+// Always use centralized auth patterns
+import { useAuth } from '../../context/AuthContext';
+
+const { userId, isAuthenticated, isLoading } = useAuth();
+
+// Protect routes and API calls
+if (!isAuthenticated) return <LoginPrompt />;
+```
+
+### **API Security**
+```python
+# Consistent auth dependency
+async def protected_endpoint(current_user = Depends(get_current_user)):
+    user_id = current_user.sub
+    # Validate user owns resource
+    # Implement business logic
+    # Return structured response
+```
+
+### **Session Management**
+- Use 'dungeonmind_session' cookie consistently
+- HTTP-only, secure, SameSite=lax for CORS
+- 24-hour expiration with auto-refresh
+
+---
+
+## 📊 **Data Management**
+
+### **Project Management Patterns**
+```typescript
+// Smart project detection
+const shouldCreateNewProject = (currentName: string, newName: string) => {
+  // Create new for significantly different content
+  // Update existing for refinements/variations
+  return isSignificantlyDifferent(currentName, newName);
+};
+
+// Reliable name computation
+const getReliableItemName = useCallback(() => {
+  const itemName = itemDetails.name?.trim();
+  if (itemName && itemName !== 'Untitled Project') return itemName;
+  return currentProject?.name || 'Untitled Project';
+}, [itemDetails.name, currentProject?.name]);
+```
+
+### **Auto-save Implementation**
+```typescript
+// Debounced auto-save with stable dependencies
+const saveCurrentState = useCallback(async () => {
+  if (isRestoringState.current || !initialLoadComplete.current) return;
+  // Only save on actual content changes
+  await persistState();
+}, [contentState, userId, projectId]); // Stable references only
+
+const debouncedSave = useCallback(debounce(saveCurrentState, 5000), [saveCurrentState]);
+```
+
+### **Database Patterns**
+- Use Firestore for user data and projects
+- Structure: Users → Projects → Cards/Content
+- Include metadata: createdAt, updatedAt, userId
+- Implement proper indexing for queries
+
+---
+
+## 🧠 **AI Integration**
+
+### **Content Generation Patterns**
+```python
+# Structured AI responses with schema validation
+CONTENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "Name": {"type": "string"},
+        "Type": {"type": "string"},
+        "Description": {"type": "string"}
+    },
+    "required": ["Name", "Type", "Description"]
+}
+
+# Handle OpenAI response wrapping
+if "properties" in parsed_data:
+    parsed_data = parsed_data["properties"]
+```
+
+### **TTRPG Content Standards**
+- Support diverse systems
+- Use generic TTRPG terminology it can always be translated to a given system
+- Make system-specific adaptations configurable
+- Design for cross-system compatibility
+- When possible, allow the model to decide. Ideally with context. 
+
+---
+
+## 🚀 **API Design**
+
+### **FastAPI Router Patterns**
+```python
+@router.post('/api/domain/action')
+async def action(request: RequestModel, current_user = Depends(get_current_user)):
+    """Clear docstring explaining purpose"""
+    try:
+        # 1. Validate input and permissions
+        # 2. Implement business logic
+        # 3. Log operations for debugging
+        # 4. Return structured response
+        return {"success": True, "data": result}
+    except Exception as e:
+        logger.error(f"Error in action: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+### **Frontend API Integration**
+```typescript
+// Consistent error handling
+try {
+  const result = await api.call();
+  // Handle success
+} catch (error) {
+  console.error('Operation failed:', error);
+  // Graceful fallback
+  // User-friendly error message
+}
+
+// Loading states and user feedback
+const [isLoading, setIsLoading] = useState(false);
+const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+```
+
+---
+
+## 🔍 **Debugging & Monitoring**
+
+### **Comprehensive Logging**
+```typescript
+// Frontend: Context-rich console logs
+console.log('Operation - step:', step, 'data:', sanitizedData, 'user:', userId);
+
+// Backend: Structured logging
+logger.info(f"Action completed for user {user_id}: {action_details}")
+logger.error(f"Error in {operation}: {str(e)}", exc_info=True)
+```
+
+### **Error Handling Strategy**
+```typescript
+// Progressive error handling with fallbacks
+try {
+  await primaryAction();
+} catch (error) {
+  console.error('Primary failed:', error);
+  try {
+    await fallbackAction();
+  } catch (fallbackError) {
+    showUserFriendlyError('Something went wrong. Please try again.');
+  }
+}
+```
+
+### **Performance Monitoring**
+There is room here for learning. If this were ever to scale, this rapidly goes from not that big a deal to the biggest deal.
+
+- Track bundle size and load times
+- Monitor API latency and error rates
+- Log user actions for behavior analysis
+- Implement proper loading states
+
+---
+
+## 🎮 **TTRPG-Specific Guidelines**
+
+### **Content Creation Standards**
+- Support multiple game systems (D&D, Pathfinder, generic TTRPG) This is very doable with many models, and so far easily enhanced with additonal context.
+- Use inclusive, system-agnostic terminology
+- Design flexible data models for cross-system content
+- Enable easy system-specific exports
+
+### **VTT Integration Preparation**
+```typescript
+// Standardized data model for VTT export
+interface TTRPGContent {
+  id: string;
+  type: 'item' | 'npc' | 'location' | 'encounter';
+  systemData: Record<string, any>; // System-specific properties
+  metadata: {
+    createdAt: number;
+    updatedAt: number;
+    tags: string[];
+    system: string;
+  };
+}
+```
+
+### **Worldbuilding Support**
+- Enable cross-references between content
+- Support project hierarchies and collections
+- Design for collaborative creation
+- Maintain version history for iterations
+
+---
+
+## 💡 **Innovation Guidelines**
+
+### **MCP Server Preparation**
+```typescript
+// Design APIs with MCP integration in mind
+interface MCPCompatibleAPI {
+  input: NaturalLanguageDescription;
+  output: StructuredTTRPGContent;
+  metadata: CreationContext;
+}
+```
+
+### **Content Intelligence**
+- Build context-aware content suggestions
+- Enable style consistency across projects
+- Support intelligent cross-referencing
+- Design for AI-enhanced workflows
+
+### **Scaling Considerations**
+- Design for multi-user collaboration
+- Plan for content marketplace features
+- Consider real-time synchronization needs
+- Build with mobile/PWA compatibility
+
+---
+
+## 🛠️ **Development Workflow**
+
+### **Code Quality Standards**
+- Use TypeScript for all new frontend code
+- Implement proper error boundaries in React
+- Write self-documenting code with clear naming
+- Add JSDoc comments for complex functions
+
+### **Testing Strategy**
+- Test user workflows, not just individual functions
+- Mock external services (AI APIs, authentication)
+- Test responsive design across breakpoints
+- Validate TTRPG content generation accuracy
+
+### **Documentation Requirements**
+- Update architecture docs with significant changes
+- Document new patterns and components
+- Maintain living examples of design system usage
+- Keep API documentation current
+
+---
+
+## 🚫 **Anti-Patterns to Avoid**
+
+### **UI/UX Anti-Patterns**
+- ❌ Never violate z-index hierarchy (NavBar supremacy)
+- ❌ Don't create separate navigation systems
+- ❌ Avoid hardcoded spacing/colors (use design tokens)
+- ❌ Don't ignore mobile responsiveness
+
+### **State Management Anti-Patterns**
+- ❌ Avoid infinite useEffect loops
+- ❌ Don't include unstable dependencies in useCallback
+- ❌ Avoid direct state mutations
+- ❌ Don't ignore race conditions in async operations
+
+### **Architecture Anti-Patterns**
+- ❌ Don't create tight coupling between components
+- ❌ Avoid mixing presentation and business logic
+- ❌ Don't bypass authentication checks
+- ❌ Avoid inconsistent error handling patterns
+
+---
+
+## 🎯 **Success Metrics**
+
+### **User Experience**
+- Zero runtime crashes during normal usage
+- Intuitive workflows that don't require documentation
+- Fast, responsive interactions (<200ms feedback)
+- Successful task completion without confusion
+
+### **Developer Experience**
+- Clear, maintainable code structure
+- Rapid debugging with comprehensive logs
+- Consistent patterns across the codebase
+- Easy onboarding for new contributors
+
+### **Technical Excellence**
+- Stable, reliable data persistence
+- Proper error handling and recovery
+- Scalable architecture for future features
+- Clean separation of concerns
+
+---
+
+*These rules embody the collaborative spirit and technical craftsmanship that makes DungeonMind a joy to build and use. Follow them to maintain the vibecode.* 
