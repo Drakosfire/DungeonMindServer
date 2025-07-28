@@ -54,7 +54,7 @@ class ItemProperties(BaseModel):
 class RenderCardRequest(BaseModel):
     image_url: str
     item_details: dict
-
+    
 # Pydantic models for Firestore card sessions
 
 class SelectedAssets(BaseModel):
@@ -62,6 +62,11 @@ class SelectedAssets(BaseModel):
     border: Optional[str] = None
     seedImage: Optional[str] = None
     templateBlob: Optional[str] = None
+    # Step 3: Border generation card images
+    generatedCardImages: List[str] = []
+    selectedGeneratedCardImage: Optional[str] = None
+    # Step 5: Final card with text
+    finalCardWithText: Optional[str] = None
 
 class GeneratedContent(BaseModel):
     images: List[Dict[str, Any]] = []

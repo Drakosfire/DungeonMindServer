@@ -115,8 +115,7 @@ app.include_router(
 app.include_router(
     cardgenerator_router, 
     prefix="/api/cardgenerator",
-    tags=["cardgenerator"],
-    dependencies=[Depends(get_session)]
+    tags=["cardgenerator"]
 )
 
 # Health check route
@@ -141,4 +140,25 @@ app.mount("/saved_data", StaticFiles(directory="saved_data"), name="saved_data")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    
+    # Enable hot reload in development environment
+    reload = env == 'development'
+    logger.info(f"Starting server with reload={reload}")
+    
+    if reload:
+        # Use import string format for reload functionality
+        uvicorn.run(
+            "app:app",  # Import string required for reload
+            host="0.0.0.0", 
+            port=7860,
+            reload=True,
+            reload_dirs=["routers", "cardgenerator", "cloudflare", "cloudflareR2", "firestore", "ruleslawyer", "storegenerator", "sms"]
+        )
+    else:
+        # Use direct app object for production
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=7860,
+            reload=False
+        )

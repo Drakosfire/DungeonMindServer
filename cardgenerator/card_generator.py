@@ -84,6 +84,15 @@ def paste_image_and_resize(base_image, sticker_path, x_position, y_position, img
 def render_text_on_card(image_path, item_details) : 
     # Download the image from the url
     image = open_image_from_url(image_path)
+    
+    # Ensure the image is exactly 768x1024 to match our hardcoded text coordinates
+    EXPECTED_WIDTH = 768
+    EXPECTED_HEIGHT = 1024
+    
+    if image.size != (EXPECTED_WIDTH, EXPECTED_HEIGHT):
+        print(f"Resizing image from {image.size} to ({EXPECTED_WIDTH}, {EXPECTED_HEIGHT}) for text positioning")
+        image = image.resize((EXPECTED_WIDTH, EXPECTED_HEIGHT), Image.Resampling.LANCZOS)
+    
     # Card Properties 
     print(type(item_details['Properties']))
     
@@ -93,7 +102,7 @@ def render_text_on_card(image_path, item_details) :
     italics_font_path = "cardgenerator/fonts/BalgrufItalic.ttf"
     initial_font_size = 50
 
-    # Title Properties
+    # Title Properties (coordinates designed for 768x1024)
     title_center_position = (395, 55)
     title_area_width = 600 # Maximum width of the text box
     title_area_height = 60  # Maximum height of the text box
@@ -124,8 +133,7 @@ def render_text_on_card(image_path, item_details) :
     quote_area_width = 470
     quote_area_height = 60                     
 
-    
-    image = open_image_from_url(image_path)
+    # Apply text rendering with correct coordinates
     image = rend.render_text_with_dynamic_spacing(image, item_details['Name'], title_center_position, title_area_width, title_area_height,font_path,initial_font_size)
     image = rend.render_text_with_dynamic_spacing(image,type_text , type_center_position, type_area_width, type_area_height,font_path,initial_font_size)
     image = rend.render_text_with_dynamic_spacing(image, item_details['Description'] + '\n\n' + item_properties, description_position, description_area_width, description_area_height,font_path,initial_font_size, description = True)
