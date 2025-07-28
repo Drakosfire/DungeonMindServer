@@ -41,14 +41,14 @@ async def create_session(
         if not session:
             raise HTTPException(status_code=500, detail="Failed to create session")
         
-        # Set session cookie
+        # Set session cookie using session configuration
+        from session_config import session_config
+        cookie_kwargs = session_config.get_cookie_kwargs()
         response.set_cookie(
             key="dungeonmind_session_id",
             value=session_id,
             max_age=24 * 60 * 60,  # 24 hours
-            httponly=True,
-            secure=True,
-            samesite="lax"
+            **cookie_kwargs
         )
         
         # Apply initial preferences if provided
@@ -94,14 +94,14 @@ async def restore_session(
             session_id = session_manager.create_session(request=http_request)
             session = session_manager.get_session(session_id)
             
-            # Update cookie
+            # Update cookie using session configuration
+            from session_config import session_config
+            cookie_kwargs = session_config.get_cookie_kwargs()
             response.set_cookie(
                 key="dungeonmind_session_id",
                 value=session_id,
                 max_age=24 * 60 * 60,
-                httponly=True,
-                secure=True,
-                samesite="lax"
+                **cookie_kwargs
             )
             
             message = "Created new session (restoration failed)"

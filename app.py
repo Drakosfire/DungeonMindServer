@@ -80,12 +80,25 @@ logger.info(f"Allowed hosts: {allowed_hosts}")
 react_landing_url = os.environ.get('REACT_LANDING_URL')
 logger.info(f"React landing URL: {react_landing_url}")
 
+# Convert hosts to proper CORS origins
+cors_origins = []
+for host in allowed_hosts:
+    host = host.strip()
+    if host.startswith('http'):
+        cors_origins.append(host)
+    else:
+        # Add both http and https for localhost
+        if 'localhost' in host or '127.0.0.1' in host:
+            cors_origins.extend([f"http://{host}", f"https://{host}"])
+        else:
+            cors_origins.append(f"https://{host}")
 
+logger.info(f"CORS origins: {cors_origins}")
 
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_hosts,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
