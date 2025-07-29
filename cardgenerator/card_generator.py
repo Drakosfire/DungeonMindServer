@@ -1,3 +1,23 @@
+# LEGACY COMPATIBILITY LAYER
+# This file now redirects to the new modular pipeline for compatibility
+# The new pipeline is in card_generator_new.py with improved architecture
+
+import asyncio
+import logging
+from typing import Dict, Any
+from PIL import Image
+
+logger = logging.getLogger(__name__)
+
+# Import the new pipeline
+try:
+    from .card_generator_new import render_text_on_card as async_render_text_on_card
+    NEW_PIPELINE_AVAILABLE = True
+    logger.info("✅ New modular pipeline available, using improved architecture")
+except ImportError as e:
+    NEW_PIPELINE_AVAILABLE = False
+    logger.warning(f"⚠️ New pipeline not available, falling back to legacy: {e}")
+
 import cardgenerator.render_card_text as rend
 from PIL import Image, ImageFilter
 import ast
@@ -81,7 +101,10 @@ def paste_image_and_resize(base_image, sticker_path, x_position, y_position, img
     # Paste the resized image onto the base image
     base_image.paste(image_to_paste_resized, paste_position, image_to_paste_resized)
 
-def render_text_on_card(image_path, item_details) : 
+def render_text_on_card_legacy(image_path, item_details):
+    """LEGACY FUNCTION - Use the new pipeline instead"""
+    logger.warning("🚨 Using legacy render_text_on_card function. Consider migrating to new pipeline.")
+    
     # Download the image from the url
     image = open_image_from_url(image_path)
     
@@ -148,6 +171,34 @@ def render_text_on_card(image_path, item_details) :
     image = image.filter(ImageFilter.GaussianBlur(.5))
        
     return image
+
+# Main function with smart routing to new pipeline
+def render_text_on_card(image_path: str, item_details: Dict[str, Any]) -> Image.Image:
+    """
+    Smart compatibility function that routes to new pipeline when available
+    
+    This function maintains backward compatibility while preferring the new
+    modular pipeline when available.
+    """
+    if NEW_PIPELINE_AVAILABLE:
+        try:
+            # Use new async pipeline in sync context
+            logger.info("🚀 Using new modular pipeline for card rendering")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                result = loop.run_until_complete(async_render_text_on_card(image_path, item_details))
+                logger.info("✅ New pipeline rendering successful")
+                return result
+            finally:
+                loop.close()
+        except Exception as e:
+            logger.error(f"❌ New pipeline failed, falling back to legacy: {e}")
+            # Fall through to legacy function
+    
+    # Use legacy function as fallback
+    logger.info("🔄 Using legacy pipeline for card rendering")
+    return render_text_on_card_legacy(image_path, item_details)
     
 
 

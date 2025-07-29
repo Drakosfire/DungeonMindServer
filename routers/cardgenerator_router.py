@@ -15,8 +15,9 @@ from cloudflareR2.cloudflareR2_utils import upload_temp_file_and_get_url
 from typing import List, Tuple, Optional, Dict, Any
 
 from openai import OpenAI
-from cardgenerator.prompts import prompt_instructions
-from cardgenerator.card_generator import render_text_on_card
+# Updated import to use new prompt management system
+from cardgenerator.prompts import prompt_manager
+from cardgenerator.card_generator_new import CardGeneratorV2, render_text_on_card
 from .auth_router import get_current_user
 
 # Cloudflare credentials
@@ -281,17 +282,19 @@ ITEM_SCHEMA = {
 @router.post('/generate-item-dict')
 async def generate_item_dict(user_idea: dict):
     try:
-        # Construct the prompt from user input
-        prompt = f"{user_idea['userIdea']}"
+        # Extract the user's item idea
+        item_name = user_idea.get('userIdea', '')
+        
+        # Use the new prompt management system
+        prompt = prompt_manager.render_prompt(
+            template_name="item_generation",
+            context={"item_name": item_name}
+        )
         
         # Make the API call
         response = client.beta.chat.completions.parse(
             model="gpt-4o",  # Ensure the model is supported
             messages=[
-                {
-                    "role": "system",
-                    "content": f"{prompt_instructions}"
-                },
                 {
                     "role": "user",
                     "content": prompt
@@ -341,24 +344,40 @@ async def generate_item_dict(user_idea: dict):
     
 @router.post('/render-card-text')
 async def render_card_text(request: RenderCardRequest):
-    # Open the recieved PIL image object
-    image_object = render_text_on_card(request.image_url, request.item_details) 
-    print("type of image_object:", type(image_object))
-    # Save the image to a temporary file
-    temp_file_path = f"temp_card_{request.item_details['Name']}.png"
-    image_object.save(temp_file_path)
-    # Check for temp file
-    if not os.path.exists(temp_file_path):
-        raise HTTPException(status_code=500, detail="Failed to save image to temporary file")
-    # Upload the image to Cloudflare and await the response
-    url = await upload_temp_file_and_get_url(temp_file_path)
-    # Delete the temporary file
-    os.remove(temp_file_path)
+    """
+    Render text on card using the new modular pipeline
+    """
+    try:
+        logger.info(f"Rendering card text for item: {request.item_details.get('Name', 'Unknown')}")
+        
+        # Use the new async render function
+        image_object = await render_text_on_card(request.image_url, request.item_details)
+        
+        print("type of image_object:", type(image_object))
+        
+        # Save the image to a temporary file
+        temp_file_path = f"temp_card_{request.item_details['Name']}.png"
+        image_object.save(temp_file_path)
+        
+        # Check for temp file
+        if not os.path.exists(temp_file_path):
+            raise HTTPException(status_code=500, detail="Failed to save image to temporary file")
+        
+        # Upload the image to Cloudflare and await the response
+        url = await upload_temp_file_and_get_url(temp_file_path)
+        
+        # Delete the temporary file
+        os.remove(temp_file_path)
 
-    # Format the structured response for the frontend
-    formatted_response = {"url": url}
-
-    return formatted_response
+        # Format the structured response for the frontend
+        formatted_response = {"url": url}
+        
+        logger.info(f"Successfully rendered and uploaded card for: {request.item_details.get('Name', 'Unknown')}")
+        return formatted_response
+        
+    except Exception as e:
+        logger.error(f"Card rendering failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to render card: {str(e)}")
 
 # New endpoint for direct text-to-image generation (Step 2)
 @router.post('/generate-core-images')
