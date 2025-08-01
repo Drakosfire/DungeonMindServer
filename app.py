@@ -38,9 +38,15 @@ from routers import (
     auth_router,
     session_router,
     store_router,
-    lawyer_router,
-    cardgenerator_router
+    lawyer_router
 )
+
+# Import new focused CardGenerator routers (replacing monolithic cardgenerator_router)
+from routers.card_generation_router import router as card_generation_router
+from routers.image_management_router import router as image_management_router
+from routers.asset_router import router as asset_router
+from routers.cardgenerator_project_router import router as cardgenerator_project_router
+from routers.cardgenerator_compatibility_router import router as cardgenerator_compatibility_router
 
 # Import new global session and object routers
 from routers.global_session_router import router as global_session_router
@@ -138,10 +144,32 @@ app.include_router(
     dependencies=[Depends(get_session)]
 )
 
+# Register new focused CardGenerator routers (replacing monolithic cardgenerator_router)
 app.include_router(
-    cardgenerator_router, 
-    prefix="/api/cardgenerator",
-    tags=["cardgenerator"]
+    card_generation_router,
+    tags=["Card Generation"]
+)
+
+app.include_router(
+    image_management_router,
+    tags=["Image Management"]
+)
+
+app.include_router(
+    asset_router,
+    tags=["Assets"]
+)
+
+app.include_router(
+    cardgenerator_project_router,
+    tags=["CardGenerator Projects"]
+)
+
+# TEMPORARY: Compatibility router for old monolithic endpoints
+# TODO: Remove in v3.0 after frontend migration is complete
+app.include_router(
+    cardgenerator_compatibility_router,
+    tags=["CardGenerator Compatibility (Deprecated)"]
 )
 
 # Include new global session and object routers

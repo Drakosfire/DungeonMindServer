@@ -14,6 +14,14 @@ class CardRenderingError(Exception):
     """Base exception for card rendering errors"""
     pass
 
+class CardGenerationError(Exception):
+    """Exception for AI generation and card creation errors"""
+    pass
+
+class ImageProcessingError(Exception):
+    """Exception for image upload, processing, and management errors"""
+    pass
+
 class ImageLoadError(CardRenderingError):
     """Failed to load image from URL"""
     pass

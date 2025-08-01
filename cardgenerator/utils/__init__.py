@@ -3,7 +3,9 @@ Utilities module for card generation
 """
 from .error_handler import (
     ErrorHandler, 
-    CardRenderingError, 
+    CardRenderingError,
+    CardGenerationError,
+    ImageProcessingError,
     ImageLoadError, 
     TextRenderingError, 
     AssetLoadError, 
@@ -13,6 +15,8 @@ from .error_handler import (
 __all__ = [
     'ErrorHandler',
     'CardRenderingError',
+    'CardGenerationError',
+    'ImageProcessingError',
     'ImageLoadError', 
     'TextRenderingError',
     'AssetLoadError',

@@ -170,7 +170,7 @@ class TextProcessor:
                     image=image,
                     text=element.content,
                     center_position=element.position,
-                    area_width=element.dimensions[0],
+                    max_width=element.dimensions[0],
                     area_height=element.dimensions[1],
                     font_path=element.font_path,
                     initial_font_size=element.font_size,
