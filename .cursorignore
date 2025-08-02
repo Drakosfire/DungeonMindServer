@@ -78,12 +78,6 @@ Thumbs.db
 .gitignore
 .gitattributes
 
-# Documentation and large text files
-*.md
-*.txt
-*.pdf
-*.doc
-*.docx
 
 # API keys and secrets
 API Keys
