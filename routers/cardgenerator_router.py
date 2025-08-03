@@ -1039,8 +1039,25 @@ async def update_project(project_id: str, request: UpdateProjectRequest, current
         
         user_id = current_user.sub
         
-        # Debug logging
-        logger.info(f"Update request for project {project_id}: name='{request.name}', has_state={request.state is not None}")
+        # ENHANCED DEBUG LOGGING
+        logger.info("="*60)
+        logger.info("PROJECT UPDATE REQUEST RECEIVED")
+        logger.info("="*60)
+        logger.info(f"Project ID: {project_id}")
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Request name: {request.name}")
+        logger.info(f"Request description length: {len(request.description) if request.description else 0}")
+        logger.info(f"Has state: {request.state is not None}")
+        
+        if request.state:
+            logger.info(f"State currentStep: {request.state.currentStep}")
+            logger.info(f"State itemDetails keys: {list(request.state.itemDetails.keys()) if hasattr(request.state, 'itemDetails') and request.state.itemDetails else 'None'}")
+            if hasattr(request.state, 'itemDetails') and request.state.itemDetails:
+                item_details = request.state.itemDetails
+                logger.info(f"ItemDetails content: name='{item_details.get('name', '')}', type='{item_details.get('type', '')}', rarity='{item_details.get('rarity', '')}', value='{item_details.get('value', '')}'")
+        else:
+            logger.info("NO STATE PROVIDED IN REQUEST")
+        logger.info("="*60)
         
         # Verify project exists and user owns it
         project_data = firestore_utils.get_document('card_projects', project_id)
@@ -1069,10 +1086,23 @@ async def update_project(project_id: str, request: UpdateProjectRequest, current
         if request.metadata is not None:
             update_data['metadata'] = request.metadata.dict()
         
+        # ENHANCED LOGGING BEFORE SAVE
+        logger.info("="*40)
+        logger.info("SAVING TO FIRESTORE")
+        logger.info("="*40)
+        logger.info(f"Update data keys: {list(update_data.keys())}")
+        if 'state' in update_data:
+            logger.info(f"State being saved: {type(update_data['state'])}")
+            state_dict = update_data['state']
+            if isinstance(state_dict, dict) and 'itemDetails' in state_dict:
+                item_details = state_dict['itemDetails']
+                logger.info(f"ItemDetails being saved: {item_details}")
+        logger.info("="*40)
+        
         # Update in Firestore
         firestore_utils.update_document('card_projects', project_id, update_data)
         
-        logger.info(f"Updated project: {project_id} for user: {user_id} with data: {update_data}")
+        logger.info(f"✅ FIRESTORE UPDATE COMPLETED for project: {project_id}")
         
         return {
             "success": True,

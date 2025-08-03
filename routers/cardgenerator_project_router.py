@@ -28,13 +28,45 @@ def create_safe_card_session_data(state_data: Dict[str, Any], project_id: str) -
     """
     Safely create CardSessionData with proper defaults for required fields
     """
+    # Debug: Log input data
+    logger.info("🔍 create_safe_card_session_data INPUT DEBUG")
+    logger.info(f"Input state_data type: {type(state_data)}")
+    logger.info(f"Input state_data keys: {list(state_data.keys()) if isinstance(state_data, dict) else 'Not a dict'}")
+    
+    if isinstance(state_data, dict) and 'itemDetails' in state_data:
+        input_item_details = state_data['itemDetails']
+        logger.info(f"Input itemDetails type: {type(input_item_details)}")
+        logger.info(f"Input itemDetails keys: {list(input_item_details.keys()) if isinstance(input_item_details, dict) else 'Not a dict'}")
+        if isinstance(input_item_details, dict):
+            logger.info(f"Input itemDetails content: name='{input_item_details.get('name', '')}', type='{input_item_details.get('type', '')}', rarity='{input_item_details.get('rarity', '')}', value='{input_item_details.get('value', '')}'")
+    
     # Ensure required fields have defaults
     safe_state = {
         "sessionId": state_data.get("sessionId", project_id),  # Use project_id as fallback
         "currentStep": state_data.get("currentStep", "text-generation"),  # Default to first step
         **state_data  # Override with any existing state data
     }
-    return CardSessionData(**safe_state)
+    
+    # Debug: Log safe_state before CardSessionData creation
+    logger.info("🔍 create_safe_card_session_data SAFE_STATE DEBUG")
+    logger.info(f"Safe_state keys: {list(safe_state.keys())}")
+    if 'itemDetails' in safe_state:
+        safe_item_details = safe_state['itemDetails']
+        logger.info(f"Safe_state itemDetails type: {type(safe_item_details)}")
+        if isinstance(safe_item_details, dict):
+            logger.info(f"Safe_state itemDetails content: name='{safe_item_details.get('name', '')}', type='{safe_item_details.get('type', '')}', rarity='{safe_item_details.get('rarity', '')}', value='{safe_item_details.get('value', '')}'")
+    
+    # Create CardSessionData and debug result
+    try:
+        result = CardSessionData(**safe_state)
+        logger.info("🔍 create_safe_card_session_data RESULT DEBUG")
+        logger.info(f"Result itemDetails type: {type(result.itemDetails)}")
+        logger.info(f"Result itemDetails content: {result.itemDetails}")
+        return result
+    except Exception as e:
+        logger.error(f"Error creating CardSessionData: {e}")
+        logger.error(f"Safe_state that caused error: {safe_state}")
+        raise
 
 # Pydantic models
 class ProjectMetadata(BaseModel):
@@ -52,6 +84,7 @@ class CreateProjectRequest(BaseModel):
 class UpdateProjectRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    state: Optional[CardSessionData] = None
     metadata: Optional[ProjectMetadata] = None
 
 class ProjectSummaryResponse(BaseModel):
@@ -223,6 +256,39 @@ async def get_project(
             })
             logger.debug(f"Switched session {session_id} to project {project_id}")
         
+        # Enhanced debugging for data retrieval
+        logger.info("============================================================")
+        logger.info("PROJECT RETRIEVAL DEBUG (PROJECT ROUTER)")
+        logger.info("============================================================")
+        logger.info(f"Project ID: {project_id}")
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Raw project_data keys: {list(project_data.keys())}")
+        
+        # Check raw state data from database
+        raw_state = project_data.get('state', {})
+        logger.info(f"Raw state from database: {type(raw_state)}")
+        if isinstance(raw_state, dict) and 'itemDetails' in raw_state:
+            raw_item_details = raw_state['itemDetails']
+            logger.info(f"Raw itemDetails keys: {list(raw_item_details.keys()) if raw_item_details else 'None'}")
+            logger.info(f"Raw itemDetails content: name='{raw_item_details.get('name', '')}', type='{raw_item_details.get('type', '')}', rarity='{raw_item_details.get('rarity', '')}', value='{raw_item_details.get('value', '')}'")
+        else:
+            logger.info(f"Raw state has no itemDetails or is not dict: {raw_state}")
+        
+        # Process state data
+        processed_state = create_safe_card_session_data(raw_state, project_id)
+        logger.info(f"Processed state type: {type(processed_state)}")
+        
+        # Check processed state
+        if hasattr(processed_state, 'itemDetails'):
+            processed_details = processed_state.itemDetails
+            logger.info(f"Processed itemDetails type: {type(processed_details)}")
+            if isinstance(processed_details, dict):
+                logger.info(f"Processed itemDetails: name='{processed_details.get('name', '')}', type='{processed_details.get('type', '')}', rarity='{processed_details.get('rarity', '')}', value='{processed_details.get('value', '')}'")
+            else:
+                logger.info(f"Processed itemDetails is not a dict: {processed_details}")
+        else:
+            logger.info(f"Processed state has no itemDetails attribute")
+        
         # Convert to response model
         response = ProjectResponse(
             id=project_id,
@@ -231,9 +297,10 @@ async def get_project(
             createdAt=project_data.get('created_at', 0),
             updatedAt=project_data.get('updated_at', 0),
             userId=project_data.get('user_id', ''),
-            state=create_safe_card_session_data(project_data.get('state', {}), project_id),
+            state=processed_state,
             metadata=ProjectMetadata(**project_data.get('metadata', {}))
         )
+        logger.info("============================================================")
         
         logger.info(f"Retrieved CardGenerator project: {project_id} for user: {user_id}")
         return response
@@ -251,10 +318,30 @@ async def update_project(
     current_user=Depends(get_current_user),
     session_data=Depends(get_session)
 ):
-    """Update project metadata"""
+    """Update project metadata and state"""
     try:
         session, session_id = session_data
         user_id = current_user.sub
+        
+        # ENHANCED DEBUG LOGGING  
+        logger.info("="*60)
+        logger.info("PROJECT UPDATE REQUEST RECEIVED (PROJECT ROUTER)")
+        logger.info("="*60)
+        logger.info(f"Project ID: {project_id}")
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Request name: {request.name}")
+        logger.info(f"Request description length: {len(request.description) if request.description else 0}")
+        logger.info(f"Has state: {request.state is not None}")
+        
+        if request.state:
+            logger.info(f"State currentStep: {request.state.currentStep}")
+            logger.info(f"State itemDetails keys: {list(request.state.itemDetails.keys()) if hasattr(request.state, 'itemDetails') and request.state.itemDetails else 'None'}")
+            if hasattr(request.state, 'itemDetails') and request.state.itemDetails:
+                item_details = request.state.itemDetails
+                logger.info(f"ItemDetails content: name='{item_details.get('name', '')}', type='{item_details.get('type', '')}', rarity='{item_details.get('rarity', '')}', value='{item_details.get('value', '')}'")
+        else:
+            logger.info("NO STATE PROVIDED IN REQUEST")
+        logger.info("="*60)
         
         # Verify project exists and user owns it
         project_data = firestore_utils.get_document('cardgen_projects', project_id)
@@ -279,6 +366,11 @@ async def update_project(
             
         if request.metadata is not None:
             update_data['metadata'] = request.metadata.dict()
+            
+        # CRITICAL FIX: Save the state data!
+        if request.state is not None:
+            update_data['state'] = request.state.dict()
+            logger.info(f"💾 SAVING STATE TO FIRESTORE: {request.state.dict()}")
         
         # Update in Firestore
         firestore_utils.update_document('cardgen_projects', project_id, update_data)
