@@ -18,9 +18,9 @@ from openai import OpenAI
 from PIL import Image
 from pydantic import BaseModel, ValidationError
 
-from ..prompts.prompt_manager import prompt_manager
-from ..card_generator_new import render_text_on_card
-from ..utils.error_handler import CardGenerationError, ValidationError as CardValidationError
+from cardgenerator.prompts.prompt_manager import prompt_manager
+from cardgenerator.card_generator_new import render_text_on_card
+from cardgenerator.utils.error_handler import CardGenerationError, ValidationError as CardValidationError
 
 logger = logging.getLogger(__name__)
 

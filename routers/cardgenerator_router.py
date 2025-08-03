@@ -345,7 +345,7 @@ async def generate_item_dict(user_idea: dict):
 @router.post('/render-card-text')
 async def render_card_text(request: RenderCardRequest):
     """
-    Render text on card using the new modular pipeline
+    Render text on card using memory-only approach - no temporary files
     """
     try:
         logger.info(f"Rendering card text for item: {request.item_details.get('Name', 'Unknown')}")
@@ -355,24 +355,22 @@ async def render_card_text(request: RenderCardRequest):
         
         print("type of image_object:", type(image_object))
         
-        # Save the image to a temporary file
-        temp_file_path = f"temp_card_{request.item_details['Name']}.png"
-        image_object.save(temp_file_path)
+        # Import the image management service for memory-only upload
+        from cardgenerator.services.image_management_service import image_management_service
         
-        # Check for temp file
-        if not os.path.exists(temp_file_path):
-            raise HTTPException(status_code=500, detail="Failed to save image to temporary file")
+        item_name = request.item_details.get('Name', 'Unknown')
         
-        # Upload the image to Cloudflare and await the response
-        url = await upload_temp_file_and_get_url(temp_file_path)
-        
-        # Delete the temporary file
-        os.remove(temp_file_path)
+        # Upload image object directly to cloud storage (memory-only)
+        logger.info(f"Using memory-only upload strategy for {item_name}")
+        upload_result = await image_management_service.upload_with_memory_fallback(
+            image_object, f"card_{item_name}.png"
+        )
+        url = upload_result.url
 
         # Format the structured response for the frontend
         formatted_response = {"url": url}
         
-        logger.info(f"Successfully rendered and uploaded card for: {request.item_details.get('Name', 'Unknown')}")
+        logger.info(f"Successfully rendered and uploaded card for: {item_name}")
         return formatted_response
         
     except Exception as e:

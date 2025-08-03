@@ -4,9 +4,9 @@ New streamlined card generator using the refactored pipeline architecture
 import logging
 from typing import Dict, Any
 from PIL import Image
-from .core.card_renderer import CardRenderer
-from .prompts.prompt_manager import prompt_manager
-from .utils.error_handler import CardRenderingError, ValidationError
+from cardgenerator.core.card_renderer import CardRenderer
+from cardgenerator.prompts.prompt_manager import prompt_manager
+from cardgenerator.utils.error_handler import CardRenderingError, ValidationError
 
 logger = logging.getLogger(__name__)
 

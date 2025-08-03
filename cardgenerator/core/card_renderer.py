@@ -4,10 +4,10 @@ Main card renderer - orchestrates the entire card generation pipeline
 import logging
 from typing import Dict, Any
 from PIL import Image, ImageFilter
-from .text_processor import TextProcessor
-from .image_composer import ImageComposer
-from .asset_manager import AssetManager
-from ..utils.error_handler import ErrorHandler, CardRenderingError
+from cardgenerator.core.text_processor import TextProcessor
+from cardgenerator.core.image_composer import ImageComposer
+from cardgenerator.core.asset_manager import AssetManager
+from cardgenerator.utils.error_handler import ErrorHandler, CardRenderingError
 
 logger = logging.getLogger(__name__)
 
