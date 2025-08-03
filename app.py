@@ -41,6 +41,9 @@ from routers import (
     lawyer_router
 )
 
+# Import SMS router
+from sms.sms_router import router as sms_router
+
 # Import new focused CardGenerator routers (replacing monolithic cardgenerator_router)
 from routers.card_generation_router import router as card_generation_router
 from routers.image_management_router import router as image_management_router
@@ -142,6 +145,12 @@ app.include_router(
     prefix="/api/ruleslawyer",
     tags=["ruleslawyer"],
     dependencies=[Depends(get_session)]
+)
+
+app.include_router(
+    sms_router,
+    prefix="/api/sms",
+    tags=["sms"]
 )
 
 # Register new focused CardGenerator routers (replacing monolithic cardgenerator_router)
