@@ -112,12 +112,3 @@ cardgenerator/fonts/
 cardgenerator/image_temp/
 cardgenerator/output/
 cardgenerator/ExampleCards/
-
-# Exclude specific files that are known to be large
-DungeonMind_Object_Structure.md
-Session_Progress_Report_2025_01_26.md
-CardGenerator_Design_Document.md
-CardGenerator_System_Refresh_Document.md
-CardGenerator_Visual_Refresh_Document.md
-DungeonMind_Architecture_Overview.md
-pixel_art_landing_page_plan.md 
