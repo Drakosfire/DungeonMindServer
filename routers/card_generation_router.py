@@ -1,37 +1,38 @@
 """
 Card Generation Router
 
-Clean, focused router handling only card generation endpoints.
-Integrates with the existing global session system for state management.
-
-Extracted from monolithic cardgenerator_router.py as part of architectural refactoring.
+Handles all card generation endpoints including text generation, image generation,
+and final card assembly with memory-only image streaming.
 """
 
 import logging
-import os
+import io
 from datetime import datetime
-from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends
+from typing import Dict, Any, List
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from session_management import get_session, session_manager
 from cardgenerator.services.card_generation_service import card_generation_service
 from cardgenerator.services.image_management_service import image_management_service
 from cardgenerator.utils.error_handler import CardGenerationError, ImageProcessingError
-from .auth_router import get_current_user
-
-# Import global session dependencies
-from session_management import get_session, session_manager
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/card-generation", tags=["Card Generation"])
 
-# Request models
+router = APIRouter(prefix="/api/v1/cardgenerator", tags=["CardGenerator"])
+
+
 class ItemGenerationRequest(BaseModel):
+    """Request model for item generation"""
     userIdea: str
 
+
 class RenderCardRequest(BaseModel):
+    """Request model for card text rendering"""
     image_url: str
     item_details: Dict[str, Any]
+
 
 @router.post('/generate-item')
 async def generate_item_description(
@@ -39,36 +40,47 @@ async def generate_item_description(
     session_data = Depends(get_session)
 ):
     """
-    Generate item description from user input using AI
+    Generate item description using AI
     
-    Integrates with global session system for state persistence
+    Step 1: Text generation for the card
     """
     try:
         session, session_id = session_data
-        logger.info(f"Item generation request for session {session_id}: {request.userIdea[:50]}...")
         
-        # Delegate to service layer
-        result = await card_generation_service.generate_item_description(request.userIdea)
+        if not request.userIdea:
+            raise HTTPException(status_code=422, detail="User idea is required")
         
-        # Update global session with the generated item
+        logger.info(f"Generating item description for: {request.userIdea} (session: {session_id})")
+        
+        # Generate item description using AI
+        item_details = await card_generation_service.generate_item_description(request.userIdea)
+        
+        # Update session with generated item
         if session:
             cardgen_update = {
-                "lastGeneratedItem": result,
+                "lastGeneratedItem": item_details,
                 "lastActivity": "item_generation",
-                "currentStep": "image_selection"
+                "currentStep": "text_generation",
+                "updatedAt": datetime.now()
             }
             await session_manager.update_tool_state(session_id, "cardgenerator", cardgen_update)
-            logger.debug(f"Updated CardGenerator session state for {session_id}")
+            
+            logger.debug(f"Updated session with generated item for session {session_id}")
         
-        logger.info("Item generation completed successfully")
-        return result
+        logger.info(f"Successfully generated item description for: {request.userIdea}")
+        return {
+            "success": True,
+            "item_details": item_details,
+            "session_id": session_id
+        }
         
     except CardGenerationError as e:
-        logger.error(f"Card generation failed: {e}")
+        logger.error(f"Item generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error in item generation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.post('/generate-core-images')
 async def generate_core_images(
@@ -77,51 +89,47 @@ async def generate_core_images(
     session_data = Depends(get_session)
 ):
     """
-    Generate core images from text prompt (Step 2 workflow)
+    Generate core images using Stable Diffusion
     
-    Updates session with generated images for persistence
+    Step 2: Image generation for the card
     """
     try:
         session, session_id = session_data
         
-        # Validate inputs
-        if not sdPrompt.strip():
-            raise HTTPException(status_code=422, detail="SD prompt cannot be empty")
-        if numImages < 1 or numImages > 10:
-            raise HTTPException(status_code=422, detail="Number of images must be between 1 and 10")
+        if not sdPrompt:
+            raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
         
-        logger.info(f"Core image generation for session {session_id}: {numImages} images")
+        logger.info(f"Generating {numImages} core images for prompt: {sdPrompt} (session: {session_id})")
         
-        # Delegate to service layer
-        result = await card_generation_service.generate_core_images(sdPrompt, numImages)
+        # Generate images using Stable Diffusion
+        image_urls = await card_generation_service.generate_core_images(sdPrompt, numImages)
         
-        # Update global session with generated images
+        # Update session with generated images
         if session:
             cardgen_update = {
-                "generatedImages": result.images,
-                "lastActivity": "core_image_generation", 
-                "currentStep": "image_selection",
-                "sdPrompt": sdPrompt
+                "generatedImages": image_urls,
+                "lastActivity": "image_generation",
+                "currentStep": "image_generation",
+                "updatedAt": datetime.now()
             }
             await session_manager.update_tool_state(session_id, "cardgenerator", cardgen_update)
-            logger.debug(f"Updated session with {len(result.images)} generated images")
+            
+            logger.debug(f"Updated session with generated images for session {session_id}")
         
-        # Return in expected format
+        logger.info(f"Successfully generated {len(image_urls)} core images")
         return {
-            "images": result.images,
-            "success": result.success,
-            "message": result.message,
+            "success": True,
+            "image_urls": image_urls,
             "session_id": session_id
         }
         
     except CardGenerationError as e:
         logger.error(f"Core image generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Unexpected error in core image generation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.post('/generate-card-images')
 async def generate_card_images(
@@ -131,60 +139,49 @@ async def generate_card_images(
     session_data = Depends(get_session)
 ):
     """
-    Generate card images using template (Step 3 workflow)
+    Generate card images with borders and templates
     
-    Combines image upload with card generation and session persistence
+    Step 3: Card image generation with styling
     """
     try:
         session, session_id = session_data
         
-        # Validate inputs
-        if not sdPrompt.strip():
-            raise HTTPException(status_code=422, detail="SD prompt cannot be empty")
-        if numImages < 1 or numImages > 10:
-            raise HTTPException(status_code=422, detail="Number of images must be between 1 and 10")
+        if not template:
+            raise HTTPException(status_code=422, detail="Template file is required")
+        if not sdPrompt:
+            raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
         
-        logger.info(f"Card image generation for session {session_id} with template: {template.filename}")
+        logger.info(f"Generating {numImages} card images with template for prompt: {sdPrompt} (session: {session_id})")
         
-        # Step 1: Upload template
-        upload_result = await image_management_service.upload_single_image(template)
-        template_url = upload_result.url
+        # Generate card images with template
+        card_image_urls = await card_generation_service.generate_card_images(template, sdPrompt, numImages)
         
-        # Step 2: Generate card images
-        result = await card_generation_service.generate_card_images(
-            template_url, sdPrompt, numImages
-        )
-        
-        # Update global session with card images and template
+        # Update session with card images
         if session:
             cardgen_update = {
-                "cardImages": result.images,
-                "templateUrl": template_url,
+                "cardImages": card_image_urls,
                 "lastActivity": "card_image_generation",
-                "currentStep": "card_selection",
-                "sdPrompt": sdPrompt
+                "currentStep": "card_image_generation",
+                "updatedAt": datetime.now()
             }
             await session_manager.update_tool_state(session_id, "cardgenerator", cardgen_update)
-            logger.debug(f"Updated session with {len(result.images)} card images")
+            
+            logger.debug(f"Updated session with card images for session {session_id}")
         
-        logger.info(f"Successfully generated {len(result.images)} card images")
+        logger.info(f"Successfully generated {len(card_image_urls)} card images")
         return {
-            "images": result.images,
-            "template_url": template_url,
-            "success": result.success,
-            "message": result.message,
+            "success": True,
+            "card_image_urls": card_image_urls,
             "session_id": session_id
         }
         
-    except ImageProcessingError as e:
-        logger.error(f"Image processing failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Image processing error: {str(e)}")
     except CardGenerationError as e:
-        logger.error(f"Card generation failed: {e}")
+        logger.error(f"Card image generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         logger.error(f"Unexpected error in card image generation: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.post('/render-text')
 async def render_card_text(
@@ -192,9 +189,9 @@ async def render_card_text(
     session_data = Depends(get_session)
 ):
     """
-    Render text on card using the new modular pipeline
+    Render text on card and return the image directly from memory
     
-    Final step that creates the completed card and updates session
+    Final step that creates the completed card and streams it to the user
     """
     try:
         session, session_id = session_data
@@ -213,12 +210,84 @@ async def render_card_text(
             request.image_url, request.item_details
         )
         
-        # Save to temporary file
-        temp_file_path = f"temp_card_{item_name}.png"
-        image_object.save(temp_file_path)
+        # Convert image to bytes in memory
+        img_buffer = io.BytesIO()
+        image_object.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
         
-        # Upload and clean up
-        upload_result = await image_management_service.upload_temporary_file(temp_file_path)
+        # Create streaming response
+        def generate_image():
+            yield img_buffer.getvalue()
+        
+        # Update global session with completed card info (but not the actual image)
+        if session:
+            cardgen_update = {
+                "itemDetails": request.item_details,
+                "lastActivity": "card_completion",
+                "currentStep": "completed",
+                "completedAt": datetime.now(),
+                "cardGenerated": True,
+                "cardName": item_name
+            }
+            await session_manager.update_tool_state(session_id, "cardgenerator", cardgen_update)
+            
+            logger.debug(f"Updated session with completed card for {item_name}")
+        
+        logger.info(f"Successfully rendered card for: {item_name}")
+        
+        # Return streaming response with the image
+        return StreamingResponse(
+            generate_image(),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": f"attachment; filename=card_{item_name}.png",
+                "X-Card-Name": item_name,
+                "X-Session-ID": session_id
+            }
+        )
+        
+    except CardGenerationError as e:
+        logger.error(f"Card rendering failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except ImageProcessingError as e:
+        logger.error(f"Image processing failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Image processing error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error in card text rendering: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post('/render-text-with-url')
+async def render_card_text_with_url(
+    request: RenderCardRequest,
+    session_data = Depends(get_session)
+):
+    """
+    Render text on card and upload to cloud storage, returning the URL
+    
+    Alternative endpoint that uploads the completed card to cloud storage
+    """
+    try:
+        session, session_id = session_data
+        
+        # Validate inputs
+        if not request.image_url:
+            raise HTTPException(status_code=422, detail="Image URL is required")
+        if not request.item_details:
+            raise HTTPException(status_code=422, detail="Item details are required")
+        
+        item_name = request.item_details.get('Name', 'Unknown')
+        logger.info(f"Rendering text for card with URL: {item_name} (session: {session_id})")
+        
+        # Delegate to service layer
+        image_object = await card_generation_service.render_text_on_card(
+            request.image_url, request.item_details
+        )
+        
+        # Upload image object directly to cloud storage
+        upload_result = await image_management_service.upload_with_memory_fallback(
+            image_object, f"card_{item_name}.png"
+        )
         final_card_url = upload_result.url
         
         # Update global session with completed card
@@ -231,11 +300,6 @@ async def render_card_text(
                 "completedAt": datetime.now()
             }
             await session_manager.update_tool_state(session_id, "cardgenerator", cardgen_update)
-            
-            # Add to recently created objects for cross-tool access
-            if hasattr(session, 'add_to_recently_viewed'):
-                # TODO: Create DungeonMind object for the card and add to recently viewed
-                pass
             
             logger.debug(f"Updated session with completed card for {item_name}")
         
@@ -255,6 +319,7 @@ async def render_card_text(
     except Exception as e:
         logger.error(f"Unexpected error in card text rendering: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get('/session-state')
 async def get_cardgenerator_session_state(session_data = Depends(get_session)):
