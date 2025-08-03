@@ -51,17 +51,21 @@ class CardRenderer:
             base_image = self.image_composer.validate_image_format(base_image)
             logger.info("✅ Base image loaded and prepared")
             
-            # Step 3: Prepare text elements
+            # Step 3: Add background overlays (value overlay, etc.) BEFORE text rendering
+            image_with_background = await self.asset_manager.add_background_assets(base_image, validated_details)
+            logger.info("✅ Background assets applied")
+            
+            # Step 4: Prepare text elements
             text_elements = self.text_processor.prepare_text_elements(validated_details)
             logger.info("✅ Text elements prepared")
             
-            # Step 4: Render text onto image
-            image_with_text = await self.text_processor.render_text(base_image, text_elements)
+            # Step 5: Render text onto image
+            image_with_text = await self.text_processor.render_text(image_with_background, text_elements)
             logger.info("✅ Text rendered onto image")
             
-            # Step 5: Add overlays and assets
-            image_with_assets = await self.asset_manager.add_assets(image_with_text, validated_details)
-            logger.info("✅ Assets and overlays applied")
+            # Step 6: Add foreground assets (rarity stickers, etc.) AFTER text rendering
+            image_with_assets = await self.asset_manager.add_foreground_assets(image_with_text, validated_details)
+            logger.info("✅ Foreground assets applied")
             
             # Step 6: Apply final effects
             final_image = image_with_assets.filter(ImageFilter.GaussianBlur(0.5))
@@ -93,12 +97,15 @@ class CardRenderer:
             base_image = await self.image_composer.load_and_resize(image_url)
             base_image = self.image_composer.validate_image_format(base_image)
             
+            # Add background assets first
+            image_with_background = await self.asset_manager.add_background_assets(base_image, validated_details)
+            
             # Prepare and render text
             text_elements = self.text_processor.prepare_text_elements(validated_details)
-            image_with_text = await self.text_processor.render_text(base_image, text_elements)
+            image_with_text = await self.text_processor.render_text(image_with_background, text_elements)
             
-            # Add assets
-            image_with_assets = await self.asset_manager.add_assets(image_with_text, validated_details)
+            # Add foreground assets
+            image_with_assets = await self.asset_manager.add_foreground_assets(image_with_text, validated_details)
             
             # Apply final effects
             final_image = image_with_assets.filter(ImageFilter.GaussianBlur(0.5))

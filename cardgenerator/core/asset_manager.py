@@ -18,9 +18,57 @@ class AssetManager:
         self.asset_config = ASSET_CONFIG
         logger.info("AssetManager initialized with asset configuration")
     
+    async def add_background_assets(self, image: Image.Image, item_details: Dict[str, Any]) -> Image.Image:
+        """
+        Add background assets (overlays that go behind text)
+        
+        Args:
+            image: Base card image
+            item_details: Item information for asset selection
+            
+        Returns:
+            Image with background assets applied
+        """
+        try:
+            # Add value overlay (background asset)
+            image = await self._add_value_overlay(image)
+            
+            logger.info("Successfully added background assets to card")
+            return image
+            
+        except Exception as e:
+            logger.error(f"Failed to add background assets to card: {e}")
+            # Continue without assets rather than failing completely
+            logger.warning("Continuing without background assets due to error")
+            return image
+    
+    async def add_foreground_assets(self, image: Image.Image, item_details: Dict[str, Any]) -> Image.Image:
+        """
+        Add foreground assets (overlays that go on top of text)
+        
+        Args:
+            image: Base card image with text rendered
+            item_details: Item information for asset selection
+            
+        Returns:
+            Image with foreground assets applied
+        """
+        try:
+            # Add rarity sticker (foreground asset)
+            image = await self._add_rarity_sticker(image, item_details.get('Rarity', 'Default'))
+            
+            logger.info("Successfully added foreground assets to card")
+            return image
+            
+        except Exception as e:
+            logger.error(f"Failed to add foreground assets to card: {e}")
+            # Continue without assets rather than failing completely
+            logger.warning("Continuing without foreground assets due to error")
+            return image
+    
     async def add_assets(self, image: Image.Image, item_details: Dict[str, Any]) -> Image.Image:
         """
-        Add all configured assets to the card image
+        Add all configured assets to the card image (legacy method for backward compatibility)
         
         Args:
             image: Base card image with text rendered
@@ -30,11 +78,11 @@ class AssetManager:
             Image with all assets applied
         """
         try:
-            # Add value overlay
-            image = await self._add_value_overlay(image)
+            # Add background assets first
+            image = await self.add_background_assets(image, item_details)
             
-            # Add rarity sticker
-            image = await self._add_rarity_sticker(image, item_details.get('Rarity', 'Default'))
+            # Add foreground assets
+            image = await self.add_foreground_assets(image, item_details)
             
             logger.info("Successfully added all assets to card")
             return image

@@ -96,47 +96,85 @@ class ErrorHandler:
     @staticmethod
     def validate_item_details(item_details: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Validate required fields in item details
+        Validate required fields in item details with case-insensitive field handling
         
         Args:
             item_details: Dictionary containing item information
             
         Returns:
-            Validated item details dictionary
+            Validated item details dictionary with normalized field names
             
         Raises:
             ValidationError: If required fields are missing or invalid
         """
-        required_fields = [
-            'Name', 'Type', 'Rarity', 'Value', 'Properties', 
-            'Weight', 'Description', 'Quote', 'SD Prompt'
-        ]
-        
-        # Check for missing fields
-        for field in required_fields:
-            if field not in item_details:
-                raise ValidationError(f"Missing required field: {field}")
-            
-            # Check for empty values (except Properties which can be empty list)
-            if field == 'Properties':
-                if not isinstance(item_details[field], list):
-                    raise ValidationError(f"Field '{field}' must be a list")
+        # Helper function to get field value with case-insensitive fallback
+        def get_field_value(field_name: str) -> Any:
+            """Get field value with case-insensitive fallback"""
+            # Try uppercase first (backend convention)
+            if field_name.upper() in item_details:
+                return item_details[field_name.upper()]
+            # Try lowercase (frontend convention)
+            elif field_name.lower() in item_details:
+                return item_details[field_name.lower()]
+            # Try title case
+            elif field_name.title() in item_details:
+                return item_details[field_name.title()]
             else:
-                if not item_details[field] or (isinstance(item_details[field], str) and not item_details[field].strip()):
-                    raise ValidationError(f"Empty required field: {field}")
+                return None
+        
+        # Normalize field names to uppercase for consistency
+        normalized_details = {}
+        field_mappings = {
+            'Name': ['name', 'Name', 'NAME'],
+            'Type': ['type', 'Type', 'TYPE'],
+            'Rarity': ['rarity', 'Rarity', 'RARITY'],
+            'Value': ['value', 'Value', 'VALUE'],
+            'Properties': ['properties', 'Properties', 'PROPERTIES'],
+            'Weight': ['weight', 'Weight', 'WEIGHT'],
+            'Description': ['description', 'Description', 'DESCRIPTION'],
+            'Quote': ['quote', 'Quote', 'QUOTE'],
+            'SD Prompt': ['sdPrompt', 'sd_prompt', 'SD_Prompt', 'SD_PROMPT']
+        }
+        
+        # Map fields to normalized uppercase names
+        for normalized_field, possible_names in field_mappings.items():
+            for possible_name in possible_names:
+                if possible_name in item_details:
+                    normalized_details[normalized_field] = item_details[possible_name]
+                    break
+            else:
+                # Field not found, check if it's required
+                if normalized_field in ['Name', 'Type', 'Rarity', 'Value', 'Description']:
+                    raise ValidationError(f"Missing required field: {normalized_field}")
+                else:
+                    # Optional fields get default values
+                    if normalized_field == 'Properties':
+                        normalized_details[normalized_field] = []
+                    else:
+                        normalized_details[normalized_field] = ""
+        
+        # Validate required fields
+        required_fields = ['Name', 'Type', 'Rarity', 'Value', 'Description']
+        for field in required_fields:
+            if not normalized_details[field] or (isinstance(normalized_details[field], str) and not normalized_details[field].strip()):
+                raise ValidationError(f"Empty required field: {field}")
+        
+        # Validate Properties field
+        if not isinstance(normalized_details['Properties'], list):
+            raise ValidationError("Field 'Properties' must be a list")
         
         # Validate specific field formats
         valid_rarities = ['Common', 'Uncommon', 'Rare', 'Very Rare', 'Legendary']
-        if item_details['Rarity'] not in valid_rarities:
-            raise ValidationError(f"Invalid rarity '{item_details['Rarity']}'. Must be one of: {valid_rarities}")
+        if normalized_details['Rarity'] not in valid_rarities:
+            raise ValidationError(f"Invalid rarity '{normalized_details['Rarity']}'. Must be one of: {valid_rarities}")
         
         # Validate value format (should contain currency)
-        value = item_details['Value'].strip()
+        value = normalized_details['Value'].strip()
         if not any(currency in value for currency in ['cp', 'sp', 'ep', 'gp', 'pp']):
             logger.warning(f"Value '{value}' may not contain valid currency denomination")
         
-        logger.info(f"Successfully validated item details for: {item_details['Name']}")
-        return item_details
+        logger.info(f"Successfully validated item details for: {normalized_details['Name']}")
+        return normalized_details
     
     @staticmethod
     def validate_dimensions(image: Image.Image, expected_width: int, expected_height: int) -> Image.Image:

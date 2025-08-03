@@ -70,68 +70,100 @@ class TextProcessor:
         text_areas = self.layout['text_areas']
         
         try:
+            # Helper function to get field value with case-insensitive fallback
+            def get_field_value(field_name: str) -> str:
+                """Get field value with case-insensitive fallback"""
+                # Try uppercase first (backend convention)
+                if field_name.upper() in item_details:
+                    return item_details[field_name.upper()]
+                # Try lowercase (frontend convention)
+                elif field_name.lower() in item_details:
+                    return item_details[field_name.lower()]
+                # Try title case
+                elif field_name.title() in item_details:
+                    return item_details[field_name.title()]
+                else:
+                    return ""
+            
             # Title element
-            if 'title' in text_areas and 'Name' in item_details:
-                font_path = self.fonts['regular']
-                elements.append(TextElement(
-                    content=item_details['Name'],
-                    area_config=text_areas['title'],
-                    font_path=font_path
-                ))
+            if 'title' in text_areas:
+                name_value = get_field_value('Name')
+                if name_value:
+                    font_path = self.fonts['regular']
+                    elements.append(TextElement(
+                        content=name_value,
+                        area_config=text_areas['title'],
+                        font_path=font_path
+                    ))
             
             # Type element (combine Type, Weight, and Damage Formula if present)
-            if 'type' in text_areas and 'Type' in item_details:
-                type_text = item_details['Type']
+            if 'type' in text_areas:
+                type_text = get_field_value('Type')
                 
                 # Add weight if present
-                if item_details.get('Weight'):
-                    type_text += f" {item_details['Weight']}"
+                weight_value = get_field_value('Weight')
+                if weight_value:
+                    type_text += f" {weight_value}"
                 
                 # Add damage formula if present
-                if item_details.get('Damage Formula'):
-                    type_text += f" {item_details['Damage Formula']}"
+                damage_value = get_field_value('Damage Formula')
+                if not damage_value:
+                    # Try alternative field names
+                    damage_value = get_field_value('Damage')
+                if damage_value:
+                    type_text += f" {damage_value}"
                 
-                font_path = self.fonts['regular']
-                elements.append(TextElement(
-                    content=type_text,
-                    area_config=text_areas['type'],
-                    font_path=font_path
-                ))
+                if type_text:
+                    font_path = self.fonts['regular']
+                    elements.append(TextElement(
+                        content=type_text,
+                        area_config=text_areas['type'],
+                        font_path=font_path
+                    ))
             
             # Description element (combine Description and Properties)
-            if 'description' in text_areas and 'Description' in item_details:
-                description_text = item_details['Description']
+            if 'description' in text_areas:
+                description_text = get_field_value('Description')
                 
                 # Add properties if present
-                if item_details.get('Properties') and isinstance(item_details['Properties'], list):
-                    properties_text = '\n'.join(item_details['Properties'])
+                properties = item_details.get('Properties') or item_details.get('properties')
+                if properties and isinstance(properties, list):
+                    properties_text = '\n'.join(properties)
                     if properties_text:
                         description_text += f"\n\n{properties_text}"
                 
-                font_path = self.fonts['regular']
-                elements.append(TextElement(
-                    content=description_text,
-                    area_config=text_areas['description'],
-                    font_path=font_path
-                ))
+                if description_text:
+                    font_path = self.fonts['regular']
+                    elements.append(TextElement(
+                        content=description_text,
+                        area_config=text_areas['description'],
+                        font_path=font_path
+                    ))
             
             # Value element
-            if 'value' in text_areas and 'Value' in item_details:
-                font_path = self.fonts['regular']
-                elements.append(TextElement(
-                    content=item_details['Value'],
-                    area_config=text_areas['value'],
-                    font_path=font_path
-                ))
+            if 'value' in text_areas:
+                value_text = get_field_value('Value')
+                if value_text:
+                    font_path = self.fonts['regular']
+                    elements.append(TextElement(
+                        content=value_text,
+                        area_config=text_areas['value'],
+                        font_path=font_path
+                    ))
+                    logger.info(f"✅ Value element added: '{value_text}' at position {text_areas['value']['x']}, {text_areas['value']['y']}")
+                else:
+                    logger.warning(f"⚠️ Value field is empty or not found in item_details")
             
             # Quote element (italic font)
-            if 'quote' in text_areas and 'Quote' in item_details:
-                font_path = self.fonts['italic']
-                elements.append(TextElement(
-                    content=item_details['Quote'],
-                    area_config=text_areas['quote'],
-                    font_path=font_path
-                ))
+            if 'quote' in text_areas:
+                quote_text = get_field_value('Quote')
+                if quote_text:
+                    font_path = self.fonts['italic']
+                    elements.append(TextElement(
+                        content=quote_text,
+                        area_config=text_areas['quote'],
+                        font_path=font_path
+                    ))
             
             logger.info(f"Prepared {len(elements)} text elements for rendering")
             return elements
@@ -159,7 +191,7 @@ class TextProcessor:
             logger.info(f"Rendering {len(text_elements)} text elements onto image")
             
             for element in text_elements:
-                logger.debug(f"Rendering text: '{element.content[:50]}...' at {element.position}")
+                logger.debug(f"🎨 Rendering text element: '{element.content[:50]}...' at {element.position}")
                 
                 # Determine rendering parameters based on element type
                 is_description = element.is_multiline

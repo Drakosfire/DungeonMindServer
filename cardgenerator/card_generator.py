@@ -105,6 +105,21 @@ def render_text_on_card_legacy(image_path, item_details):
     """LEGACY FUNCTION - Use the new pipeline instead"""
     logger.warning("🚨 Using legacy render_text_on_card function. Consider migrating to new pipeline.")
     
+    # Helper function to get field value with case-insensitive fallback
+    def get_field_value(field_name: str) -> str:
+        """Get field value with case-insensitive fallback"""
+        # Try uppercase first (backend convention)
+        if field_name.upper() in item_details:
+            return item_details[field_name.upper()]
+        # Try lowercase (frontend convention)
+        elif field_name.lower() in item_details:
+            return item_details[field_name.lower()]
+        # Try title case
+        elif field_name.title() in item_details:
+            return item_details[field_name.title()]
+        else:
+            return ""
+    
     # Download the image from the url
     image = open_image_from_url(image_path)
     
@@ -117,9 +132,10 @@ def render_text_on_card_legacy(image_path, item_details):
         image = image.resize((EXPECTED_WIDTH, EXPECTED_HEIGHT), Image.Resampling.LANCZOS)
     
     # Card Properties 
-    print(type(item_details['Properties']))
+    properties = item_details.get('Properties') or item_details.get('properties') or []
+    print(type(properties))
     
-    item_properties = '\n'.join(item_details['Properties'])
+    item_properties = '\n'.join(properties) if properties else ""
     
     font_path = "cardgenerator/fonts/Balgruf.ttf"
     italics_font_path = "cardgenerator/fonts/BalgrufItalic.ttf"
@@ -134,12 +150,16 @@ def render_text_on_card_legacy(image_path, item_details):
     type_center_position = (384, 545)
     type_area_width = 600 
     type_area_height = 45 
-    type_text = item_details['Type']
-    if len(item_details['Weight']) >= 1: 
-        type_text = type_text + ' '+ item_details['Weight']
+    type_text = get_field_value('Type')
+    weight_value = get_field_value('Weight')
+    if weight_value: 
+        type_text = type_text + ' '+ weight_value
 
-    if len(item_details['Damage Formula']) >= 1 : 
-        type_text = type_text + ' '+ item_details['Damage Formula']
+    damage_value = get_field_value('Damage Formula')
+    if not damage_value:
+        damage_value = get_field_value('Damage')
+    if damage_value: 
+        type_text = type_text + ' '+ damage_value
 
     # Description box properties
     description_position = (105, 630)
@@ -156,16 +176,18 @@ def render_text_on_card_legacy(image_path, item_details):
     quote_area_width = 470
     quote_area_height = 60                     
 
-    # Apply text rendering with correct coordinates
-    image = rend.render_text_with_dynamic_spacing(image, item_details['Name'], title_center_position, title_area_width, title_area_height,font_path,initial_font_size)
-    image = rend.render_text_with_dynamic_spacing(image,type_text , type_center_position, type_area_width, type_area_height,font_path,initial_font_size)
-    image = rend.render_text_with_dynamic_spacing(image, item_details['Description'] + '\n\n' + item_properties, description_position, description_area_width, description_area_height,font_path,initial_font_size, description = True)
-    #Paste value overlay
+    # Apply background overlays first (value overlay)
     paste_image_and_resize(image, value_overlay_path,x_position= 0,y_position=0, img_width= 768, img_height= 1024)
-    image = rend.render_text_with_dynamic_spacing(image, item_details['Value'], value_position, value_area_width, value_area_height,font_path,initial_font_size)
-    image = rend.render_text_with_dynamic_spacing(image, item_details['Quote'], quote_position, quote_area_width, quote_area_height,italics_font_path,initial_font_size, quote = True)
-    #Paste Sizzek Sticker
-    paste_image_and_resize(image, sticker_path_dictionary,x_position= 0,y_position=909, img_width= 115, img_height= 115, purchased_item_key= item_details['Rarity'])
+    
+    # Apply text rendering with correct coordinates
+    image = rend.render_text_with_dynamic_spacing(image, get_field_value('Name'), title_center_position, title_area_width, title_area_height,font_path,initial_font_size)
+    image = rend.render_text_with_dynamic_spacing(image, type_text, type_center_position, type_area_width, type_area_height,font_path,initial_font_size)
+    image = rend.render_text_with_dynamic_spacing(image, get_field_value('Description') + '\n\n' + item_properties, description_position, description_area_width, description_area_height,font_path,initial_font_size, description = True)
+    image = rend.render_text_with_dynamic_spacing(image, get_field_value('Value'), value_position, value_area_width, value_area_height,font_path,initial_font_size)
+    image = rend.render_text_with_dynamic_spacing(image, get_field_value('Quote'), quote_position, quote_area_width, quote_area_height,italics_font_path,initial_font_size, quote = True)
+    
+    # Apply foreground overlays last (rarity sticker)
+    paste_image_and_resize(image, sticker_path_dictionary,x_position= 0,y_position=909, img_width= 115, img_height= 115, purchased_item_key= get_field_value('Rarity'))
 
     # Add blur, gives it a less artificial look, put into list and return the list since gallery requires lists
     image = image.filter(ImageFilter.GaussianBlur(.5))
