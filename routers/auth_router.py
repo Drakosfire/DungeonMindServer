@@ -15,12 +15,19 @@ logger.info(f"Current environment: {env}")
 # Initialize OAuth without passing CONFIG directly
 oauth = OAuth()
 
+# Build a safe redirect URI even if env var is missing
+base_api_url = os.environ.get('DUNGEONMIND_API_URL')
+if not base_api_url:
+    logger.warning("DUNGEONMIND_API_URL not set; defaulting to http://localhost:7860")
+    base_api_url = 'http://localhost:7860'
+redirect_callback = f"{base_api_url.rstrip('/')}/api/auth/callback"
+
 # Register the Google client
 google = oauth.register(
     name='google',
     client_id=os.environ.get('GOOGLE_CLIENT_ID'),
     client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
-    redirect_uri=os.environ.get('DUNGEONMIND_API_URL') + '/api/auth/callback',
+    redirect_uri=redirect_callback,
     authorize_url='https://accounts.google.com/o/oauth2/auth',
     server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
     access_token_url='https://oauth2.googleapis.com/token',
@@ -28,13 +35,13 @@ google = oauth.register(
 )
 
 # Check if the required environment variables are set
-logger.info(f"Redirect URI: {os.environ.get('DUNGEONMIND_API_URL') + '/api/auth/callback'}")
+logger.info(f"Redirect URI: {redirect_callback}")
 if not google.client_id or not google.client_secret:
     raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env file or environment variables")
 
 @router.get('/login')
 async def login(request: Request):
-    redirect_uri = os.environ.get('DUNGEONMIND_API_URL') + '/api/auth/callback'
+    redirect_uri = redirect_callback
     logger.info(f"Login request from: {request.headers.get('x-forwarded-proto', 'unknown')}://{request.headers.get('host', 'unknown')}")
     logger.info(f"Using redirect URI: {redirect_uri}")
     return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
