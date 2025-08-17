@@ -102,12 +102,12 @@ async def generate_core_images(
         logger.info(f"Generating {numImages} core images for prompt: {sdPrompt} (session: {session_id})")
         
         # Generate images using Stable Diffusion
-        image_urls = await card_generation_service.generate_core_images(sdPrompt, numImages)
+        image_result = await card_generation_service.generate_core_images(sdPrompt, numImages)
         
         # Update session with generated images
         if session:
             cardgen_update = {
-                "generatedImages": image_urls,
+                "generatedImages": image_result.images,
                 "lastActivity": "image_generation",
                 "currentStep": "image_generation",
                 "updatedAt": datetime.now()
@@ -116,10 +116,10 @@ async def generate_core_images(
             
             logger.debug(f"Updated session with generated images for session {session_id}")
         
-        logger.info(f"Successfully generated {len(image_urls)} core images")
+        logger.info(f"Successfully generated {len(image_result.images)} core images")
         return {
             "success": True,
-            "image_urls": image_urls,
+            "images": image_result.images,
             "session_id": session_id
         }
         
@@ -153,13 +153,18 @@ async def generate_card_images(
         
         logger.info(f"Generating {numImages} card images with template for prompt: {sdPrompt} (session: {session_id})")
         
-        # Generate card images with template
-        card_image_urls = await card_generation_service.generate_card_images(template, sdPrompt, numImages)
+        # Upload template file first to get URL
+        from cardgenerator.services.image_management_service import image_management_service
+        template_upload_result = await image_management_service.upload_single_image(template)
+        template_url = template_upload_result.url
+        
+        # Generate card images with template URL
+        card_image_result = await card_generation_service.generate_card_images(template_url, sdPrompt, numImages)
         
         # Update session with card images
         if session:
             cardgen_update = {
-                "cardImages": card_image_urls,
+                "cardImages": card_image_result.images,
                 "lastActivity": "card_image_generation",
                 "currentStep": "card_image_generation",
                 "updatedAt": datetime.now()
@@ -168,10 +173,10 @@ async def generate_card_images(
             
             logger.debug(f"Updated session with card images for session {session_id}")
         
-        logger.info(f"Successfully generated {len(card_image_urls)} card images")
+        logger.info(f"Successfully generated {len(card_image_result.images)} card images")
         return {
             "success": True,
-            "card_image_urls": card_image_urls,
+            "images": card_image_result.images,
             "session_id": session_id
         }
         
