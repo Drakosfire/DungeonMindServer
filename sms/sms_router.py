@@ -13,13 +13,71 @@ from functools import lru_cache
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-EXTERNAL_API_KEY = os.getenv("EXTERNAL_MESSAGE_API_KEY")
-EXTERNAL_ENDPOINT = os.getenv("EXTERNAL_SMS_ENDPOINT", "http://100.92.179.100:3081/api/receive-sms")
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")  # API Key (username)
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")  # Changed from TWILIO_API_SECRET to TWILIO_AUTH_TOKEN
-TEST_MODE = os.getenv("TWILIO_TEST_MODE", "false").lower() == "true"  # Bypass signature validation for testing
-MAX_RETRIES = 3
-RETRY_DELAY = 1  # seconds
+# Configuration Management
+class SMSConfig:
+    """Centralized configuration management for SMS router"""
+    
+    def __init__(self):
+        # External API Configuration
+        self.external_api_key = os.getenv("EXTERNAL_MESSAGE_API_KEY")
+        self.external_endpoint = os.getenv("EXTERNAL_SMS_ENDPOINT")
+        
+        # Twilio Configuration
+        self.twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        self.twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        self.test_mode = os.getenv("TWILIO_TEST_MODE", "false").lower() == "true"
+        
+        # Webhook Configuration
+        self.webhook_url = os.getenv("TWILIO_WEBHOOK_URL", "https://www.dungeonmind.net/api/sms/receive")
+        
+        # Retry Configuration
+        self.max_retries = int(os.getenv("SMS_MAX_RETRIES", "3"))
+        self.retry_delay = int(os.getenv("SMS_RETRY_DELAY", "1"))
+        
+        # Timeout Configuration
+        self.request_timeout = int(os.getenv("SMS_REQUEST_TIMEOUT", "10"))
+        
+        # Validation
+        self._validate_config()
+    
+    def _validate_config(self):
+        """Validate required configuration"""
+        errors = []
+        
+        if not self.external_api_key:
+            errors.append("EXTERNAL_MESSAGE_API_KEY is required")
+        
+        if not self.external_endpoint:
+            errors.append("EXTERNAL_SMS_ENDPOINT is required")
+        
+        if not self.test_mode:
+            if not self.twilio_account_sid:
+                errors.append("TWILIO_ACCOUNT_SID is required when not in test mode")
+            if not self.twilio_auth_token:
+                errors.append("TWILIO_AUTH_TOKEN is required when not in test mode")
+        
+        if errors:
+            raise ValueError(f"SMS Configuration errors: {'; '.join(errors)}")
+    
+    def log_config(self):
+        """Log configuration (without sensitive data)"""
+        logger.info("=== SMS Router Configuration ===")
+        logger.info(f"External Endpoint: {self.external_endpoint}")
+        logger.info(f"Webhook URL: {self.webhook_url}")
+        logger.info(f"Test Mode: {self.test_mode}")
+        logger.info(f"Max Retries: {self.max_retries}")
+        logger.info(f"Request Timeout: {self.request_timeout}s")
+        logger.info(f"External API Key: {'*' * len(self.external_api_key) if self.external_api_key else 'None'}")
+        logger.info(f"Twilio Account SID: {'*' * len(self.twilio_account_sid) if self.twilio_account_sid else 'None'}")
+        logger.info(f"Twilio Auth Token: {'*' * len(self.twilio_auth_token) if self.twilio_auth_token else 'None'}")
+
+# Initialize configuration
+try:
+    config = SMSConfig()
+    config.log_config()
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    raise
 
 # In-memory cache for failed messages
 failed_messages = {}
@@ -103,13 +161,13 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
     """Forward message to external API with retry logic"""
     try:
         logger.info(f"=== Forwarding Message to External API ===")
-        logger.info(f"Endpoint: {EXTERNAL_ENDPOINT}")
+        logger.info(f"Endpoint: {config.external_endpoint}")
         logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-        logger.info(f"Headers: {json.dumps(headers, indent=2)}")
+        logger.info(f"Headers: {json.dumps({k: v for k, v in headers.items() if k.lower() != 'authorization'}, indent=2)}")
         
-        async with httpx.AsyncClient(timeout=10.0) as client:  # 10 second timeout
-            logger.info(f"Making request to {EXTERNAL_ENDPOINT}")
-            response = await client.post(EXTERNAL_ENDPOINT, json=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=config.request_timeout) as client:
+            logger.info(f"Making request to {config.external_endpoint}")
+            response = await client.post(config.external_endpoint, json=payload, headers=headers)
             logger.info(f"Response status: {response.status_code}")
             logger.info(f"Response body: {response.text}")
             response.raise_for_status()
@@ -117,40 +175,40 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
             return True
     except httpx.ConnectError as e:
         logger.error(f"Connection error: {str(e)}")
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"Retry {retry_count + 1}/{MAX_RETRIES} for message forwarding: Connection error")
-            await asyncio.sleep(RETRY_DELAY * (retry_count + 1))  # Exponential backoff
+        if retry_count < config.max_retries:
+            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: Connection error")
+            await asyncio.sleep(config.retry_delay * (retry_count + 1))  # Exponential backoff
             return await forward_message(payload, headers, retry_count + 1)
         else:
-            logger.error(f"Failed to forward message after {MAX_RETRIES} retries: Connection error")
+            logger.error(f"Failed to forward message after {config.max_retries} retries: Connection error")
             return False
     except httpx.TimeoutException as e:
         logger.error(f"Timeout error: {str(e)}")
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"Retry {retry_count + 1}/{MAX_RETRIES} for message forwarding: Timeout")
-            await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
+        if retry_count < config.max_retries:
+            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: Timeout")
+            await asyncio.sleep(config.retry_delay * (retry_count + 1))
             return await forward_message(payload, headers, retry_count + 1)
         else:
-            logger.error(f"Failed to forward message after {MAX_RETRIES} retries: Timeout")
+            logger.error(f"Failed to forward message after {config.max_retries} retries: Timeout")
             return False
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error {e.response.status_code}: {str(e)}")
         logger.error(f"Response body: {e.response.text}")
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"Retry {retry_count + 1}/{MAX_RETRIES} for message forwarding: HTTP {e.response.status_code}")
-            await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
+        if retry_count < config.max_retries:
+            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: HTTP {e.response.status_code}")
+            await asyncio.sleep(config.retry_delay * (retry_count + 1))
             return await forward_message(payload, headers, retry_count + 1)
         else:
-            logger.error(f"Failed to forward message after {MAX_RETRIES} retries: HTTP {e.response.status_code}")
+            logger.error(f"Failed to forward message after {config.max_retries} retries: HTTP {e.response.status_code}")
             return False
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        if retry_count < MAX_RETRIES:
-            logger.warning(f"Retry {retry_count + 1}/{MAX_RETRIES} for message forwarding: {str(e)}")
-            await asyncio.sleep(RETRY_DELAY * (retry_count + 1))
+        if retry_count < config.max_retries:
+            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: {str(e)}")
+            await asyncio.sleep(config.retry_delay * (retry_count + 1))
             return await forward_message(payload, headers, retry_count + 1)
         else:
-            logger.error(f"Failed to forward message after {MAX_RETRIES} retries: {str(e)}")
+            logger.error(f"Failed to forward message after {config.max_retries} retries: {str(e)}")
             return False
 
 @router.post("/receive")
@@ -186,18 +244,18 @@ async def receive_sms(request: Request) -> Response:
         
         # Validate the request is from Twilio using API Key authentication
         # Skip validation in test mode
-        if TEST_MODE:
+        if config.test_mode:
             logger.info("=== TEST MODE: Skipping Twilio signature validation ===")
             is_valid = True
         else:
-            if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+            if not config.twilio_account_sid or not config.twilio_auth_token:
                 logger.error("Missing Twilio API credentials")
                 raise HTTPException(status_code=500, detail="Server configuration error")
 
-            validator = RequestValidator(TWILIO_AUTH_TOKEN)  # Use API Secret for validation
+            validator = RequestValidator(config.twilio_auth_token)  # Use API Secret for validation
             
-            # Use the production URL for validation
-            url = "https://www.dungeonmind.net/api/sms/receive"
+            # Use configured webhook URL for validation
+            url = config.webhook_url
             
             signature = request.headers.get("X-Twilio-Signature", "")
             
@@ -209,8 +267,8 @@ async def receive_sms(request: Request) -> Response:
             logger.info(f"URL for validation: {url}")
             logger.info(f"Received signature: {signature}")
             logger.info(f"Form data for validation: {form_dict}")
-            logger.info(f"Auth token present: {bool(TWILIO_AUTH_TOKEN)}")
-            logger.info(f"Auth token length: {len(TWILIO_AUTH_TOKEN) if TWILIO_AUTH_TOKEN else 0}")
+            logger.info(f"Auth token present: {bool(config.twilio_auth_token)}")
+            logger.info(f"Auth token length: {len(config.twilio_auth_token) if config.twilio_auth_token else 0}")
             
             # Calculate expected signature for debugging
             expected_signature = validator.compute_signature(url, form_dict)
@@ -304,11 +362,6 @@ async def receive_sms(request: Request) -> Response:
             logger.info(f"Using cached response for message {message_sid}")
             return Response(content=str(resp), media_type="application/xml")
 
-        # Only check external API key and endpoint when forwarding
-        if not EXTERNAL_ENDPOINT:
-            logger.error("Missing EXTERNAL_SMS_ENDPOINT")
-            return Response(content=str(resp), media_type="application/xml", status_code=500)
-
         # Build Twilio-compatible payload with all standard fields
         payload = {
             # Core message data
@@ -351,12 +404,12 @@ async def receive_sms(request: Request) -> Response:
         }
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {EXTERNAL_API_KEY}"
+            "Authorization": f"Bearer {config.external_api_key}"
         }
 
         # Log the forwarding attempt
         logger.info(f"=== Forwarding Message ===")
-        logger.info(f"Forwarding to: {EXTERNAL_ENDPOINT}")
+        logger.info(f"Forwarding to: {config.external_endpoint}")
         logger.info(f"Message Type: {message_type}")
         if all_media:
             logger.info(f"Total Media Items: {len(all_media)} (Supported: {len(media)}, Unsupported: {len(unsupported_media)})")
@@ -364,7 +417,7 @@ async def receive_sms(request: Request) -> Response:
                 status = "✓" if media_item['supported'] else "✗"
                 logger.info(f"  {status} {media_item['content_type']}: {media_item['url']}")
         logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-        logger.info(f"Headers: {json.dumps(headers, indent=2)}")
+        logger.info(f"Headers: {json.dumps({k: v for k, v in headers.items() if k.lower() != 'authorization'}, indent=2)}")
         
         # Note: Twilio media URLs expire after a few hours
         # If long-term storage is needed, download immediately
@@ -412,7 +465,7 @@ async def retry_failed_messages() -> dict:
             del failed_messages[message_sid]
             continue
             
-        if message_data["retry_count"] >= MAX_RETRIES:
+        if message_data["retry_count"] >= config.max_retries:
             failed += 1
             continue
             
@@ -441,14 +494,14 @@ async def download_media(media_url: str) -> dict:
     Endpoint to download media from a Twilio URL.
     Useful for testing or if external services need to download media.
     """
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+    if not config.twilio_account_sid or not config.twilio_auth_token:
         raise HTTPException(status_code=500, detail="Twilio credentials not configured")
     
     if not media_url.startswith("https://api.twilio.com/"):
         raise HTTPException(status_code=400, detail="Invalid Twilio media URL")
     
     try:
-        media_content = await download_media_file(media_url, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        media_content = await download_media_file(media_url, config.twilio_account_sid, config.twilio_auth_token)
         if media_content:
             return {
                 "success": True,
