@@ -288,8 +288,18 @@ class StatBlockGenerator:
         
         # Validate ability score modifiers
         abilities = statblock.abilities
+        ability_mapping = {
+            "str": "str",
+            "dex": "dex", 
+            "con": "con",
+            "int": "intelligence",  # Handle the alias
+            "wis": "wis",
+            "cha": "cha"
+        }
+        
         for ability_name in ["str", "dex", "con", "int", "wis", "cha"]:
-            score = getattr(abilities, ability_name)
+            field_name = ability_mapping[ability_name]
+            score = getattr(abilities, field_name)
             if score < 1 or score > 30:
                 errors.append(f"{ability_name.upper()} score {score} is outside valid range (1-30)")
             elif score < 6:

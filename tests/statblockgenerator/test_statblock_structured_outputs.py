@@ -175,9 +175,15 @@ class TestStatBlockModels:
         assert "abilities" in properties
         assert "actions" in properties
         
-        # Check that enums are properly defined
-        assert "enum" in properties["size"]
-        assert "Medium" in properties["size"]["enum"]
+        # Check that enums are properly defined via $ref
+        assert "$ref" in properties["size"]
+        assert properties["size"]["$ref"] == "#/$defs/CreatureSize"
+        
+        # Check that the enum definition exists in $defs
+        assert "$defs" in schema
+        assert "CreatureSize" in schema["$defs"]
+        assert "enum" in schema["$defs"]["CreatureSize"]
+        assert "Medium" in schema["$defs"]["CreatureSize"]["enum"]
     
     def test_ability_scores_modifier_calculation(self):
         """Test ability score modifier calculations"""
