@@ -1,7 +1,12 @@
 import firebase_admin
 import os
+from pathlib import Path
 from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
+
+# Get the directory where this file is located
+CURRENT_DIR = Path(__file__).parent
+PROJECT_ROOT = CURRENT_DIR.parent  # DungeonMind/ directory
 
 # Load environment variables based on current environment
 env = os.getenv('ENVIRONMENT', 'development')
@@ -11,10 +16,18 @@ else:
     load_dotenv('../.env.development', override=True)
 
 # Get service account path from environment variable with fallback
-SERVICE_ACCOUNT_PATH = os.getenv(
-    'SERVICE_ACCOUNT_PATH', 
-    '/home/user/serviceAccountKey.json'  # Default for Docker container
-)
+if env == 'production':
+    SERVICE_ACCOUNT_PATH = os.getenv(
+            'SERVICE_ACCOUNT_PATH', 
+            '/home/user/serviceAccountKey.json'  # Default for Docker container
+        )
+else:
+    # Use absolute path relative to this file's location
+    default_path = PROJECT_ROOT / 'serviceAccountKey.json'
+    SERVICE_ACCOUNT_PATH = os.getenv(
+        'SERVICE_ACCOUNT_PATH', 
+        str(default_path)  # Absolute path to DungeonMind/serviceAccountKey.json
+    )
 
 
 

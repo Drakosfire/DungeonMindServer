@@ -51,6 +51,9 @@ from routers.asset_router import router as asset_router
 from routers.cardgenerator_project_router import router as cardgenerator_project_router
 from routers.cardgenerator_compatibility_router import router as cardgenerator_compatibility_router
 
+# Import StatBlockGenerator router
+from routers.statblockgenerator_router import router as statblockgenerator_router
+
 # Import new global session and object routers
 from routers.global_session_router import router as global_session_router
 from routers.global_objects_router import router as global_objects_router
@@ -192,6 +195,12 @@ app.include_router(
     tags=["Global Object Management"]
 )
 
+# Include StatBlockGenerator router
+app.include_router(
+    statblockgenerator_router,
+    tags=["StatBlock Generator"]
+)
+
 # Health check route
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
@@ -210,7 +219,6 @@ async def get_config():
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/saved_data", StaticFiles(directory="saved_data"), name="saved_data")
 
 if __name__ == "__main__":
     import uvicorn
