@@ -9,7 +9,8 @@ from datetime import datetime
 import json
 
 # Import authentication
-from .auth_router import get_current_user
+from .auth_router import get_current_user, get_current_user_optional
+from auth_service import User
 
 # Import StatBlock components
 from statblockgenerator.statblock_generator import StatBlockGenerator
@@ -47,16 +48,17 @@ STATBLOCK_SESSIONS_COLLECTION = "statblock_sessions"
 STATBLOCK_PROJECTS_COLLECTION = "statblock_projects"
 STATBLOCK_CREATURES_COLLECTION = "statblock_creatures"
 
-@router.post("/generate-creature")
-async def generate_creature(
+@router.post("/generate-statblock")
+async def generate_statblock(
     request: CreatureGenerationRequest,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Generate a complete D&D 5e creature statblock from description
+    Does not require authentication - works for anonymous users
     """
     try:
-        logger.info(f"Generating creature for user: {current_user.get('uid') if current_user else 'anonymous'}")
+        logger.info(f"Generating statblock for user: {current_user.email if current_user else 'anonymous'}")
         
         success, result = await statblock_generator.generate_creature(request)
         
@@ -70,16 +72,17 @@ async def generate_creature(
         }
         
     except Exception as e:
-        logger.error(f"Error in generate_creature: {str(e)}")
+        logger.error(f"Error in generate_statblock: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/generate-creature-image")
-async def generate_creature_image(
+@router.post("/generate-image")
+async def generate_image(
     request: ImageGenerationRequest,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Generate creature artwork using Fal.ai
+    Does not require authentication - works for anonymous users
     """
     try:
         logger.info(f"Generating creature image for prompt: {request.sd_prompt[:50]}...")
@@ -335,6 +338,143 @@ async def delete_project(
     except Exception as e:
         logger.error(f"Error deleting project: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/save-project")
+async def save_project(
+    request: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Save or update a StatBlock project with auto-normalization
+    Phase 3: Auto-save endpoint with ID normalization
+    """
+    try:
+        user_id = current_user["uid"]
+        project_id = request.get("projectId")
+        statblock = request.get("statblock")
+        
+        if not statblock:
+            raise HTTPException(status_code=400, detail="Statblock data required")
+        
+        # Generate project ID if not provided (new project)
+        if not project_id:
+            project_id = f"sb_proj_{datetime.now().timestamp()}_{user_id[:8]}"
+            logger.info(f"Creating new StatBlock project: {project_id}")
+        else:
+            logger.info(f"Updating StatBlock project: {project_id}")
+        
+        # Phase 3 Task 7: Normalize statblock (ensure all list items have IDs)
+        normalized_statblock = normalize_statblock_ids(statblock)
+        
+        # Prepare project data
+        now = datetime.now()
+        project_data = {
+            "id": project_id,
+            "name": normalized_statblock.get("name", "Untitled Creature"),
+            "description": normalized_statblock.get("description", ""),
+            "createdBy": user_id,
+            "updatedAt": now.isoformat(),
+            "lastModified": now.isoformat(),
+            "state": {
+                "creatureDetails": normalized_statblock,
+                "currentStepId": request.get("currentStepId", "creature-description"),
+                "stepCompletion": request.get("stepCompletion", {}),
+                "selectedAssets": request.get("selectedAssets", {}),
+                "generatedContent": request.get("generatedContent", {}),
+                "autoSaveEnabled": True,
+                "lastSaved": now.isoformat()
+            },
+            "metadata": {
+                "version": "1.0.0",
+                "platform": "web",
+                "challengeRating": normalized_statblock.get("challengeRating"),
+                "creatureType": normalized_statblock.get("type")
+            }
+        }
+        
+        # Check if project exists (for update vs create)
+        db = firestore.Client()
+        doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            # Verify ownership before update
+            existing_data = doc.to_dict()
+            if existing_data.get("createdBy") != user_id:
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            # Preserve creation time for updates
+            project_data["createdAt"] = existing_data.get("createdAt", now.isoformat())
+        else:
+            # New project
+            project_data["createdAt"] = now.isoformat()
+        
+        # Save to Firestore
+        doc_ref.set(project_data)
+        
+        logger.info(f"Saved StatBlock project: {project_id} for user: {user_id}")
+        
+        return {
+            "success": True,
+            "projectId": project_id,
+            "createdAt": project_data["createdAt"],
+            "updatedAt": project_data["updatedAt"],
+            "message": "Project saved successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving project: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def normalize_statblock_ids(statblock: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Phase 3 Task 7: Ensure all list items have stable IDs
+    Backend ID generation with frontend fallback support
+    """
+    import uuid
+    
+    def ensure_id(item: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure an item has an ID"""
+        if not item.get("id"):
+            item["id"] = str(uuid.uuid4())
+        return item
+    
+    # Normalize actions
+    if "actions" in statblock and isinstance(statblock["actions"], list):
+        statblock["actions"] = [ensure_id(action) for action in statblock["actions"]]
+    
+    # Normalize bonus actions
+    if "bonusActions" in statblock and isinstance(statblock["bonusActions"], list):
+        statblock["bonusActions"] = [ensure_id(action) for action in statblock["bonusActions"]]
+    
+    # Normalize reactions
+    if "reactions" in statblock and isinstance(statblock["reactions"], list):
+        statblock["reactions"] = [ensure_id(reaction) for reaction in statblock["reactions"]]
+    
+    # Normalize special abilities
+    if "specialAbilities" in statblock and isinstance(statblock["specialAbilities"], list):
+        statblock["specialAbilities"] = [ensure_id(ability) for ability in statblock["specialAbilities"]]
+    
+    # Normalize spells
+    if "spells" in statblock and isinstance(statblock["spells"], dict):
+        if "cantrips" in statblock["spells"] and isinstance(statblock["spells"]["cantrips"], list):
+            statblock["spells"]["cantrips"] = [ensure_id(spell) for spell in statblock["spells"]["cantrips"]]
+        if "knownSpells" in statblock["spells"] and isinstance(statblock["spells"]["knownSpells"], list):
+            statblock["spells"]["knownSpells"] = [ensure_id(spell) for spell in statblock["spells"]["knownSpells"]]
+    
+    # Normalize legendary actions
+    if "legendaryActions" in statblock and isinstance(statblock["legendaryActions"], dict):
+        if "actions" in statblock["legendaryActions"] and isinstance(statblock["legendaryActions"]["actions"], list):
+            statblock["legendaryActions"]["actions"] = [ensure_id(action) for action in statblock["legendaryActions"]["actions"]]
+    
+    # Normalize lair actions
+    if "lairActions" in statblock and isinstance(statblock["lairActions"], dict):
+        if "actions" in statblock["lairActions"] and isinstance(statblock["lairActions"]["actions"], list):
+            statblock["lairActions"]["actions"] = [ensure_id(action) for action in statblock["lairActions"]["actions"]]
+    
+    return statblock
 
 # Session Management Endpoints
 
