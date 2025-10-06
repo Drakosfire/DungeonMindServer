@@ -68,8 +68,19 @@ class StatBlockGenerator:
             
             logger.info(f"Successfully generated creature: {statblock.name}")
             
+            # Serialize with camelCase aliases for frontend
+            serialized_statblock = statblock.model_dump(by_alias=True)
+            
+            # Debug: Log special features to verify serialization
+            if serialized_statblock.get('spells'):
+                logger.info(f"Spells serialized with keys: {list(serialized_statblock['spells'].keys())}")
+            if serialized_statblock.get('legendaryActions'):
+                logger.info(f"Legendary actions count: {len(serialized_statblock['legendaryActions'].get('actions', []))}")
+            if serialized_statblock.get('lairActions'):
+                logger.info(f"Lair actions count: {len(serialized_statblock['lairActions'].get('actions', []))}")
+            
             return True, {
-                "statblock": statblock.dict(),
+                "statblock": serialized_statblock,
                 "generation_info": {
                     "prompt_version": self.prompt_manager.version,
                     "model_used": "gpt-4o-2024-08-06",
@@ -170,6 +181,99 @@ class StatBlockGenerator:
             logger.error(f"Error calculating CR: {str(e)}")
             return False, {"error": "CR calculation failed", "details": str(e)}
     
+    def _make_schema_strict(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Transform Pydantic schema for OpenAI structured outputs strict mode.
+        
+        Requirements:
+        1. All objects must have 'additionalProperties: false'
+        2. All properties must be in the 'required' array
+        3. Optional fields should be handled by allowing null in their type
+        4. $ref cannot have additional keywords (description, default, etc.)
+        5. $defs section must also be cleaned
+        """
+        import copy
+        
+        # Deep copy to avoid mutating original
+        schema = copy.deepcopy(schema)
+        
+        # CRITICAL: Process $defs section FIRST (Hypothesis 2)
+        # This is where referenced types live (like SpellSlots)
+        if "$defs" in schema:
+            logger.info(f"Found $defs with {len(schema['$defs'])} definitions")
+            for def_name in list(schema["$defs"].keys()):
+                logger.info(f"Processing definition: {def_name}")
+                schema["$defs"][def_name] = self._clean_schema_node(schema["$defs"][def_name])
+        
+        # Then process the main schema
+        schema = self._clean_schema_node(schema)
+        
+        return schema
+    
+    def _clean_schema_node(self, schema: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Clean a single schema node (recursive helper for _make_schema_strict)
+        """
+        if not isinstance(schema, dict):
+            return schema
+        
+        # FIRST: Handle nullable $ref (anyOf with $ref and null) BEFORE other processing
+        # This is a special case: {"anyOf": [{"$ref": "..."}, {"type": "null"}], "default": null, ...}
+        # OpenAI strict mode doesn't allow $ref with sibling keywords
+        if "anyOf" in schema:
+            any_of_types = schema["anyOf"]
+            non_null_types = [t for t in any_of_types if t.get("type") != "null"]
+            has_null = any(t.get("type") == "null" for t in any_of_types)
+            
+            # Check if the non-null type is a $ref
+            if has_null and len(non_null_types) == 1 and "$ref" in non_null_types[0]:
+                # Nullable $ref - we need to keep anyOf structure
+                # OpenAI doesn't allow {"$ref": "...", "default": null}
+                # So we keep it as anyOf but clean up the structure
+                return {
+                    "anyOf": [
+                        {"$ref": non_null_types[0]["$ref"]},
+                        {"type": "null"}
+                    ]
+                }
+            elif has_null and len(non_null_types) == 1:
+                # Nullable non-$ref type - can flatten to type array
+                actual_type = non_null_types[0]
+                # Start fresh with just the actual type
+                result = {}
+                for key, value in actual_type.items():
+                    result[key] = value
+                # Add null to type
+                if "type" in result:
+                    result["type"] = [result["type"], "null"]
+                return self._clean_schema_node(result)
+        
+        # SECOND: Handle $ref with extra keywords - must be done before any other processing
+        if "$ref" in schema and len(schema) > 1:
+            # $ref must be alone - return a clean $ref
+            logger.debug(f"Cleaning $ref with extra keys: {list(schema.keys())}")
+            return {"$ref": schema["$ref"]}
+        
+        # THIRD: Recursively process nested schemas BEFORE modifying current schema
+        # This ensures all nested $refs are cleaned up first
+        for key, value in list(schema.items()):  # Use list() to avoid dict size change during iteration
+            if isinstance(value, dict):
+                schema[key] = self._clean_schema_node(value)
+            elif isinstance(value, list):
+                schema[key] = [self._clean_schema_node(item) if isinstance(item, dict) else item for item in value]
+        
+        # FOURTH: Add additionalProperties: false to objects
+        if schema.get("type") == "object":
+            schema["additionalProperties"] = False
+            
+            # Make sure all properties are required
+            # OpenAI strict mode requires all properties to be in required array
+            if "properties" in schema:
+                all_props = list(schema["properties"].keys())
+                schema["required"] = all_props
+        
+        return schema
+    
     async def _call_openai_structured(self, prompt: str, response_model, model: str = "gpt-4o-2024-08-06") -> Dict[str, Any]:
         """
         Call OpenAI API with Structured Outputs
@@ -177,7 +281,7 @@ class StatBlockGenerator:
         Args:
             prompt: Prompt to send
             response_model: Pydantic model for structured response
-            model: Model to use (must support structured outputs)
+            model: Model to use (must support structured outputs: gpt-4o-2024-08-06 or gpt-4o-mini)
             
         Returns:
             Response dictionary with parsed statblock
@@ -185,6 +289,19 @@ class StatBlockGenerator:
         try:
             # Convert Pydantic model to JSON schema for OpenAI
             schema = response_model.model_json_schema()
+            
+            logger.info("=" * 80)
+            logger.info("ORIGINAL PYDANTIC SCHEMA (first 1000 chars):")
+            logger.info(json.dumps(schema, indent=2)[:1000])
+            logger.info("=" * 80)
+            
+            # Make schema strict (add additionalProperties: false to all objects)
+            schema = self._make_schema_strict(schema)
+            
+            logger.info("=" * 80)
+            logger.info("TRANSFORMED STRICT SCHEMA (full):")
+            logger.info(json.dumps(schema, indent=2))
+            logger.info("=" * 80)
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,

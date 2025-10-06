@@ -95,38 +95,52 @@ class Spell(BaseModel):
     """Individual spell"""
     name: str = Field(..., description="Spell name")
     level: int = Field(..., ge=0, le=9, description="Spell level (0 for cantrips)")
+    description: Optional[str] = Field(None, description="Spell description/effect")
+    school: Optional[str] = Field(None, description="School of magic")
+    
+    model_config = {"populate_by_name": True}
 
 class SpellSlots(BaseModel):
     """Spell slots per level"""
-    level_1: Optional[int] = Field(None, ge=0, description="1st level spell slots")
-    level_2: Optional[int] = Field(None, ge=0, description="2nd level spell slots")
-    level_3: Optional[int] = Field(None, ge=0, description="3rd level spell slots")
-    level_4: Optional[int] = Field(None, ge=0, description="4th level spell slots")
-    level_5: Optional[int] = Field(None, ge=0, description="5th level spell slots")
-    level_6: Optional[int] = Field(None, ge=0, description="6th level spell slots")
-    level_7: Optional[int] = Field(None, ge=0, description="7th level spell slots")
-    level_8: Optional[int] = Field(None, ge=0, description="8th level spell slots")
-    level_9: Optional[int] = Field(None, ge=0, description="9th level spell slots")
+    level_1: Optional[int] = Field(None, ge=0, alias="level1", description="1st level spell slots")
+    level_2: Optional[int] = Field(None, ge=0, alias="level2", description="2nd level spell slots")
+    level_3: Optional[int] = Field(None, ge=0, alias="level3", description="3rd level spell slots")
+    level_4: Optional[int] = Field(None, ge=0, alias="level4", description="4th level spell slots")
+    level_5: Optional[int] = Field(None, ge=0, alias="level5", description="5th level spell slots")
+    level_6: Optional[int] = Field(None, ge=0, alias="level6", description="6th level spell slots")
+    level_7: Optional[int] = Field(None, ge=0, alias="level7", description="7th level spell slots")
+    level_8: Optional[int] = Field(None, ge=0, alias="level8", description="8th level spell slots")
+    level_9: Optional[int] = Field(None, ge=0, alias="level9", description="9th level spell slots")
+    
+    model_config = {"populate_by_name": True}
 
 class SpellcastingBlock(BaseModel):
     """Spellcasting ability block"""
     level: int = Field(..., ge=1, le=20, description="Spellcaster level")
     ability: str = Field(..., description="Spellcasting ability")
-    save_dc: int = Field(..., ge=8, description="Spell save DC")
-    attack_bonus: int = Field(..., description="Spell attack bonus")
+    save_dc: int = Field(..., ge=8, alias="saveDc", description="Spell save DC")
+    attack_bonus: int = Field(..., alias="attackBonus", description="Spell attack bonus")
     cantrips: Optional[List[Spell]] = Field(None, description="Known cantrips")
-    known_spells: Optional[List[Spell]] = Field(None, description="Known spells")
-    spell_slots: Optional[SpellSlots] = Field(None, description="Available spell slots")
+    known_spells: Optional[List[Spell]] = Field(None, alias="knownSpells", description="Known spells")
+    spell_slots: Optional[SpellSlots] = Field(None, alias="spellSlots", description="Available spell slots")
+    
+    model_config = {"populate_by_name": True}
 
 class LegendaryActionsBlock(BaseModel):
     """Legendary actions block"""
-    actions_per_turn: int = Field(3, ge=1, description="Number of legendary actions per turn")
+    actions_per_turn: int = Field(3, ge=1, alias="actionsPerTurn", description="Number of legendary actions per turn")
     actions: List[Action] = Field(..., description="Available legendary actions")
+    description: Optional[str] = Field(None, description="Introductory text for legendary actions")
+    
+    model_config = {"populate_by_name": True}
 
 class LairActionsBlock(BaseModel):
     """Lair actions block"""
     initiative: int = Field(20, description="Initiative count for lair actions")
-    actions: List[str] = Field(..., description="Lair action descriptions")
+    actions: List[Action] = Field(..., description="Lair action descriptions")
+    description: Optional[str] = Field(None, description="Introductory text for lair actions")
+    
+    model_config = {"populate_by_name": True}
 
 # Main StatBlock model
 class StatBlockDetails(BaseModel):
@@ -140,55 +154,57 @@ class StatBlockDetails(BaseModel):
     alignment: Alignment = Field(..., description="Creature alignment")
     
     # Combat Statistics
-    armor_class: int = Field(..., ge=1, description="Armor Class")
-    hit_points: int = Field(..., ge=1, description="Hit Points")
-    hit_dice: str = Field(..., description="Hit dice formula (e.g., '8d8+16')")
+    armor_class: int = Field(..., ge=1, alias="armorClass", description="Armor Class")
+    hit_points: int = Field(..., ge=1, alias="hitPoints", description="Hit Points")
+    hit_dice: str = Field(..., alias="hitDice", description="Hit dice formula (e.g., '8d8+16')")
     speed: SpeedObject = Field(..., description="Movement speeds")
     
     # Ability Scores
     abilities: AbilityScores = Field(..., description="Six ability scores")
-    saving_throws: Optional[Dict[str, int]] = Field(None, description="Saving throw bonuses")
+    saving_throws: Optional[Dict[str, int]] = Field(None, alias="savingThrows", description="Saving throw bonuses")
     skills: Optional[Dict[str, int]] = Field(None, description="Skill bonuses")
     
     # Resistances and Immunities
-    damage_resistance: Optional[str] = Field(None, description="Damage resistances")
-    damage_immunity: Optional[str] = Field(None, description="Damage immunities")
-    condition_immunity: Optional[str] = Field(None, description="Condition immunities")
-    damage_vulnerability: Optional[str] = Field(None, description="Damage vulnerabilities")
+    damage_resistance: Optional[str] = Field(None, alias="damageResistance", description="Damage resistances")
+    damage_immunity: Optional[str] = Field(None, alias="damageImmunity", description="Damage immunities")
+    condition_immunity: Optional[str] = Field(None, alias="conditionImmunity", description="Condition immunities")
+    damage_vulnerability: Optional[str] = Field(None, alias="damageVulnerability", description="Damage vulnerabilities")
     
     # Senses and Communication
     senses: SensesObject = Field(..., description="Creature senses")
     languages: str = Field(..., description="Known languages")
     
     # Challenge and Experience
-    challenge_rating: Union[str, float] = Field(..., description="Challenge Rating")
+    challenge_rating: Union[str, float] = Field(..., alias="challengeRating", description="Challenge Rating")
     xp: int = Field(..., ge=0, description="Experience Points")
-    proficiency_bonus: int = Field(..., ge=2, description="Proficiency bonus")
+    proficiency_bonus: int = Field(..., ge=2, alias="proficiencyBonus", description="Proficiency bonus")
     
     # Actions and Abilities
     actions: List[Action] = Field(..., description="Actions")
-    bonus_actions: Optional[List[Action]] = Field(None, description="Bonus actions")
+    bonus_actions: Optional[List[Action]] = Field(None, alias="bonusActions", description="Bonus actions")
     reactions: Optional[List[Action]] = Field(None, description="Reactions")
     
     # Special Abilities
-    special_abilities: Optional[List[Action]] = Field(None, description="Special abilities/traits")
+    special_abilities: Optional[List[Action]] = Field(None, alias="specialAbilities", description="Special abilities/traits")
     
     # Spellcasting
     spells: Optional[SpellcastingBlock] = Field(None, description="Spellcasting block")
     
     # Legendary/Lair Actions
-    legendary_actions: Optional[LegendaryActionsBlock] = Field(None, description="Legendary actions")
-    lair_actions: Optional[LairActionsBlock] = Field(None, description="Lair actions")
+    legendary_actions: Optional[LegendaryActionsBlock] = Field(None, alias="legendaryActions", description="Legendary actions")
+    lair_actions: Optional[LairActionsBlock] = Field(None, alias="lairActions", description="Lair actions")
     
     # Descriptive Content
     description: str = Field(..., description="Creature description/lore")
-    sd_prompt: str = Field(..., description="Stable Diffusion prompt for image generation")
+    sd_prompt: str = Field(..., alias="sdPrompt", description="Stable Diffusion prompt for image generation")
     
     # Project Integration
-    project_id: Optional[str] = Field(None, description="Associated project ID")
-    created_at: Optional[datetime] = Field(None, description="Creation timestamp")
-    last_modified: Optional[datetime] = Field(None, description="Last modification timestamp")
+    project_id: Optional[str] = Field(None, alias="projectId", description="Associated project ID")
+    created_at: Optional[datetime] = Field(None, alias="createdAt", description="Creation timestamp")
+    last_modified: Optional[datetime] = Field(None, alias="lastModified", description="Last modification timestamp")
     tags: Optional[List[str]] = Field(None, description="Creature tags")
+    
+    model_config = {"populate_by_name": True}  # Accept both camelCase and snake_case
     
     @field_validator('challenge_rating')
     @classmethod
@@ -287,11 +303,32 @@ class StatBlockGeneratorState(BaseModel):
 
 # Request/Response models for API
 class CreatureGenerationRequest(BaseModel):
-    """Request for generating a creature"""
+    """Request for generating a creature with optional special features"""
     description: str = Field(..., description="Natural language creature description")
-    include_spells: bool = Field(False, description="Include spellcasting abilities")
-    include_legendary: bool = Field(False, description="Include legendary actions")
-    challenge_rating_target: Optional[Union[str, float]] = Field(None, description="Target challenge rating")
+    
+    # Accept both camelCase (frontend) and snake_case (Python convention)
+    include_spells: bool = Field(
+        False, 
+        alias="includeSpellcasting",
+        description="Include spellcasting abilities with spell slots and known spells"
+    )
+    include_legendary: bool = Field(
+        False, 
+        alias="includeLegendaryActions",
+        description="Include legendary actions (3 actions with varying costs)"
+    )
+    include_lair: bool = Field(
+        False, 
+        alias="includeLairActions",
+        description="Include lair actions (environmental effects on initiative count 20)"
+    )
+    
+    challenge_rating_target: Optional[Union[str, float]] = Field(
+        None, 
+        description="Target challenge rating (e.g., '1', '5', '1/4')"
+    )
+    
+    model_config = {"populate_by_name": True}  # Accept both camelCase and snake_case
 
 class ImageGenerationRequest(BaseModel):
     """Request for generating creature images"""
