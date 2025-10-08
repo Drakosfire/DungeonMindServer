@@ -28,12 +28,17 @@ from statblockgenerator.models.statblock_models import (
 
 # Import Firestore utilities (following CardGenerator pattern)
 import firestore.firestore_utils as firestore_utils
+from firestore.firebase_config import db  # Properly initialized Firestore client
 from google.cloud import firestore
 
 # Import external service clients
 import os
 import fal_client
+from openai import OpenAI
 from cloudflare.handle_images import upload_image_to_cloudflare
+
+# Initialize OpenAI client
+openai_client = OpenAI()
 
 logger = logging.getLogger(__name__)
 
@@ -78,55 +83,210 @@ async def generate_statblock(
 @router.post("/generate-image")
 async def generate_image(
     request: ImageGenerationRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Generate creature artwork using Fal.ai
-    Does not require authentication - works for anonymous users
+    Generate creature artwork using multiple AI models
+    
+    Supports:
+    - flux-pro: fal-ai/flux-pro/new (default, high quality)
+    - imagen4: fal-ai/imagen4/preview (Google's model)
+    - openai: OpenAI gpt-image-1-mini (fast, cost-effective)
+    
+    Requires authentication - AI generation costs money and images need CDN storage
     """
     try:
-        logger.info(f"Generating creature image for prompt: {request.sd_prompt[:50]}...")
+        logger.info(f"Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {request.sd_prompt[:50]}...")
         
-        # Use Fal.ai for image generation (following CardGenerator pattern)
-        fal_result = fal_client.subscribe(
-            "fal-ai/flux/schnell",
-            arguments={
-                "prompt": request.sd_prompt,
-                "image_size": "landscape_4_3",
-                "num_inference_steps": 4,
-                "num_images": request.num_images,
-                "enable_safety_checker": True
-            }
-        )
-        
-        if not fal_result or "images" not in fal_result:
-            raise HTTPException(status_code=400, detail="Image generation failed")
-        
-        # Process generated images
         generated_images = []
-        for idx, image_data in enumerate(fal_result["images"]):
-            image_url = image_data.get("url")
-            if image_url:
-                # Upload to Cloudflare for persistence (following CardGenerator pattern)
-                try:
-                    cf_result = upload_image_to_cloudflare(image_url, f"statblock_creature_{datetime.now().timestamp()}_{idx}")
-                    if cf_result["success"]:
+        model_name = request.model
+        
+        # Route to appropriate model
+        if request.model == "openai":
+            # OpenAI image generation using gpt-image-1-mini (faster, direct image API)
+            logger.info("Using OpenAI gpt-image-1-mini for image generation")
+            
+            try:
+                import asyncio
+                from concurrent.futures import ThreadPoolExecutor
+                import base64
+                import io
+                from PIL import Image
+                import httpx
+                
+                # Generate all images in a single API call
+                logger.info(f"Generating {request.num_images} images in single batch...")
+                loop = asyncio.get_event_loop()
+                
+                with ThreadPoolExecutor() as executor:
+                    # Use the new OpenAI Images API with gpt-image-1-mini
+                    response = await loop.run_in_executor(
+                        executor,
+                        lambda: openai_client.images.generate(
+                            model="gpt-image-1-mini",  # Fast, cost-effective model
+                            prompt=request.sd_prompt,
+                            n=request.num_images,  # Generate all images in one call
+                            size="1024x1024"  # Square format
+                        )
+                    )
+                
+                logger.info(f"Received {len(response.data)} images from OpenAI")
+                
+                # Process all images from the single response
+                # Note: gpt-image-1-mini always returns base64-encoded images
+                for img_idx, image_data in enumerate(response.data):
+                    logger.info(f"Processing OpenAI image {img_idx + 1}/{request.num_images}")
+                    
+                    # Decode base64 image data
+                    logger.info(f"Decoding base64 image...")
+                    image_bytes = base64.b64decode(image_data.b64_json)
+                    
+                    # Open image with PIL
+                    image = Image.open(io.BytesIO(image_bytes))
+                    logger.info(f"Image size: {image.size}, mode: {image.mode}")
+                    
+                    # Save temporarily
+                    temp_filename = f"temp_openai_mini_{datetime.now().timestamp()}_{img_idx}.png"
+                    temp_path = f"/tmp/{temp_filename}"
+                    image.save(temp_path)
+                    
+                    # Upload to Cloudflare asynchronously
+                    try:
+                        cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
+                        cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
+                        
+                        upload_url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1"
+                        headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
+                        
+                        # Read file content
+                        with open(temp_path, 'rb') as f:
+                            file_content = f.read()
+                        
+                        # Upload to Cloudflare
+                        async with httpx.AsyncClient(timeout=30.0) as client:
+                            files = {"file": ("image.png", file_content, "image/png")}
+                            cf_response = await client.post(upload_url, headers=headers, files=files)
+                            cf_result = cf_response.json()
+                            
+                            if cf_result.get("success"):
+                                image_url = cf_result["result"]["variants"][0]
+                                image_obj = {
+                                    "id": f"img_openai_mini_{datetime.now().timestamp()}_{img_idx}",
+                                    "url": image_url,
+                                    "prompt": request.sd_prompt,
+                                    "created_at": datetime.now().isoformat()
+                                }
+                                generated_images.append(image_obj)
+                                logger.info(f"✅ Successfully uploaded OpenAI image {img_idx + 1} to Cloudflare")
+                            else:
+                                logger.error(f"❌ Cloudflare upload failed: {cf_result}")
+                    except Exception as upload_error:
+                        logger.error(f"❌ Failed to upload OpenAI image to Cloudflare: {upload_error}")
+                    finally:
+                        # Clean up temp file
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                
+                model_name = "openai-gpt-image-1-mini"
+                logger.info(f"✅ OpenAI generation complete. Total images: {len(generated_images)}")
+                
+            except Exception as openai_error:
+                logger.error(f"❌ OpenAI image generation failed: {openai_error}")
+                logger.exception("Full traceback:")
+                raise HTTPException(status_code=500, detail=f"OpenAI generation failed: {str(openai_error)}")
+        
+        elif request.model == "imagen4":
+            # Google Imagen4 via Fal.ai
+            logger.info("Using Imagen4 via Fal.ai")
+            
+            fal_result = fal_client.subscribe(
+                "fal-ai/imagen4/preview",
+                arguments={
+                    "prompt": request.sd_prompt,
+                    "num_inference_steps": 28,
+                    "guidance_scale": 3.5,
+                    "num_images": request.num_images,
+                    "image_size": {
+                        "width": 1024,
+                        "height": 1024
+                    }
+                }
+            )
+            
+            if not fal_result or "images" not in fal_result:
+                raise HTTPException(status_code=400, detail="Imagen4 generation failed")
+            
+            # Process Fal.ai images
+            for idx, image_data in enumerate(fal_result["images"]):
+                image_url = image_data.get("url")
+                if image_url:
+                    try:
+                        # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
+                        cloudflare_url = await upload_image_to_cloudflare(image_url)
                         generated_images.append({
                             "id": f"img_{datetime.now().timestamp()}_{idx}",
-                            "url": cf_result["cloudflare_url"],
+                            "url": cloudflare_url,
                             "original_url": image_url,
                             "prompt": request.sd_prompt,
                             "created_at": datetime.now().isoformat()
                         })
-                except Exception as upload_error:
-                    logger.warning(f"Failed to upload image to Cloudflare: {upload_error}")
-                    # Fall back to original URL
-                    generated_images.append({
-                        "id": f"img_{datetime.now().timestamp()}_{idx}",
-                        "url": image_url,
-                        "prompt": request.sd_prompt,
-                        "created_at": datetime.now().isoformat()
-                    })
+                    except Exception as upload_error:
+                        logger.warning(f"Failed to upload image to Cloudflare: {upload_error}")
+                        # Fall back to original URL
+                        generated_images.append({
+                            "id": f"img_{datetime.now().timestamp()}_{idx}",
+                            "url": image_url,
+                            "prompt": request.sd_prompt,
+                            "created_at": datetime.now().isoformat()
+                        })
+            
+            model_name = "fal-ai/imagen4/preview"
+        
+        else:  # flux-pro (default)
+            # FLUX Pro via Fal.ai
+            logger.info("Using FLUX Pro via Fal.ai")
+            
+            fal_result = fal_client.subscribe(
+                "fal-ai/flux-pro/new",
+                arguments={
+                    "prompt": request.sd_prompt,
+                    "num_images": request.num_images,
+                    "image_size": {
+                        "width": 1024,
+                        "height": 1024
+                    },
+                    "enable_safety_checker": True
+                }
+            )
+            
+            if not fal_result or "images" not in fal_result:
+                raise HTTPException(status_code=400, detail="FLUX Pro generation failed")
+            
+            # Process Fal.ai images
+            for idx, image_data in enumerate(fal_result["images"]):
+                image_url = image_data.get("url")
+                if image_url:
+                    try:
+                        # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
+                        cloudflare_url = await upload_image_to_cloudflare(image_url)
+                        generated_images.append({
+                            "id": f"img_{datetime.now().timestamp()}_{idx}",
+                            "url": cloudflare_url,
+                            "original_url": image_url,
+                            "prompt": request.sd_prompt,
+                            "created_at": datetime.now().isoformat()
+                        })
+                    except Exception as upload_error:
+                        logger.warning(f"Failed to upload image to Cloudflare: {upload_error}")
+                        # Fall back to original URL
+                        generated_images.append({
+                            "id": f"img_{datetime.now().timestamp()}_{idx}",
+                            "url": image_url,
+                            "prompt": request.sd_prompt,
+                            "created_at": datetime.now().isoformat()
+                        })
+            
+            model_name = "fal-ai/flux-pro/new"
         
         return {
             "success": True,
@@ -134,7 +294,7 @@ async def generate_image(
                 "images": generated_images,
                 "generation_info": {
                     "prompt": request.sd_prompt,
-                    "model": "fal-ai/flux/schnell",
+                    "model": model_name,
                     "num_images": len(generated_images)
                 }
             }
@@ -144,10 +304,48 @@ async def generate_image(
         logger.error(f"Error generating creature image: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/upload-image")
+async def upload_image(
+    request: Dict[str, Any],
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload user's own creature image to Cloudflare R2
+    Requires authentication for CDN storage and project association
+    """
+    try:
+        image_data = request.get("imageData")
+        filename = request.get("filename", f"statblock_upload_{datetime.now().timestamp()}")
+        
+        if not image_data:
+            raise HTTPException(status_code=400, detail="Image data required")
+        
+        logger.info(f"Uploading creature image for user: {current_user.email}")
+        
+        # Upload to Cloudflare R2 (reuse existing upload function)
+        # upload_image_to_cloudflare takes 1 arg (UploadFile) and returns URL string
+        cloudflare_url = await upload_image_to_cloudflare(image_data)
+        
+        return {
+            "success": True,
+            "data": {
+                "id": f"upload_{datetime.now().timestamp()}",
+                "url": cloudflare_url,
+                "prompt": "Uploaded image",
+                "created_at": datetime.now().isoformat()
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/validate-statblock")
 async def validate_statblock(
     request: StatBlockValidationRequest,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     Validate a D&D 5e statblock for accuracy and balance
@@ -173,7 +371,7 @@ async def validate_statblock(
 @router.post("/calculate-cr")
 async def calculate_challenge_rating(
     statblock: StatBlockDetails,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     Calculate appropriate challenge rating for a creature
@@ -201,13 +399,13 @@ async def calculate_challenge_rating(
 @router.post("/create-project")
 async def create_project(
     request: ProjectCreateRequest,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Create a new StatBlock project
     """
     try:
-        user_id = current_user["uid"]
+        user_id = current_user.user_id
         project_id = f"sb_proj_{datetime.now().timestamp()}_{user_id[:8]}"
         
         project = StatBlockProject(
@@ -219,7 +417,6 @@ async def create_project(
         )
         
         # Save to Firestore
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
         doc_ref.set(project.dict())
         
@@ -237,22 +434,24 @@ async def create_project(
 
 @router.get("/list-projects")
 async def list_projects(
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     List user's StatBlock projects
     """
     try:
-        user_id = current_user["uid"]
+        user_id = current_user.user_id
         
-        db = firestore.Client()
         projects_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION)
-        query = projects_ref.where("user_id", "==", user_id).order_by("last_modified", direction=firestore.Query.DESCENDING)
+        query = projects_ref.where("createdBy", "==", user_id)
         
         projects = []
         for doc in query.stream():
             project_data = doc.to_dict()
             projects.append(project_data)
+        
+        # Sort by updatedAt on the server side (no index required)
+        projects.sort(key=lambda p: p.get("updatedAt", ""), reverse=True)
         
         return {
             "success": True,
@@ -264,18 +463,74 @@ async def list_projects(
         logger.error(f"Error listing projects: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/list-all-images")
+async def list_all_images(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all generated images across all user's projects
+    Returns aggregated library of creature images for reuse
+    """
+    try:
+        user_id = current_user.user_id
+        
+        projects_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION)
+        query = projects_ref.where("createdBy", "==", user_id)
+        
+        # Aggregate all images from all projects
+        all_images = []
+        seen_urls = set()  # Deduplicate by URL
+        
+        for doc in query.stream():
+            project_data = doc.to_dict()
+            project_id = project_data.get("id")
+            project_name = project_data.get("name", "Untitled")
+            
+            # Extract images from generatedContent
+            generated_content = project_data.get("state", {}).get("generatedContent", {})
+            images = generated_content.get("images", [])
+            
+            for img in images:
+                img_url = img.get("url")
+                if img_url and img_url not in seen_urls:
+                    seen_urls.add(img_url)
+                    all_images.append({
+                        "id": img.get("id"),
+                        "url": img_url,
+                        "prompt": img.get("prompt", ""),
+                        "timestamp": img.get("timestamp", ""),
+                        "projectId": project_id,
+                        "projectName": project_name
+                    })
+        
+        # Sort by timestamp (most recent first)
+        all_images.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        
+        logger.info(f"Retrieved {len(all_images)} images for user: {user_id}")
+        
+        return {
+            "success": True,
+            "data": {
+                "images": all_images,
+                "count": len(all_images)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error listing all images: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/project/{project_id}")
 async def get_project(
     project_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get a specific StatBlock project
     """
     try:
-        user_id = current_user["uid"]
+        user_id = current_user.user_id
         
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
         doc = doc_ref.get()
         
@@ -285,7 +540,7 @@ async def get_project(
         project_data = doc.to_dict()
         
         # Verify ownership
-        if project_data.get("user_id") != user_id:
+        if project_data.get("createdBy") != user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
         return {
@@ -299,18 +554,19 @@ async def get_project(
         logger.error(f"Error getting project: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/project/{project_id}")
-async def delete_project(
+@router.delete("/project/{project_id}/image/{image_id}")
+async def delete_image_from_project(
     project_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    image_id: str,
+    current_user: User = Depends(get_current_user)
 ):
     """
-    Delete a StatBlock project
+    Remove an image from a specific project's generatedContent
+    Does not delete the image from CDN or other projects
     """
     try:
-        user_id = current_user["uid"]
+        user_id = current_user.user_id
         
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
         doc = doc_ref.get()
         
@@ -320,7 +576,63 @@ async def delete_project(
         project_data = doc.to_dict()
         
         # Verify ownership
-        if project_data.get("user_id") != user_id:
+        if project_data.get("createdBy") != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Remove image from generatedContent.images
+        state = project_data.get("state", {})
+        generated_content = state.get("generatedContent", {})
+        images = generated_content.get("images", [])
+        
+        # Filter out the image to delete
+        updated_images = [img for img in images if img.get("id") != image_id]
+        
+        if len(updated_images) == len(images):
+            raise HTTPException(status_code=404, detail="Image not found in project")
+        
+        # Update Firestore
+        generated_content["images"] = updated_images
+        state["generatedContent"] = generated_content
+        project_data["state"] = state
+        project_data["updatedAt"] = datetime.now().isoformat()
+        
+        doc_ref.set(project_data)
+        
+        logger.info(f"Removed image {image_id} from project {project_id}")
+        
+        return {
+            "success": True,
+            "message": "Image removed from project",
+            "remainingImages": len(updated_images)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting image from project: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/project/{project_id}")
+async def delete_project(
+    project_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Delete a StatBlock project
+    """
+    try:
+        user_id = current_user.user_id
+        
+        doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project_data = doc.to_dict()
+        
+        # Verify ownership
+        if project_data.get("createdBy") != user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
         # Delete project
@@ -342,14 +654,14 @@ async def delete_project(
 @router.post("/save-project")
 async def save_project(
     request: Dict[str, Any],
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Save or update a StatBlock project with auto-normalization
     Phase 3: Auto-save endpoint with ID normalization
     """
     try:
-        user_id = current_user["uid"]
+        user_id = current_user.user_id
         project_id = request.get("projectId")
         statblock = request.get("statblock")
         
@@ -393,7 +705,6 @@ async def save_project(
         }
         
         # Check if project exists (for update vs create)
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_PROJECTS_COLLECTION).document(project_id)
         doc = doc_ref.get()
         
@@ -481,7 +792,7 @@ def normalize_statblock_ids(statblock: Dict[str, Any]) -> Dict[str, Any]:
 @router.post("/save-session")
 async def save_session(
     request: SessionSaveRequest,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     Save StatBlock generator session state
@@ -496,10 +807,9 @@ async def save_session(
         
         # Set user ID if authenticated
         if current_user:
-            session_data.user_id = current_user["uid"]
+            session_data.user_id = current_user.user_id
         
         # Save to Firestore
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_SESSIONS_COLLECTION).document(session_data.session_id)
         doc_ref.set(session_data.dict())
         
@@ -533,13 +843,12 @@ async def save_session(
 @router.get("/load-session/{session_id}")
 async def load_session(
     session_id: str,
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user)
 ):
     """
     Load StatBlock generator session state
     """
     try:
-        db = firestore.Client()
         doc_ref = db.collection(STATBLOCK_SESSIONS_COLLECTION).document(session_id)
         doc = doc_ref.get()
         
@@ -549,7 +858,7 @@ async def load_session(
         session_data = doc.to_dict()
         
         # Verify access (owner or anonymous)
-        if current_user and session_data.get("user_id") != current_user["uid"]:
+        if current_user and session_data.get("user_id") != current_user.user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
         return {

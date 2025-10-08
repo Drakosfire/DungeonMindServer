@@ -334,6 +334,7 @@ class ImageGenerationRequest(BaseModel):
     """Request for generating creature images"""
     sd_prompt: str = Field(..., description="Stable Diffusion prompt")
     num_images: int = Field(4, ge=1, le=8, description="Number of images to generate")
+    model: str = Field("flux-pro", description="Image generation model: 'flux-pro', 'imagen4', or 'openai'")
 
 class ModelGenerationRequest(BaseModel):
     """Request for generating 3D model"""
