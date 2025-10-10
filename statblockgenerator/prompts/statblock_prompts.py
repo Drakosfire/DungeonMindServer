@@ -188,39 +188,61 @@ Examples of thematic legendary actions:
             prompt += """
 LAIR ACTIONS REQUIREMENTS (REQUIRED - DO NOT SET TO NULL):
 - Populate the 'lairActions' field with a complete LairActionsBlock object
-- Include a description explaining lair actions occur on initiative count 20
-- Provide 3-4 lair actions themed to the creature's SPECIFIC environment and lair
-- Each action must have: name and detailed description
-- Lair actions create environmental hazards or control terrain appropriate to the creature's home
+- Include ALL required fields: lairName, lairDescription, description, and actions
+
+LAIR ATMOSPHERE (REQUIRED):
+- lairName: A evocative name for the creature's lair (e.g., "The Obsidian Throne", "Boardroom of Eternal Meetings")
+- lairDescription: A rich sensory description of the lair (2-3 sentences):
+  * What does it look/feel/sound/smell like?
+  * What is the atmosphere and mood?
+  * What unique environmental features exist?
+  * Make it immersive and atmospheric!
+
+LAIR MECHANICS:
+- description: Standard rules text explaining initiative count 20 mechanics
+- Provide 3-4 lair actions themed to the creature's SPECIFIC environment
+- Each action must have: name and detailed description with mechanics (DC, damage, area)
 
 CRITICAL: Create UNIQUE lair actions that match this specific creature's environment and theme.
 Consider where this creature would actually live and what environmental effects would occur there.
 
-Environment-Specific Examples:
+Environment Examples:
 - Underwater lair: Whirlpools, crushing pressure, blinding ink clouds
 - Volcanic lair: Lava eruptions, toxic gases, tremors
 - Forest lair: Grasping vines, summoning beasts, terrain manipulation
 - Corporate office: Security lockdown, conference call interference, hostile merger paperwork
 - Arcane laboratory: Wild magic surges, teleportation fields, animated equipment
 
-Example Structure (CUSTOMIZE TO CREATURE'S ACTUAL LAIR):
+Example Structure (CUSTOMIZE ALL FIELDS TO CREATURE):
 {
   "lairActions": {
+    "lairName": "The [Thematic Lair Name]",
+    "lairDescription": "The [lair] is [sensory details]. [Atmospheric description]. [Unique environmental feature that makes it memorable and dangerous].",
     "description": "On initiative count 20 (losing initiative ties), the [creature] takes a lair action to cause one of the following effects. The [creature] can't use the same effect two rounds in a row.",
     "actions": [
       {
         "name": "[Environment-Specific Action 1]",
-        "desc": "[Hazard appropriate to creature's lair with DC, damage, and area. Example: Creatures within X feet must make DC Y saving throw or take Z damage/condition]"
+        "desc": "[Hazard with mechanics: DC, damage, area, effect]"
       },
       {
         "name": "[Environment-Specific Action 2]",
-        "desc": "[Terrain control or obstacle creation specific to this lair]"
+        "desc": "[Terrain control with mechanics]"
       },
       {
         "name": "[Environment-Specific Action 3]",
-        "desc": "[Environmental effect unique to where this creature lives]"
+        "desc": "[Environmental effect with mechanics]"
       }
     ]
+  }
+}
+
+Concrete Example:
+{
+  "lairActions": {
+    "lairName": "The Sunken Boardroom",
+    "lairDescription": "The underwater conference room is lit by flickering fluorescent lights that struggle against the crushing deep-sea darkness. Waterlogged motivational posters peel from barnacle-encrusted walls, and the air (for those who can breathe it) reeks of brine and corporate desperation. A massive table dominates the space, its surface covered in contracts that somehow remain dry despite the aquatic environment.",
+    "description": "On initiative count 20 (losing initiative ties), the Corporate Merperson takes a lair action to cause one of the following effects. It can't use the same effect two rounds in a row.",
+    "actions": [...]
   }
 }
 """

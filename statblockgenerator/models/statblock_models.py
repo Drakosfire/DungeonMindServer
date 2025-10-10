@@ -137,8 +137,10 @@ class LegendaryActionsBlock(BaseModel):
 class LairActionsBlock(BaseModel):
     """Lair actions block"""
     initiative: int = Field(20, description="Initiative count for lair actions")
+    lair_name: Optional[str] = Field(None, alias="lairName", description="Name of the creature's lair")
+    lair_description: Optional[str] = Field(None, alias="lairDescription", description="Sensory description of the lair environment (sights, sounds, smells, atmosphere)")
     actions: List[Action] = Field(..., description="Lair action descriptions")
-    description: Optional[str] = Field(None, description="Introductory text for lair actions")
+    description: Optional[str] = Field(None, description="Introductory text for lair actions mechanics")
     
     model_config = {"populate_by_name": True}
 
