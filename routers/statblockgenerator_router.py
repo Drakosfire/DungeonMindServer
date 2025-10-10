@@ -132,26 +132,25 @@ async def generate_image(
                 
                 logger.info(f"Received {len(response.data)} images from OpenAI")
                 
-                # Process all images from the single response
-                # Note: gpt-image-1-mini always returns base64-encoded images
-                for img_idx, image_data in enumerate(response.data):
-                    logger.info(f"Processing OpenAI image {img_idx + 1}/{request.num_images}")
-                    
-                    # Decode base64 image data
-                    logger.info(f"Decoding base64 image...")
-                    image_bytes = base64.b64decode(image_data.b64_json)
-                    
-                    # Open image with PIL
-                    image = Image.open(io.BytesIO(image_bytes))
-                    logger.info(f"Image size: {image.size}, mode: {image.mode}")
-                    
-                    # Save temporarily
-                    temp_filename = f"temp_openai_mini_{datetime.now().timestamp()}_{img_idx}.png"
-                    temp_path = f"/tmp/{temp_filename}"
-                    image.save(temp_path)
-                    
-                    # Upload to Cloudflare asynchronously
+                # Process and upload ALL images in PARALLEL
+                async def process_and_upload_openai_image(img_idx: int, image_data: Any) -> Optional[Dict[str, Any]]:
+                    """Process and upload a single OpenAI image to Cloudflare"""
                     try:
+                        logger.info(f"Processing OpenAI image {img_idx + 1}/{request.num_images}")
+                        
+                        # Decode base64 image data
+                        image_bytes = base64.b64decode(image_data.b64_json)
+                        
+                        # Open image with PIL
+                        image = Image.open(io.BytesIO(image_bytes))
+                        logger.info(f"Image {img_idx + 1} size: {image.size}, mode: {image.mode}")
+                        
+                        # Save temporarily
+                        temp_filename = f"temp_openai_mini_{datetime.now().timestamp()}_{img_idx}.png"
+                        temp_path = f"/tmp/{temp_filename}"
+                        image.save(temp_path)
+                        
+                        # Upload to Cloudflare
                         cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
                         cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
                         
@@ -170,22 +169,33 @@ async def generate_image(
                             
                             if cf_result.get("success"):
                                 image_url = cf_result["result"]["variants"][0]
-                                image_obj = {
+                                logger.info(f"✅ Successfully uploaded OpenAI image {img_idx + 1} to Cloudflare")
+                                return {
                                     "id": f"img_openai_mini_{datetime.now().timestamp()}_{img_idx}",
                                     "url": image_url,
                                     "prompt": request.sd_prompt,
                                     "created_at": datetime.now().isoformat()
                                 }
-                                generated_images.append(image_obj)
-                                logger.info(f"✅ Successfully uploaded OpenAI image {img_idx + 1} to Cloudflare")
                             else:
-                                logger.error(f"❌ Cloudflare upload failed: {cf_result}")
+                                logger.error(f"❌ Cloudflare upload failed for image {img_idx + 1}: {cf_result}")
+                                return None
                     except Exception as upload_error:
-                        logger.error(f"❌ Failed to upload OpenAI image to Cloudflare: {upload_error}")
+                        logger.error(f"❌ Failed to process/upload OpenAI image {img_idx + 1}: {upload_error}")
+                        return None
                     finally:
                         # Clean up temp file
                         if os.path.exists(temp_path):
                             os.remove(temp_path)
+                
+                # Launch all uploads in PARALLEL with asyncio.gather()
+                upload_tasks = [
+                    process_and_upload_openai_image(idx, img_data)
+                    for idx, img_data in enumerate(response.data)
+                ]
+                upload_results = await asyncio.gather(*upload_tasks)
+                
+                # Collect successful uploads
+                generated_images = [img for img in upload_results if img is not None]
                 
                 model_name = "openai-gpt-image-1-mini"
                 logger.info(f"✅ OpenAI generation complete. Total images: {len(generated_images)}")
@@ -216,29 +226,41 @@ async def generate_image(
             if not fal_result or "images" not in fal_result:
                 raise HTTPException(status_code=400, detail="Imagen4 generation failed")
             
-            # Process Fal.ai images
-            for idx, image_data in enumerate(fal_result["images"]):
+            # Process Fal.ai images in PARALLEL
+            async def upload_fal_image(idx: int, image_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                """Upload a single Fal.ai image to Cloudflare"""
                 image_url = image_data.get("url")
-                if image_url:
-                    try:
-                        # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
-                        cloudflare_url = await upload_image_to_cloudflare(image_url)
-                        generated_images.append({
-                            "id": f"img_{datetime.now().timestamp()}_{idx}",
-                            "url": cloudflare_url,
-                            "original_url": image_url,
-                            "prompt": request.sd_prompt,
-                            "created_at": datetime.now().isoformat()
-                        })
-                    except Exception as upload_error:
-                        logger.warning(f"Failed to upload image to Cloudflare: {upload_error}")
-                        # Fall back to original URL
-                        generated_images.append({
-                            "id": f"img_{datetime.now().timestamp()}_{idx}",
-                            "url": image_url,
-                            "prompt": request.sd_prompt,
-                            "created_at": datetime.now().isoformat()
-                        })
+                if not image_url:
+                    return None
+                
+                try:
+                    # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
+                    cloudflare_url = await upload_image_to_cloudflare(image_url)
+                    return {
+                        "id": f"img_{datetime.now().timestamp()}_{idx}",
+                        "url": cloudflare_url,
+                        "original_url": image_url,
+                        "prompt": request.sd_prompt,
+                        "created_at": datetime.now().isoformat()
+                    }
+                except Exception as upload_error:
+                    logger.warning(f"Failed to upload image {idx + 1} to Cloudflare: {upload_error}")
+                    # Fall back to original URL
+                    return {
+                        "id": f"img_{datetime.now().timestamp()}_{idx}",
+                        "url": image_url,
+                        "prompt": request.sd_prompt,
+                        "created_at": datetime.now().isoformat()
+                    }
+            
+            # Upload all images in PARALLEL
+            import asyncio
+            upload_tasks = [
+                upload_fal_image(idx, img_data)
+                for idx, img_data in enumerate(fal_result["images"])
+            ]
+            upload_results = await asyncio.gather(*upload_tasks)
+            generated_images = [img for img in upload_results if img is not None]
             
             model_name = "fal-ai/imagen4/preview"
         
@@ -262,29 +284,41 @@ async def generate_image(
             if not fal_result or "images" not in fal_result:
                 raise HTTPException(status_code=400, detail="FLUX Pro generation failed")
             
-            # Process Fal.ai images
-            for idx, image_data in enumerate(fal_result["images"]):
+            # Process Fal.ai images in PARALLEL
+            async def upload_flux_image(idx: int, image_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                """Upload a single FLUX Pro image to Cloudflare"""
                 image_url = image_data.get("url")
-                if image_url:
-                    try:
-                        # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
-                        cloudflare_url = await upload_image_to_cloudflare(image_url)
-                        generated_images.append({
-                            "id": f"img_{datetime.now().timestamp()}_{idx}",
-                            "url": cloudflare_url,
-                            "original_url": image_url,
-                            "prompt": request.sd_prompt,
-                            "created_at": datetime.now().isoformat()
-                        })
-                    except Exception as upload_error:
-                        logger.warning(f"Failed to upload image to Cloudflare: {upload_error}")
-                        # Fall back to original URL
-                        generated_images.append({
-                            "id": f"img_{datetime.now().timestamp()}_{idx}",
-                            "url": image_url,
-                            "prompt": request.sd_prompt,
-                            "created_at": datetime.now().isoformat()
-                        })
+                if not image_url:
+                    return None
+                
+                try:
+                    # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
+                    cloudflare_url = await upload_image_to_cloudflare(image_url)
+                    return {
+                        "id": f"img_{datetime.now().timestamp()}_{idx}",
+                        "url": cloudflare_url,
+                        "original_url": image_url,
+                        "prompt": request.sd_prompt,
+                        "created_at": datetime.now().isoformat()
+                    }
+                except Exception as upload_error:
+                    logger.warning(f"Failed to upload image {idx + 1} to Cloudflare: {upload_error}")
+                    # Fall back to original URL
+                    return {
+                        "id": f"img_{datetime.now().timestamp()}_{idx}",
+                        "url": image_url,
+                        "prompt": request.sd_prompt,
+                        "created_at": datetime.now().isoformat()
+                    }
+            
+            # Upload all images in PARALLEL
+            import asyncio
+            upload_tasks = [
+                upload_flux_image(idx, img_data)
+                for idx, img_data in enumerate(fal_result["images"])
+            ]
+            upload_results = await asyncio.gather(*upload_tasks)
+            generated_images = [img for img in upload_results if img is not None]
             
             model_name = "fal-ai/flux-pro/new"
         
@@ -611,6 +645,72 @@ async def delete_image_from_project(
     except Exception as e:
         logger.error(f"Error deleting image from project: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/delete-image")
+async def delete_image(
+    image_url: str,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Permanently delete an image from Cloudflare storage
+    This removes the image from all projects (permanent deletion)
+    Requires authentication for security
+    """
+    try:
+        logger.info(f"Deleting image from library for user: {current_user.email}")
+        
+        # Extract Cloudflare image ID from URL
+        # Cloudflare URLs typically look like: https://imagedelivery.net/{account_hash}/{image_id}/{variant}
+        import re
+        
+        # Try to extract image ID from Cloudflare URL
+        match = re.search(r'/([a-zA-Z0-9-]+)/[^/]+$', image_url)
+        if not match:
+            logger.warning(f"Could not extract image ID from URL: {image_url}")
+            # Return success anyway (image may already be deleted or URL malformed)
+            return {
+                "success": True,
+                "message": "Image URL processed"
+            }
+        
+        image_id = match.group(1)
+        
+        # Delete from Cloudflare Images
+        cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
+        cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
+        
+        if not cloudflare_account_id or not cloudflare_api_token:
+            logger.error("Cloudflare credentials not configured")
+            raise HTTPException(status_code=500, detail="Image storage not configured")
+        
+        delete_url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1/{image_id}"
+        headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
+        
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            cf_response = await client.delete(delete_url, headers=headers)
+            cf_result = cf_response.json()
+            
+            if cf_result.get("success"):
+                logger.info(f"✅ Successfully deleted image {image_id} from Cloudflare")
+            else:
+                logger.warning(f"Cloudflare deletion returned: {cf_result}")
+                # Don't fail if Cloudflare returns error (image may already be deleted)
+        
+        return {
+            "success": True,
+            "message": "Image deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting image: {str(e)}")
+        # Return success to prevent UI blocking (optimistic deletion)
+        return {
+            "success": True,
+            "message": "Image deletion processed"
+        }
 
 @router.delete("/project/{project_id}")
 async def delete_project(

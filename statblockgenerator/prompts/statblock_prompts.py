@@ -23,25 +23,28 @@ class StatBlockPromptManager:
             request: CreatureGenerationRequest with all parameters
         """
         description = request.description
-        challenge_rating = request.challenge_rating_target or "1"
         include_spells = request.include_spells
         include_legendary = request.include_legendary
         include_lair = request.include_lair
         
         # Base prompt with core requirements
+        # IMPORTANT: Let LLM determine appropriate CR based on description power level
         prompt = f"""Create a complete D&D 5e creature statblock based on this description: "{description}"
 
-Target Challenge Rating: {challenge_rating}
+CRITICAL: Determine an appropriate Challenge Rating based on the creature's described power level, abilities, and threat.
+- Use descriptor words (weak, minor, dangerous, powerful, ancient, godlike, etc.) to infer CR
+- Consider implied abilities, size, and role (minion, boss, legendary creature)
+- A "weak goblin" should be CR 1/4, a "powerful dragon" should be CR 15+, an "ancient demon lord" should be CR 20+
 
 CORE REQUIREMENTS:
 1. Name, size, type, alignment matching the description
-2. Appropriate ability scores for CR {challenge_rating}
-3. Armor Class, Hit Points, and Hit Dice consistent with CR
-4. Movement speeds appropriate for creature type
-5. Skills, senses, and languages fitting the theme
-6. At least 2-4 regular actions (attacks, special abilities)
-7. Engaging description that brings the creature to life
-8. Stable Diffusion prompt for artwork generation
+2. Ability scores, AC, HP, and Hit Dice consistent with the determined Challenge Rating
+3. Movement speeds appropriate for creature type
+4. Skills, senses, and languages fitting the theme
+5. At least 2-4 regular actions (attacks, special abilities) scaled to CR
+6. Engaging description that brings the creature to life
+7. Stable Diffusion prompt for artwork generation
+8. XP value matching the Challenge Rating (use official D&D 5e XP table)
 """
         
         # Conditional: Spellcasting
@@ -136,37 +139,46 @@ CRITICAL: Every spell (cantrips and known_spells) MUST include:
 LEGENDARY ACTIONS REQUIREMENTS (REQUIRED - DO NOT SET TO NULL):
 - Populate the 'legendaryActions' field with a complete LegendaryActionsBlock object
 - Include a description explaining how legendary actions work
-- Provide exactly 3 legendary actions with varying costs
+- Provide exactly 3 legendary actions with varying costs (1, 2, and 3)
 - Each action must have: name, cost (1-3), and detailed description
 - Legendary actions are weaker than regular actions
-- Common action patterns:
-  * Detection/Movement (cost 1): Perception check or move up to half speed
-  * Attack (cost 2): Single weapon attack or cantrip
-  * Powerful Ability (cost 3): Area effect, spell cast, or signature move
 
-Example Legendary Actions Structure:
+CRITICAL: Create UNIQUE legendary actions appropriate to this specific creature's abilities and theme.
+DO NOT use generic "Detect" actions unless the creature is specifically described as perceptive or sensory-focused.
+
+Action Cost Guidelines (customize to creature):
+  * Cost 1: Minor action (reposition, quick attack, sensory ability, defensive stance)
+  * Cost 2: Standard attack or moderate ability (single weapon attack, spell, special move)
+  * Cost 3: Powerful signature ability (area effect, devastating attack, major spell)
+
+Example Structure (CUSTOMIZE NAMES AND EFFECTS TO MATCH CREATURE):
 {
   "legendaryActions": {
-    "description": "The ancient dragon can take 3 legendary actions, choosing from the options below. Only one legendary action can be used at a time and only at the end of another creature's turn. The dragon regains spent legendary actions at the start of its turn.",
+    "description": "The [creature] can take 3 legendary actions, choosing from the options below. Only one legendary action can be used at a time and only at the end of another creature's turn. The [creature] regains spent legendary actions at the start of its turn.",
     "actions": [
       {
-        "name": "Detect",
+        "name": "[Thematic Name - Cost 1]",
         "cost": 1,
-        "desc": "The dragon makes a Wisdom (Perception) check."
+        "desc": "[Minor ability specific to this creature's theme and capabilities]"
       },
       {
-        "name": "Tail Attack",
+        "name": "[Thematic Name - Cost 2]",
         "cost": 2,
-        "desc": "The dragon makes one tail attack."
+        "desc": "[Attack or ability specific to this creature]"
       },
       {
-        "name": "Wing Attack",
+        "name": "[Thematic Name - Cost 3]",
         "cost": 3,
-        "desc": "The dragon beats its wings. Each creature within 15 feet must succeed on a DC 19 Dexterity saving throw or take 15 (2d6 + 8) bludgeoning damage and be knocked prone. The dragon can then fly up to half its flying speed."
+        "desc": "[Powerful signature move unique to this creature with mechanics and damage]"
       }
     ]
   }
 }
+
+Examples of thematic legendary actions:
+- Fire creature: "Flame Burst" (cost 1), "Scorching Ray" (cost 2), "Inferno Wave" (cost 3)
+- Corporate creature: "Delegate Task" (cost 1), "Hostile Takeover" (cost 2), "Boardroom Domination" (cost 3)
+- Shadow creature: "Shadow Step" (cost 1), "Drain Life" (cost 2), "Engulfing Darkness" (cost 3)
 """
         else:
             prompt += "\n- DO NOT include legendary actions (set 'legendaryActions' field to null)\n"
@@ -177,28 +189,36 @@ Example Legendary Actions Structure:
 LAIR ACTIONS REQUIREMENTS (REQUIRED - DO NOT SET TO NULL):
 - Populate the 'lairActions' field with a complete LairActionsBlock object
 - Include a description explaining lair actions occur on initiative count 20
-- Provide 3-4 lair actions themed to the creature's environment
+- Provide 3-4 lair actions themed to the creature's SPECIFIC environment and lair
 - Each action must have: name and detailed description
-- Lair actions create environmental hazards or control terrain
-- Match actions to environment (water/aquatic, tremors/underground, wind/aerial, etc.)
-- Each action should require saving throws or attack rolls with appropriate DCs
+- Lair actions create environmental hazards or control terrain appropriate to the creature's home
 
-Example Lair Actions Structure:
+CRITICAL: Create UNIQUE lair actions that match this specific creature's environment and theme.
+Consider where this creature would actually live and what environmental effects would occur there.
+
+Environment-Specific Examples:
+- Underwater lair: Whirlpools, crushing pressure, blinding ink clouds
+- Volcanic lair: Lava eruptions, toxic gases, tremors
+- Forest lair: Grasping vines, summoning beasts, terrain manipulation
+- Corporate office: Security lockdown, conference call interference, hostile merger paperwork
+- Arcane laboratory: Wild magic surges, teleportation fields, animated equipment
+
+Example Structure (CUSTOMIZE TO CREATURE'S ACTUAL LAIR):
 {
   "lairActions": {
-    "description": "On initiative count 20 (losing initiative ties), the dragon takes a lair action to cause one of the following effects. The dragon can't use the same effect two rounds in a row.",
+    "description": "On initiative count 20 (losing initiative ties), the [creature] takes a lair action to cause one of the following effects. The [creature] can't use the same effect two rounds in a row.",
     "actions": [
       {
-        "name": "Magma Eruption",
-        "desc": "Magma erupts from a point on the ground the dragon can see within 120 feet. Any creature within 20 feet of that point must make a DC 15 Dexterity saving throw or take 21 (6d6) fire damage."
+        "name": "[Environment-Specific Action 1]",
+        "desc": "[Hazard appropriate to creature's lair with DC, damage, and area. Example: Creatures within X feet must make DC Y saving throw or take Z damage/condition]"
       },
       {
-        "name": "Tremor",
-        "desc": "The lair shakes. Each creature on the ground within 60 feet of the dragon must succeed on a DC 15 Dexterity saving throw or be knocked prone."
+        "name": "[Environment-Specific Action 2]",
+        "desc": "[Terrain control or obstacle creation specific to this lair]"
       },
       {
-        "name": "Volcanic Gas",
-        "desc": "A cloud of poisonous, volcanic gas fills a 20-foot-radius sphere centered on a point the dragon can see within 120 feet. The cloud spreads around corners and lasts until initiative count 20 on the next round. Each creature that starts its turn in the cloud must make a DC 13 Constitution saving throw or be poisoned until the end of its turn."
+        "name": "[Environment-Specific Action 3]",
+        "desc": "[Environmental effect unique to where this creature lives]"
       }
     ]
   }
