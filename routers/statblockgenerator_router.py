@@ -2,7 +2,7 @@
 FastAPI router for StatBlock Generator API endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -374,6 +374,89 @@ async def upload_image(
         raise
     except Exception as e:
         logger.error(f"Image upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/upload-images")
+async def upload_images(
+    images: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Upload multiple user images to Cloudflare R2
+    
+    **REQUIRES AUTHENTICATION** - Login required to upload images.
+    Guests can still use AI image generation.
+    
+    Images are stored permanently and associated with user account.
+    """
+    try:
+        user_email = current_user.email
+        
+        logger.info(f"Uploading {len(images)} image(s) for user: {user_email}")
+        
+        if len(images) == 0:
+            raise HTTPException(status_code=400, detail="No images provided")
+        
+        if len(images) > 20:
+            raise HTTPException(status_code=400, detail="Maximum 20 images per upload")
+        
+        uploaded_images = []
+        
+        for idx, image_file in enumerate(images):
+            try:
+                # Validate file type
+                if not image_file.content_type or not image_file.content_type.startswith('image/'):
+                    logger.warning(f"Skipping non-image file: {image_file.filename}")
+                    continue
+                
+                # Validate file size (max 10MB) - Python 3.10 compatible
+                content = await image_file.read()
+                file_size = len(content)
+                
+                if file_size > 10 * 1024 * 1024:  # 10MB
+                    logger.warning(f"Skipping oversized file: {image_file.filename} ({file_size} bytes)")
+                    continue
+                
+                # Recreate UploadFile for upload_image_to_cloudflare
+                from io import BytesIO
+                image_file.file = BytesIO(content)
+                await image_file.seek(0)
+                
+                # Upload to Cloudflare
+                cloudflare_url = await upload_image_to_cloudflare(image_file)
+                
+                timestamp = datetime.now().timestamp()
+                uploaded_images.append({
+                    "id": f"upload_{timestamp}_{idx}_{user_email[:8]}",
+                    "url": cloudflare_url,
+                    "filename": image_file.filename,
+                    "prompt": f"Uploaded: {image_file.filename}",
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                logger.info(f"✅ Uploaded image {idx+1}/{len(images)}: {image_file.filename}")
+                
+            except Exception as img_error:
+                logger.error(f"Failed to upload image {idx+1} ({image_file.filename}): {str(img_error)}")
+                # Continue with other images even if one fails
+                continue
+        
+        if len(uploaded_images) == 0:
+            raise HTTPException(status_code=400, detail="No valid images were uploaded")
+        
+        return {
+            "success": True,
+            "data": {
+                "images": uploaded_images,
+                "total_uploaded": len(uploaded_images),
+                "message": "Images uploaded and saved to your account!"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Batch image upload failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/validate-statblock")
