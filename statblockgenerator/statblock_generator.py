@@ -71,13 +71,13 @@ class StatBlockGenerator:
             # Serialize with camelCase aliases for frontend
             serialized_statblock = statblock.model_dump(by_alias=True)
             
-            # Debug: Log special features to verify serialization
-            if serialized_statblock.get('spells'):
-                logger.info(f"Spells serialized with keys: {list(serialized_statblock['spells'].keys())}")
-            if serialized_statblock.get('legendaryActions'):
-                logger.info(f"Legendary actions count: {len(serialized_statblock['legendaryActions'].get('actions', []))}")
-            if serialized_statblock.get('lairActions'):
-                logger.info(f"Lair actions count: {len(serialized_statblock['lairActions'].get('actions', []))}")
+            # Log feature summary
+            features = []
+            if serialized_statblock.get('spells'): features.append('spells')
+            if serialized_statblock.get('legendaryActions'): features.append('legendary')
+            if serialized_statblock.get('lairActions'): features.append('lair')
+            if features:
+                logger.info(f"Generated with features: {', '.join(features)}")
             
             return True, {
                 "statblock": serialized_statblock,
@@ -104,7 +104,7 @@ class StatBlockGenerator:
             Tuple of (success, validation_results)
         """
         try:
-            logger.info(f"Validating statblock: {request.statblock.name}")
+            logger.debug(f"Validating statblock: {request.statblock.name}")
             
             # Basic Pydantic validation already passed if we got here
             basic_validation = {
@@ -154,7 +154,7 @@ class StatBlockGenerator:
             Tuple of (success, cr_analysis)
         """
         try:
-            logger.info(f"Calculating CR for: {statblock.name}")
+            logger.debug(f"Calculating CR for: {statblock.name}")
             
             # Basic CR calculation using DMG guidelines
             basic_cr = self._calculate_basic_cr(statblock)
@@ -200,9 +200,8 @@ class StatBlockGenerator:
         # CRITICAL: Process $defs section FIRST (Hypothesis 2)
         # This is where referenced types live (like SpellSlots)
         if "$defs" in schema:
-            logger.info(f"Found $defs with {len(schema['$defs'])} definitions")
+            logger.debug(f"Processing {len(schema['$defs'])} schema definitions")
             for def_name in list(schema["$defs"].keys()):
-                logger.info(f"Processing definition: {def_name}")
                 schema["$defs"][def_name] = self._clean_schema_node(schema["$defs"][def_name])
         
         # Then process the main schema
@@ -289,19 +288,10 @@ class StatBlockGenerator:
         try:
             # Convert Pydantic model to JSON schema for OpenAI
             schema = response_model.model_json_schema()
-            
-            logger.info("=" * 80)
-            logger.info("ORIGINAL PYDANTIC SCHEMA (first 1000 chars):")
-            logger.info(json.dumps(schema, indent=2)[:1000])
-            logger.info("=" * 80)
+            logger.debug(f"Generated schema with {len(schema.get('properties', {}))} root properties, {len(schema.get('$defs', {}))} definitions")
             
             # Make schema strict (add additionalProperties: false to all objects)
             schema = self._make_schema_strict(schema)
-            
-            logger.info("=" * 80)
-            logger.info("TRANSFORMED STRICT SCHEMA (full):")
-            logger.info(json.dumps(schema, indent=2))
-            logger.info("=" * 80)
             
             response = await asyncio.to_thread(
                 self.openai_client.chat.completions.create,
