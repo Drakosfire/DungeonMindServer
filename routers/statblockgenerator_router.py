@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import json
+import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
@@ -62,22 +63,35 @@ async def generate_statblock(
     Generate a complete D&D 5e creature statblock from description
     Does not require authentication - works for anonymous users
     """
+    start_time = time.time()
+    user_id = current_user.email if current_user else 'anonymous'
+    
     try:
-        logger.info(f"Generating statblock for user: {current_user.email if current_user else 'anonymous'}")
+        logger.info(f"🕐 [Generation Start] User: {user_id} | Timestamp: {datetime.now().isoformat()}")
+        logger.info(f"📝 [Generation Request] Description length: {len(request.description)} chars")
         
         success, result = await statblock_generator.generate_creature(request)
         
+        elapsed = time.time() - start_time
+        logger.info(f"✅ [Generation Success] User: {user_id} | Duration: {elapsed:.2f}s")
+        
         if not success:
+            logger.warning(f"⚠️ [Generation Failed] User: {user_id} | Duration: {elapsed:.2f}s | Error: {result.get('error', 'Unknown')}")
             raise HTTPException(status_code=400, detail=result.get("error", "Generation failed"))
         
         return {
             "success": True,
             "data": result,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "generation_time_seconds": round(elapsed, 2)
         }
         
+    except HTTPException:
+        # Re-raise HTTP exceptions without wrapping
+        raise
     except Exception as e:
-        logger.error(f"Error in generate_statblock: {str(e)}")
+        elapsed = time.time() - start_time
+        logger.error(f"❌ [Generation Error] User: {user_id} | Duration: {elapsed:.2f}s | Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/generate-image")
