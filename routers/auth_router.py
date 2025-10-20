@@ -42,8 +42,14 @@ if not google.client_id or not google.client_secret:
 @router.get('/login')
 async def login(request: Request):
     redirect_uri = redirect_callback
+    
+    # Store the return URL in session so we can redirect back after OAuth
+    return_to = request.query_params.get('redirect', '/')
+    request.session['return_to'] = return_to
+    
     logger.info(f"Login request from: {request.headers.get('x-forwarded-proto', 'unknown')}://{request.headers.get('host', 'unknown')}")
     logger.info(f"Using redirect URI: {redirect_uri}")
+    logger.info(f"Will return user to: {return_to}")
     return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
 
 @router.get('/callback')
@@ -65,10 +71,14 @@ async def auth_callback(request: Request):
         logger.info(f"Session after storing user: {dict(request.session)}")
         logger.info(f"Session ID: {request.session.get('_session_id', 'no-session-id')}")
         
-        # Redirect back to the frontend application
+        # Get the return URL from session (stored during login)
+        return_to = request.session.pop('return_to', '/')
+        
+        # Redirect back to the frontend application at the original page
         frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
-        logger.info(f"Redirecting to frontend: {frontend_url}")
-        return RedirectResponse(url=frontend_url)
+        redirect_url = frontend_url.rstrip('/') + return_to
+        logger.info(f"Redirecting to frontend: {redirect_url}")
+        return RedirectResponse(url=redirect_url)
         
     except Exception as e:
         logger.error(f"Error during authorization: {str(e)}", exc_info=True)
