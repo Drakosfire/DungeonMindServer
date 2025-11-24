@@ -12,7 +12,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get the base directory for ruleslawyer files
-RULESLAWYER_DIR = Path(__file__).parent
+# __file__ is routers/ruleslawyer_router.py, so go up one level to DungeonMindServer, then into ruleslawyer/
+RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
 
 # Global variables for single embedding set
 current_embeddings = None
@@ -71,15 +72,24 @@ async def health():
 
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
-    print(f"Loading embedding: {request}")
+    logger.info(f"Loading embedding: {request}")
+    logger.info(f"RULESLAWYER_DIR: {RULESLAWYER_DIR}")
+    logger.info(f"Expected embeddings file: {RULESLAWYER_DIR / request.embeddings_file_path.lstrip('./')}")
+    logger.info(f"Expected JSON file: {RULESLAWYER_DIR / request.enhanced_json_path.lstrip('./')}")
+    
     try:
         rules_lawyer_service.load_embeddings(
             embeddings_file_path=request.embeddings_file_path,
             enhanced_json_path=request.enhanced_json_path
         )
         return {"message": "Embedding loaded successfully"}
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {str(e)}")
+        logger.error(f"Looking in directory: {RULESLAWYER_DIR}")
+        logger.error(f"Files in directory: {list(RULESLAWYER_DIR.iterdir()) if RULESLAWYER_DIR.exists() else 'Directory does not exist'}")
+        raise HTTPException(status_code=404, detail=f"Embedding file not found: {str(e)}. Checked in: {RULESLAWYER_DIR}")
     except Exception as e:
-        logger.error(f"Error loading embeddings: {str(e)}")
+        logger.error(f"Error loading embeddings: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to load embeddings: {str(e)}")
 
 @router.post("/query")
