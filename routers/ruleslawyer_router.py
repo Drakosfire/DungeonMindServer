@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 import logging
-from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response
+from ruleslawyer.ruleslawyer_helper import EmbeddingLoader
 from openai import OpenAI
 import os
 from pathlib import Path
@@ -12,7 +13,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get the base directory for ruleslawyer files
-RULESLAWYER_DIR = Path(__file__).parent
+# __file__ is routers/ruleslawyer_router.py, so we need to go up one level and into ruleslawyer/
+RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
 
 # Global variables for single embedding set
 current_embeddings = None
@@ -86,14 +88,53 @@ async def load_embedding(request: EmbeddingRequest):
 async def query_rules(request: QueryRequest):
     try:
         loader = rules_lawyer_service.get_loader()
-        response, history = generate_bot_response(
-            message=request.message,
-            chat_history=request.chat_history,
-            embeddings_loader=loader,
-            client=openai_client,
-            system_prompt=SYSTEM_PROMPT
+        
+        async def generate_stream():
+            """Generator function that streams the LLM response"""
+            try:
+                # Get relevant context
+                scores, indices = loader.print_top_results_and_scores(query=request.message)
+                context_items = [loader.pages_and_chunks[i] for i in indices]
+                prompt = loader.format_prompt(query=request.message, context_items=context_items)
+                
+                # Prepare messages for OpenAI
+                messages = [{"role": "user", "content": f"{SYSTEM_PROMPT} {prompt}"}]
+                
+                # Stream from OpenAI
+                stream = openai_client.chat.completions.create(
+                    model="gpt-4",
+                    messages=messages,
+                    temperature=1,
+                    max_tokens=512,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    stream=True  # Enable streaming
+                )
+                
+                # Forward tokens as they arrive
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        content = chunk.choices[0].delta.content
+                        # Format as SSE: data: <content>\n\n
+                        # Frontend expects raw text, not JSON-encoded
+                        yield f"data: {content}\n\n"
+                
+                # Send completion signal
+                yield "data: [DONE]\n\n"
+                
+            except Exception as e:
+                logger.error(f"Error in stream generation: {str(e)}")
+                yield f"data: [ERROR]{str(e)}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
         )
-        return {"response": response, "chat_history": history}
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process query")
