@@ -75,14 +75,35 @@ async def health():
 async def load_embedding(request: EmbeddingRequest):
     print(f"Loading embedding: {request}")
     try:
+        # Construct full paths for logging
+        embeddings_full_path = os.path.join(RULESLAWYER_DIR, request.embeddings_file_path.lstrip('./'))
+        json_full_path = os.path.join(RULESLAWYER_DIR, request.enhanced_json_path.lstrip('./'))
+        
+        logger.info(f"Looking for embeddings file: {embeddings_full_path}")
+        logger.info(f"Looking for JSON file: {json_full_path}")
+        
+        # Check if files exist before attempting to load
+        if not os.path.exists(embeddings_full_path):
+            error_msg = f"Embeddings file not found: {embeddings_full_path}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=404, detail=error_msg)
+        
+        if not os.path.exists(json_full_path):
+            error_msg = f"JSON file not found: {json_full_path}"
+            logger.error(error_msg)
+            raise HTTPException(status_code=404, detail=error_msg)
+        
         rules_lawyer_service.load_embeddings(
             embeddings_file_path=request.embeddings_file_path,
             enhanced_json_path=request.enhanced_json_path
         )
         return {"message": "Embedding loaded successfully"}
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
-        logger.error(f"Error loading embeddings: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to load embeddings: {str(e)}")
+        error_detail = f"Failed to load embeddings: {str(e)}"
+        logger.error(f"Error loading embeddings: {error_detail}")
+        raise HTTPException(status_code=500, detail=error_detail)
 
 @router.post("/query")
 async def query_rules(request: QueryRequest):
