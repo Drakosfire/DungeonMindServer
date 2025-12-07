@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 import logging
-from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response
-from openai import OpenAI
+from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response, generate_bot_response_stream
+from openai import AsyncOpenAI
 import os
 from pathlib import Path
 
@@ -18,8 +19,16 @@ RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
 # Global variables for single embedding set
 current_embeddings = None
 current_pages_and_chunks = None
-openai_client = OpenAI()
-SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Use the examples provided as a guide for style and brevity. When responding:
+openai_client = AsyncOpenAI()
+SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Format every response using Markdown so the UI can render it properly. Follow these Markdown rules:
+
+    • Start with a succinct sentence that answers the question.
+    • Use headings (## or ###) for sections such as “Explanation”, “Example”, or “References”.
+    • Use bullet lists for steps, rulings, or options.
+    • Use inline code (`like this`) or fenced code blocks for dice expressions or formulas when helpful.
+    • End with “Citations: p.XX” (or multiple pages) on its own line, followed by “What else can I help with?”
+
+When responding:
 
     1. Identify the key point of the query.
     2. Provide a straightforward answer, omitting the thought process.
@@ -70,6 +79,15 @@ rules_lawyer_service = RulesLawyerService()
 async def health():
     return {"status": "ok"}
 
+# Status endpoint to check if embeddings are loaded
+@router.get("/status")
+async def get_status():
+    """Check if embeddings are currently loaded."""
+    return {
+        "embeddings_loaded": rules_lawyer_service.loader is not None,
+        "current_embedding": None  # Could track this if needed
+    }
+
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
     logger.info(f"Loading embedding: {request}")
@@ -94,16 +112,37 @@ async def load_embedding(request: EmbeddingRequest):
 
 @router.post("/query")
 async def query_rules(request: QueryRequest):
+    import time as time_module
+    request_start_time = time_module.time()
+    
+    logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chat_history)}")
+    
     try:
+        loader_start_time = time_module.time()
         loader = rules_lawyer_service.get_loader()
-        response, history = generate_bot_response(
+        loader_duration = (time_module.time() - loader_start_time) * 1000
+        logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
+        
+        # Use streaming response - await async function to get generator
+        stream_generator, history = await generate_bot_response_stream(
             message=request.message,
             chat_history=request.chat_history,
             embeddings_loader=loader,
             client=openai_client,
-            system_prompt=SYSTEM_PROMPT
+            system_prompt=SYSTEM_PROMPT,
+            request_start_time=request_start_time
         )
-        return {"response": response, "chat_history": history}
+        
+        return StreamingResponse(
+            stream_generator,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
     except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
+        total_duration = (time_module.time() - request_start_time) * 1000
+        logger.error(f"❌ [RulesLawyer] Error processing query after {total_duration:.2f}ms: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process query")
