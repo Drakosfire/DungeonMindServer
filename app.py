@@ -54,6 +54,9 @@ from routers.cardgenerator_compatibility_router import router as cardgenerator_c
 # Import StatBlockGenerator router
 from routers.statblockgenerator_router import router as statblockgenerator_router
 
+# Import PlayerCharacterGenerator router
+from routers.playercharactergenerator_router import router as playercharactergenerator_router
+
 # Import new global session and object routers
 from routers.global_session_router import router as global_session_router
 from routers.global_objects_router import router as global_objects_router
@@ -199,6 +202,12 @@ app.include_router(
 app.include_router(
     statblockgenerator_router,
     tags=["StatBlock Generator"]
+)
+
+# Include PlayerCharacterGenerator router
+app.include_router(
+    playercharactergenerator_router,
+    tags=["Player Character Generator"]
 )
 
 # Health check route
