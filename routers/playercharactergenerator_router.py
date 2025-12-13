@@ -6,6 +6,9 @@ Phase 4: Save/Load Characters
 - GET /list-projects: List user's character projects
 - GET /project/{id}: Load a specific project
 - DELETE /project/{id}: Delete a project
+
+Phase 5: AI Generation
+- POST /generate-preferences: Generate AI preferences for character creation
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,18 +16,29 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import uuid
+import time
 
 # Import authentication
-from .auth_router import get_current_user
+from .auth_router import get_current_user, get_current_user_optional
 from auth_service import User
 
 # Import Firestore
 from firestore.firebase_config import db
 
+# Import PCG Generator
+from playercharactergenerator.pcg_generator import PlayerCharacterGenerator
+from playercharactergenerator.models.pcg_models import (
+    PreferenceGenerationRequest,
+    GenerationInput,
+)
+
 logger = logging.getLogger(__name__)
 
 # Initialize router
 router = APIRouter(prefix="/api/playercharactergenerator", tags=["playercharactergenerator"])
+
+# Global PCG generator instance
+pcg_generator = PlayerCharacterGenerator()
 
 # Firestore collection name
 PCG_PROJECTS_COLLECTION = "playercharacter_projects"
@@ -288,15 +302,141 @@ async def delete_project(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Health check endpoint
+# ============================================================================
+# AI GENERATION ENDPOINTS
+# ============================================================================
+
+@router.post("/generate-preferences")
+async def generate_preferences(
+    request: PreferenceGenerationRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Generate AI preferences for character creation
+    
+    This endpoint generates creative preferences (ability priorities, skill themes,
+    character flavor) based on user-provided character concept and constraints.
+    
+    Does not require authentication - works for anonymous users.
+    
+    Request body:
+    - input: GenerationInput (classId, raceId, level, backgroundId, concept)
+    - constraints: Optional[GenerationConstraints] - if not provided, uses mock constraints
+    
+    Returns:
+    - preferences: AiPreferences
+    - rawResponse: str (for debugging)
+    - generationInfo: Dict (tokens, model, etc.)
+    """
+    start_time = time.time()
+    user_id = current_user.email if current_user else 'anonymous'
+    
+    try:
+        logger.info(f"🎲 [PCG Generation Start] User: {user_id} | Timestamp: {datetime.now().isoformat()}")
+        logger.info(f"📝 [PCG Generation] Class: {request.input.class_id} | Concept: {request.input.concept[:50]}...")
+        
+        success, result = await pcg_generator.generate_preferences(request)
+        
+        elapsed = time.time() - start_time
+        
+        if not success:
+            logger.warning(f"⚠️ [PCG Generation Failed] User: {user_id} | Duration: {elapsed:.2f}s | Error: {result.get('error', 'Unknown')}")
+            raise HTTPException(status_code=400, detail=result.get("error", "Generation failed"))
+        
+        logger.info(f"✅ [PCG Generation Success] User: {user_id} | Duration: {elapsed:.2f}s | Character: {result['preferences']['character']['name']}")
+        
+        return {
+            "success": True,
+            "data": result,
+            "timestamp": datetime.now().isoformat(),
+            "generationTimeSeconds": round(elapsed, 2)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"❌ [PCG Generation Error] User: {user_id} | Duration: {elapsed:.2f}s | Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generate-preferences-batch")
+async def generate_preferences_batch(
+    requests: List[PreferenceGenerationRequest],
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate AI preferences for multiple characters (batch mode)
+    
+    Requires authentication. Used for testing/experimentation.
+    
+    Request body:
+    - List of PreferenceGenerationRequest objects
+    
+    Returns:
+    - results: List of generation results
+    - summary: Aggregated statistics
+    """
+    start_time = time.time()
+    user_id = current_user.email
+    
+    logger.info(f"🎲 [PCG Batch Start] User: {user_id} | Count: {len(requests)}")
+    
+    results = []
+    success_count = 0
+    
+    for i, req in enumerate(requests):
+        try:
+            success, result = await pcg_generator.generate_preferences(req)
+            results.append({
+                "index": i,
+                "success": success,
+                "data": result if success else None,
+                "error": result.get("error") if not success else None,
+            })
+            if success:
+                success_count += 1
+        except Exception as e:
+            results.append({
+                "index": i,
+                "success": False,
+                "error": str(e),
+            })
+    
+    elapsed = time.time() - start_time
+    
+    logger.info(f"✅ [PCG Batch Complete] User: {user_id} | Duration: {elapsed:.2f}s | Success: {success_count}/{len(requests)}")
+    
+    return {
+        "success": True,
+        "results": results,
+        "summary": {
+            "total": len(requests),
+            "successful": success_count,
+            "failed": len(requests) - success_count,
+            "successRate": round(success_count / len(requests) * 100, 1) if requests else 0,
+            "totalTimeSeconds": round(elapsed, 2),
+            "avgTimePerRequest": round(elapsed / len(requests), 2) if requests else 0,
+        },
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+
 @router.get("/health")
 async def health_check():
     """
     Health check for Player Character Generator
     """
+    pcg_health = await pcg_generator.health_check()
+    
     return {
-        "status": "healthy",
+        "status": pcg_health.get("status", "healthy"),
         "service": "Player Character Generator",
         "version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "generator": pcg_health,
     }
