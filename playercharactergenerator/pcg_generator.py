@@ -37,13 +37,21 @@ class PlayerCharacterGenerator:
     def __init__(self):
         self.prompt_manager = PCGPromptManager()
         self.openai_client = None
-        self.model = "gpt-5.2"  
+        self.model = "gpt-5.2"
+        # Some newer OpenAI models reject `max_tokens` and require `max_completion_tokens`.
+        # Keep the param name explicit so logs/health can prove what the running server uses.
+        self.token_limit_param_name = "max_completion_tokens"
 
         # Initialize OpenAI client if API key is available
         api_key = os.environ.get('OPENAI_API_KEY')
         if api_key:
             self.openai_client = OpenAI(api_key=api_key)
-            logger.info("PlayerCharacterGenerator initialized with OpenAI client")
+            logger.info(
+                "PlayerCharacterGenerator initialized | model=%s | token_limit_param=%s | module_path=%s",
+                self.model,
+                self.token_limit_param_name,
+                __file__,
+            )
         else:
             logger.warning("No OpenAI API key found - AI generation will not work")
 
@@ -137,16 +145,24 @@ class PlayerCharacterGenerator:
         try:
             logger.debug(f"Calling OpenAI with prompt length: {len(user_prompt)} chars")
 
-            response = self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=[
+            request_kwargs: Dict[str, Any] = {
+                "model": self.model,
+                "messages": [
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.7,
-                # Newer OpenAI models/APIs expect max_completion_tokens instead of max_tokens
-                max_completion_tokens=2000,
+                "temperature": 0.7,
+                self.token_limit_param_name: 2000,
+            }
+
+            # Explicit breadcrumb for debugging OpenAI 400s about token parameter naming.
+            logger.info(
+                "Calling OpenAI chat.completions | model=%s | token_limit_param=%s",
+                self.model,
+                self.token_limit_param_name,
             )
+
+            response = self.openai_client.chat.completions.create(**request_kwargs)
 
             content = response.choices[0].message.content
             usage = response.usage
@@ -238,5 +254,7 @@ class PlayerCharacterGenerator:
             "openai_configured": self.openai_client is not None,
             "prompt_version": self.prompt_manager.version,
             "model": self.model,
+            "token_limit_param": self.token_limit_param_name,
+            "module_path": __file__,
         }
 
