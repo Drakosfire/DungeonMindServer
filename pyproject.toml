@@ -48,7 +48,8 @@ packages = [
     "ruleslawyer",
     "cloudflareR2",
     "cardgenerator",
-    "storegenerator"
+    "storegenerator",
+    "playercharactergenerator"
 ]
 
 [dependency-groups]
