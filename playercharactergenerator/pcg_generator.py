@@ -144,7 +144,8 @@ class PlayerCharacterGenerator:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=2000,
+                # Newer OpenAI models/APIs expect max_completion_tokens instead of max_tokens
+                max_completion_tokens=2000,
             )
 
             content = response.choices[0].message.content
