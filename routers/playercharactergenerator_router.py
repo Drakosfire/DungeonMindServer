@@ -30,7 +30,14 @@ from playercharactergenerator.pcg_generator import PlayerCharacterGenerator
 from playercharactergenerator.models.pcg_models import (
     PreferenceGenerationRequest,
     GenerationInput,
+    ValidateRequest,
+    ValidationResult,
+    ComputeRequest,
+    ComputeResult,
 )
+from playercharactergenerator.rule_engine import PCGRuleEngine
+from playercharactergenerator.rule_engine.compute import compute_derived_stats
+from playercharactergenerator.rule_engine.validators import validate_translated_choices
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +46,7 @@ router = APIRouter(prefix="/api/playercharactergenerator", tags=["playercharacte
 
 # Global PCG generator instance
 pcg_generator = PlayerCharacterGenerator()
+pcg_rule_engine = PCGRuleEngine()
 
 # Firestore collection name
 PCG_PROJECTS_COLLECTION = "playercharacter_projects"
@@ -306,6 +314,94 @@ async def delete_project(
 # AI GENERATION ENDPOINTS
 # ============================================================================
 
+@router.post("/constraints")
+async def get_constraints(request: GenerationInput):
+    """
+    Build deterministic GenerationConstraints for the given character foundation (levels 1–3).
+
+    This is the backend "Rule Engine" entrypoint for the PCG pipeline.
+    """
+    try:
+        constraints = pcg_rule_engine.get_constraints(request)
+        return {
+            "success": True,
+            "data": {
+                "constraints": constraints.model_dump(by_alias=True),
+            },
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/validate", response_model=ValidationResult)
+async def validate_translated(request: ValidateRequest):
+    """
+    Validate translated mechanical choices (from the frontend translator) against backend constraints.
+
+    This makes harness results meaningful even when frontend validation logic is incomplete.
+    """
+    try:
+        constraints = request.constraints or pcg_rule_engine.get_constraints(request.input)
+        success, issues, sections = validate_translated_choices(
+            input_data=request.input,
+            constraints=constraints,
+            choices=request.choices,
+        )
+        return ValidationResult(success=success, issues=issues, sections=sections)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/compute", response_model=ComputeResult)
+async def compute_character(request: ComputeRequest):
+    """
+    Compute deterministic derived stats (E3) for translated mechanical choices.
+
+    This endpoint is intended to become the authoritative backend "mathy bits" compute.
+    For now, it:
+    - computes constraints if missing
+    - validates translated choices (E2 validators)
+    - computes derived stats (mods/prof/HP/AC/etc.)
+    """
+    try:
+        constraints = request.constraints or pcg_rule_engine.get_constraints(request.input)
+
+        # Validate first (authoritative legality check)
+        valid, issues, validation_sections = validate_translated_choices(
+            input_data=request.input,
+            constraints=constraints,
+            choices=request.choices,
+        )
+        if not valid:
+            return ComputeResult(
+                success=False,
+                issues=issues,
+                derivedStats=None,
+                sections={"validation": validation_sections},
+            )
+
+        ok, compute_issues, derived, compute_sections = compute_derived_stats(
+            input_data=request.input,
+            constraints=constraints,
+            choices=request.choices,
+        )
+        merged_sections: Dict[str, Any] = {"validation": validation_sections}
+        merged_sections.update(compute_sections)
+
+        if not ok or not derived:
+            return ComputeResult(
+                success=False,
+                issues=compute_issues,
+                derivedStats=None,
+                sections=merged_sections,
+            )
+
+        return ComputeResult(success=True, issues=[], derivedStats=derived, sections=merged_sections)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/generate-preferences")
 async def generate_preferences(
     request: PreferenceGenerationRequest,
@@ -321,7 +417,7 @@ async def generate_preferences(
     
     Request body:
     - input: GenerationInput (classId, raceId, level, backgroundId, concept)
-    - constraints: Optional[GenerationConstraints] - if not provided, uses mock constraints
+    - constraints: Optional[GenerationConstraints] - if not provided, backend computes via PCGRuleEngine
     
     Returns:
     - preferences: AiPreferences

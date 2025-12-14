@@ -22,6 +22,7 @@ from .prompts.pcg_prompts import (
     create_mock_fighter_constraints,
     create_mock_wizard_constraints,
 )
+from .rule_engine import PCGRuleEngine
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class PlayerCharacterGenerator:
 
     def __init__(self):
         self.prompt_manager = PCGPromptManager()
+        self.rule_engine = PCGRuleEngine()
         self.openai_client = None
         self.model = "gpt-5.2"
         # Some newer OpenAI models reject `max_tokens` and require `max_completion_tokens`.
@@ -79,11 +81,14 @@ class PlayerCharacterGenerator:
             if request.constraints:
                 constraints = request.constraints
             else:
-                # Use mock constraints based on class for now
-                # TODO: Integrate with actual Rule Engine
-                constraints = self._get_mock_constraints(request.input.class_id)
-                if not constraints:
-                    return False, {"error": f"No constraints available for class: {request.input.class_id}"}
+                try:
+                    constraints = self.rule_engine.get_constraints(request.input)
+                except Exception as e:
+                    # Fallback to mock constraints to keep the endpoint usable while we expand catalogs.
+                    logger.warning("PCG rule engine failed; falling back to mock constraints | error=%s", str(e))
+                    constraints = self._get_mock_constraints(request.input.class_id)
+                    if not constraints:
+                        return False, {"error": f"No constraints available for class: {request.input.class_id}"}
 
             # Build prompts
             system_prompt = self.prompt_manager.get_system_prompt()

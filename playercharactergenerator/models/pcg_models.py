@@ -64,8 +64,19 @@ class SpellcastingConstraints(BaseModel):
     """Spellcasting constraints for caster classes"""
     ability: AbilityName
     cantrips_known: int = Field(..., alias="cantripsKnown")
-    spells_known: int = Field(..., alias="spellsKnown")
-    spell_list_id: str = Field(..., alias="spellListId")
+    # For known casters (e.g., bard) this is an explicit count.
+    # For prepared casters (e.g., cleric/wizard) this may be omitted and computed from ability scores at validation time.
+    spells_known: Optional[int] = Field(None, alias="spellsKnown")
+
+    # Prepared casters compute prepared count at runtime (ability mod + level).
+    caster_type: Optional[str] = Field(None, alias="casterType")  # 'known' | 'prepared'
+    prepared_formula: Optional[str] = Field(None, alias="preparedFormula")  # 'abilityModPlusLevel'
+
+    max_spell_level: Optional[int] = Field(None, alias="maxSpellLevel")
+    spell_list_id: Optional[str] = Field(None, alias="spellListId")
+
+    available_cantrips: Optional[List[Dict[str, Any]]] = Field(None, alias="availableCantrips")
+    available_spells: Optional[List[Dict[str, Any]]] = Field(None, alias="availableSpells")
 
     class Config:
         populate_by_name = True
@@ -207,4 +218,108 @@ class PreferenceGenerationResponse(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+# ============================================================================
+# BACKEND RULE ENGINE VALIDATION (E2)
+# ============================================================================
+
+
+class AbilityScores(BaseModel):
+    """D&D 5e ability scores (post-racial bonuses)."""
+
+    strength: int
+    dexterity: int
+    constitution: int
+    intelligence: int
+    wisdom: int
+    charisma: int
+
+
+class ValidationChoices(BaseModel):
+    """
+    Mechanical choices to validate against constraints.
+    This mirrors what the frontend translator produces.
+    """
+
+    ability_scores: AbilityScores = Field(..., alias="abilityScores")
+    selected_skills: List[str] = Field(..., alias="selectedSkills")
+    equipment_package_id: str = Field(..., alias="equipmentPackageId")
+    feature_choices: Dict[str, str] = Field(default_factory=dict, alias="featureChoices")
+
+    selected_cantrips: Optional[List[str]] = Field(None, alias="selectedCantrips")
+    selected_spells: Optional[List[str]] = Field(None, alias="selectedSpells")
+
+    class Config:
+        populate_by_name = True
+
+
+class ValidateRequest(BaseModel):
+    """
+    Validate translated mechanical choices against deterministic constraints.
+    If constraints is omitted, backend computes them from input.
+    """
+
+    input: GenerationInput
+    choices: ValidationChoices
+    constraints: Optional[GenerationConstraints] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class ValidationResult(BaseModel):
+    success: bool
+    issues: List[str] = Field(default_factory=list)
+    sections: Dict[str, Any] = Field(default_factory=dict)
+
+
+# ============================================================================
+# BACKEND RULE ENGINE COMPUTE (E3)
+# ============================================================================
+
+
+class DerivedStats(BaseModel):
+    """
+    Deterministic "mathy bits" computed by the backend rule engine.
+
+    This is intentionally small for E3; we can expand toward a full DnD5eCharacter payload later.
+    """
+
+    ability_modifiers: Dict[str, int] = Field(..., alias="abilityModifiers")
+    proficiency_bonus: int = Field(..., alias="proficiencyBonus")
+    hit_points_max: int = Field(..., alias="hitPointsMax")
+    armor_class: int = Field(..., alias="armorClass")
+    initiative: int
+    saving_throws: Dict[str, int] = Field(..., alias="savingThrows")
+    skill_modifiers: Dict[str, int] = Field(..., alias="skillModifiers")
+    passive_perception: int = Field(..., alias="passivePerception")
+
+    class Config:
+        populate_by_name = True
+
+
+class ComputeRequest(BaseModel):
+    """
+    Compute derived stats for translated mechanical choices.
+    If constraints is omitted, backend computes them from input.
+    """
+
+    input: GenerationInput
+    choices: ValidationChoices
+    constraints: Optional[GenerationConstraints] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class ComputeResult(BaseModel):
+    success: bool
+    issues: List[str] = Field(default_factory=list)
+    derived_stats: Optional[DerivedStats] = Field(None, alias="derivedStats")
+    sections: Dict[str, Any] = Field(default_factory=dict)
+
+    class Config:
+        populate_by_name = True
+
 
