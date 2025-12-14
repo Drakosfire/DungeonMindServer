@@ -38,6 +38,8 @@ from playercharactergenerator.models.pcg_models import (
 from playercharactergenerator.rule_engine import PCGRuleEngine
 from playercharactergenerator.rule_engine.compute import compute_derived_stats
 from playercharactergenerator.rule_engine.validators import validate_translated_choices
+from playercharactergenerator.rule_engine.translator import translate_preferences
+from playercharactergenerator.character_builder import build_character_object
 
 logger = logging.getLogger(__name__)
 
@@ -453,6 +455,150 @@ async def generate_preferences(
     except Exception as e:
         elapsed = time.time() - start_time
         logger.error(f"❌ [PCG Generation Error] User: {user_id} | Duration: {elapsed:.2f}s | Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generate")
+async def generate_character(
+    request: GenerationInput,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    """
+    Generate a complete D&D 5e character from concept.
+
+    Pipeline:
+    1. Constraints (rule engine)
+    2. AI Preferences
+    3. Translate preferences -> ValidationChoices (backend translator)
+    4. Validate translated choices (E2)
+    5. Compute derived stats (E3)
+    6. Build frontend-compatible Character wrapper payload
+    """
+    start_time = time.time()
+    user_id = current_user.email if current_user else "anonymous"
+
+    try:
+        logger.info(
+            "🎲 [PCG Generate Start] User: %s | Class: %s | Race: %s | Level: %s",
+            user_id,
+            request.class_id,
+            request.race_id,
+            request.level,
+        )
+
+        # 1) Constraints
+        constraints = pcg_rule_engine.get_constraints(request)
+
+        # 2) AI preferences
+        pref_request = PreferenceGenerationRequest(input=request, constraints=constraints)
+        pref_ok, pref_result = await pcg_generator.generate_preferences(pref_request)
+        if not pref_ok:
+            raise HTTPException(status_code=400, detail=pref_result.get("error", "AI generation failed"))
+
+        preferences = pref_result.get("preferences")
+        if not preferences:
+            raise HTTPException(status_code=400, detail="AI generation returned no preferences")
+
+        # Pydantic normalization
+        from playercharactergenerator.models.pcg_models import AiPreferences  # local import avoids circulars in some envs
+
+        pref_model = AiPreferences(**preferences)
+
+        # 3) Translate
+        translate_ok, choices, translate_issues = translate_preferences(
+            preferences=pref_model,
+            constraints=constraints,
+            level=int(request.level),
+        )
+        if not translate_ok:
+            raise HTTPException(status_code=400, detail={"error": "Translation failed", "issues": translate_issues})
+
+        # 4) Validate
+        valid, validate_issues, validate_sections = validate_translated_choices(
+            input_data=request,
+            constraints=constraints,
+            choices=choices,
+        )
+        if not valid:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Validation failed", "issues": validate_issues, "sections": validate_sections},
+            )
+
+        # 5) Compute
+        compute_ok, compute_issues, derived, compute_sections = compute_derived_stats(
+            input_data=request,
+            constraints=constraints,
+            choices=choices,
+        )
+        if not compute_ok or not derived:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Compute failed", "issues": compute_issues, "sections": compute_sections},
+            )
+
+        # 6) Build character payload (frontend-compatible)
+        character = build_character_object(
+            input_data=request,
+            constraints=constraints,
+            preferences=pref_model,
+            choices=choices,
+            derived_stats=derived,
+        )
+        character = normalize_character_ids(character)
+
+        elapsed = time.time() - start_time
+        try:
+            dnd = (character or {}).get("dnd5eData") or {}
+            logger.info(
+                "🧾 [PCG Generate Payload] %s | weapons=%s equipment=%s features=%s spells=%s cantrips=%s armor=%s shield=%s eqPkg=%s featureChoices=%s",
+                character.get("name", "(unnamed)"),
+                len(dnd.get("weapons") or []),
+                len(dnd.get("equipment") or []),
+                len(dnd.get("features") or []),
+                len(((dnd.get("spellcasting") or {}).get("spellsKnown")) or []),
+                len(((dnd.get("spellcasting") or {}).get("cantrips")) or []),
+                (dnd.get("armor") or {}).get("id") if isinstance(dnd.get("armor"), dict) else None,
+                bool(dnd.get("shield")),
+                getattr(choices, "equipment_package_id", None),
+                getattr(choices, "feature_choices", None),
+            )
+        except Exception:
+            # Never fail generation due to logging/shape issues.
+            pass
+
+        logger.info(
+            "✅ [PCG Generate Success] User: %s | Duration: %.2fs | Character: %s",
+            user_id,
+            elapsed,
+            character.get("name", "(unnamed)"),
+        )
+
+        return {
+            "success": True,
+            "data": {
+                "character": character,
+                "preferences": pref_model.model_dump(by_alias=True),
+                "choices": choices.model_dump(by_alias=True),
+                "derivedStats": derived.model_dump(by_alias=True),
+                "constraints": constraints.model_dump(by_alias=True),
+                "issues": translate_issues,
+                "sections": {
+                    "validation": validate_sections,
+                    "compute": compute_sections,
+                },
+                "generationInfo": {
+                    **(pref_result.get("generationInfo", {}) or {}),
+                    "generationTimeSeconds": round(elapsed, 2),
+                },
+            },
+            "timestamp": datetime.now().isoformat(),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error("❌ [PCG Generate Error] User: %s | Duration: %.2fs | Error: %s", user_id, elapsed, str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 

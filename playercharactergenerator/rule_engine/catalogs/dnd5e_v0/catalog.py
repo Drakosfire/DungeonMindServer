@@ -27,6 +27,7 @@ BACKGROUNDS: List[Dict[str, Any]] = [
     {"id": "criminal", "name": "Criminal", "grantedSkills": ["Deception", "Stealth"]},
     {"id": "acolyte", "name": "Acolyte", "grantedSkills": ["Insight", "Religion"]},
     {"id": "folk-hero", "name": "Folk Hero", "grantedSkills": ["Animal Handling", "Survival"]},
+    {"id": "noble", "name": "Noble", "grantedSkills": ["History", "Persuasion"]},
 ]
 
 
