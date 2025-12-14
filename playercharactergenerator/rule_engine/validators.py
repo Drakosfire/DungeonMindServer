@@ -214,13 +214,17 @@ def validate_spells(
     if caster_type == "known":
         expected_spells = int(sc.spells_known or 0)
     elif caster_type == "prepared":
-        # Prepared formula: ability mod + level
-        if (sc.prepared_formula or "").strip() != "abilityModPlusLevel":
-            issues.append(f"Unsupported preparedFormula: {sc.prepared_formula}")
         scores = _ability_scores_to_dict(choices.ability_scores)
         ability_key = str(sc.ability.value if hasattr(sc.ability, "value") else sc.ability)
         ability_mod = _ability_mod(int(scores.get(ability_key, 10)))
-        expected_spells = max(1, ability_mod + int(input_data.level))
+        prepared_formula = (sc.prepared_formula or "").strip()
+        if prepared_formula == "abilityModPlusLevel":
+            expected_spells = max(1, ability_mod + int(input_data.level))
+        elif prepared_formula == "abilityModPlusHalfLevel":
+            expected_spells = max(1, ability_mod + (int(input_data.level) // 2))
+        else:
+            issues.append(f"Unsupported preparedFormula: {sc.prepared_formula}")
+            expected_spells = 0
     else:
         issues.append(f"Unknown casterType: {sc.caster_type}")
 

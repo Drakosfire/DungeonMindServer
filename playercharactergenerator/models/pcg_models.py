@@ -70,10 +70,14 @@ class SpellcastingConstraints(BaseModel):
 
     # Prepared casters compute prepared count at runtime (ability mod + level).
     caster_type: Optional[str] = Field(None, alias="casterType")  # 'known' | 'prepared'
-    prepared_formula: Optional[str] = Field(None, alias="preparedFormula")  # 'abilityModPlusLevel'
+    prepared_formula: Optional[str] = Field(None, alias="preparedFormula")  # 'abilityModPlusLevel' | 'abilityModPlusHalfLevel'
 
     max_spell_level: Optional[int] = Field(None, alias="maxSpellLevel")
     spell_list_id: Optional[str] = Field(None, alias="spellListId")
+
+    # Pact magic metadata (Warlock) - used for validation/UX and future slot math.
+    pact_slots: Optional[int] = Field(None, alias="pactSlots")
+    pact_slot_level: Optional[int] = Field(None, alias="pactSlotLevel")
 
     available_cantrips: Optional[List[Dict[str, Any]]] = Field(None, alias="availableCantrips")
     available_spells: Optional[List[Dict[str, Any]]] = Field(None, alias="availableSpells")

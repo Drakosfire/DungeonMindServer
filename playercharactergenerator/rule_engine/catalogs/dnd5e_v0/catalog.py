@@ -229,6 +229,89 @@ CLASSES: List[Dict[str, Any]] = [
             "3": {"ability": "charisma", "cantripsKnown": 2, "spellsKnown": 6, "casterType": "known", "maxSpellLevel": 2, "spellListId": "bard-srd-l1-3"},
         },
     },
+    {
+        "id": "warlock",
+        "name": "Warlock",
+        "hitDie": 8,
+        "primaryAbilities": ["charisma"],
+        "skillChoices": {
+            "choose": 2,
+            "from": ["Arcana", "Deception", "History", "Intimidation", "Investigation", "Nature", "Religion"],
+        },
+        "equipmentPackages": [
+            {"id": "A", "description": "Leather armor + light crossbow + arcane focus", "items": ["leather-armor", "light-crossbow", "bolts-20", "arcane-focus"]},
+            {"id": "B", "description": "Leather armor + dagger + component pouch", "items": ["leather-armor", "dagger", "component-pouch"]},
+        ],
+        "featureChoicesByLevel": {
+            "1": [
+                {
+                    "featureId": "warlock-patron",
+                    "featureName": "Otherworldly Patron",
+                    "options": [
+                        {"id": "fiend", "name": "The Fiend", "description": "Fire, bargains, and ruthless power."},
+                        {"id": "archfey", "name": "The Archfey", "description": "Charm, illusions, and fey trickery."},
+                    ],
+                }
+            ],
+            "3": [
+                {
+                    "featureId": "warlock-pact-boon",
+                    "featureName": "Pact Boon",
+                    "options": [
+                        {"id": "chain", "name": "Pact of the Chain", "description": "A familiar with extra capabilities."},
+                        {"id": "blade", "name": "Pact of the Blade", "description": "Conjure a pact weapon; martial leaning."},
+                        {"id": "tome", "name": "Pact of the Tome", "description": "Extra cantrips and ritual flavor."},
+                    ],
+                }
+            ],
+        },
+        "spellcastingByLevel": {
+            "1": {"ability": "charisma", "cantripsKnown": 2, "spellsKnown": 2, "casterType": "known", "maxSpellLevel": 1, "pactSlots": 1, "pactSlotLevel": 1, "spellListId": "warlock-srd-l1-3"},
+            "2": {"ability": "charisma", "cantripsKnown": 2, "spellsKnown": 3, "casterType": "known", "maxSpellLevel": 1, "pactSlots": 2, "pactSlotLevel": 1, "spellListId": "warlock-srd-l1-3"},
+            "3": {"ability": "charisma", "cantripsKnown": 2, "spellsKnown": 4, "casterType": "known", "maxSpellLevel": 2, "pactSlots": 2, "pactSlotLevel": 2, "spellListId": "warlock-srd-l1-3"},
+        },
+    },
+    {
+        "id": "paladin",
+        "name": "Paladin",
+        "hitDie": 10,
+        "primaryAbilities": ["strength", "charisma"],
+        "skillChoices": {
+            "choose": 2,
+            "from": ["Athletics", "Insight", "Intimidation", "Medicine", "Persuasion", "Religion"],
+        },
+        "equipmentPackages": [
+            {"id": "A", "description": "Chain mail + shield + martial weapon", "items": ["chain-mail", "shield", "martial-weapon-choice"]},
+            {"id": "B", "description": "Leather armor + shield + martial weapon", "items": ["leather-armor", "shield", "martial-weapon-choice"]},
+        ],
+        "featureChoicesByLevel": {
+            "2": [
+                {
+                    "featureId": "paladin-fighting-style",
+                    "featureName": "Fighting Style",
+                    "options": [
+                        {"id": "defense", "name": "Defense", "description": "While wearing armor, gain +1 AC."},
+                        {"id": "dueling", "name": "Dueling", "description": "When wielding a melee weapon in one hand, +2 damage."},
+                    ],
+                }
+            ],
+            "3": [
+                {
+                    "featureId": "paladin-oath",
+                    "featureName": "Sacred Oath",
+                    "options": [
+                        {"id": "devotion", "name": "Oath of Devotion", "description": "Honesty, courage, compassion."},
+                        {"id": "vengeance", "name": "Oath of Vengeance", "description": "Relentless pursuit of justice."},
+                    ],
+                }
+            ],
+        },
+        "spellcastingByLevel": {
+            # Half-caster: paladin begins spellcasting at level 2
+            "2": {"ability": "charisma", "cantripsKnown": 0, "casterType": "prepared", "preparedFormula": "abilityModPlusHalfLevel", "maxSpellLevel": 1, "spellListId": "paladin-srd-l1-3"},
+            "3": {"ability": "charisma", "cantripsKnown": 0, "casterType": "prepared", "preparedFormula": "abilityModPlusHalfLevel", "maxSpellLevel": 1, "spellListId": "paladin-srd-l1-3"},
+        },
+    },
 ]
 
 
@@ -245,6 +328,7 @@ SPELLS: List[Dict[str, Any]] = [
     {"id": "sacred-flame", "name": "Sacred Flame", "level": 0, "school": "evocation", "description": "Radiant damage, targets a creature."},
     {"id": "thaumaturgy", "name": "Thaumaturgy", "level": 0, "school": "transmutation", "description": "Minor divine wonders (voice, doors, tremors)."},
     {"id": "vicious-mockery", "name": "Vicious Mockery", "level": 0, "school": "enchantment", "description": "Psychic damage; disadvantage on next attack."},
+    {"id": "eldritch-blast", "name": "Eldritch Blast", "level": 0, "school": "evocation", "description": "Ranged spell attack; force damage."},
 
     # --- Level 1 ---
     {"id": "magic-missile", "name": "Magic Missile", "level": 1, "school": "evocation", "description": "Auto-hit force darts."},
@@ -256,6 +340,11 @@ SPELLS: List[Dict[str, Any]] = [
     {"id": "shield-of-faith", "name": "Shield of Faith", "level": 1, "school": "abjuration", "description": "Bonus action: +2 AC concentration."},
     {"id": "dissonant-whispers", "name": "Dissonant Whispers", "level": 1, "school": "enchantment", "description": "Psychic damage; forced movement."},
     {"id": "thunderwave", "name": "Thunderwave", "level": 1, "school": "evocation", "description": "Thunder damage; pushes creatures away."},
+    {"id": "hex", "name": "Hex", "level": 1, "school": "enchantment", "description": "Curse a target; extra damage and disadvantage on ability checks."},
+    {"id": "armor-of-agathys", "name": "Armor of Agathys", "level": 1, "school": "abjuration", "description": "Temp HP; melee attackers take cold damage."},
+    {"id": "hellish-rebuke", "name": "Hellish Rebuke", "level": 1, "school": "evocation", "description": "Reaction: fire damage to attacker."},
+    {"id": "bless", "name": "Bless", "level": 1, "school": "enchantment", "description": "Add d4 to attacks and saves for up to 3 creatures (concentration)."},
+    {"id": "wrathful-smite", "name": "Wrathful Smite", "level": 1, "school": "evocation", "description": "Next hit deals psychic damage; may frighten target (concentration)."},
 
     # --- Level 2 ---
     {"id": "mirror-image", "name": "Mirror Image", "level": 2, "school": "illusion", "description": "Defensive duplicates; harder to hit."},
@@ -266,6 +355,8 @@ SPELLS: List[Dict[str, Any]] = [
     {"id": "shatter", "name": "Shatter", "level": 2, "school": "evocation", "description": "Thunder AoE damage; good vs objects."},
     {"id": "suggestion", "name": "Suggestion", "level": 2, "school": "enchantment", "description": "Magically influence a creature's actions."},
     {"id": "invisibility", "name": "Invisibility", "level": 2, "school": "illusion", "description": "Become invisible until you attack or cast."},
+    {"id": "darkness", "name": "Darkness", "level": 2, "school": "evocation", "description": "Magical darkness sphere; blocks vision."},
+    {"id": "hold-person", "name": "Hold Person", "level": 2, "school": "enchantment", "description": "Paralyze a humanoid (concentration)."},
 ]
 
 
@@ -281,6 +372,14 @@ SPELL_LISTS: Dict[str, Dict[str, List[str]]] = {
     "bard-srd-l1-3": {
         "cantrips": ["vicious-mockery", "light", "prestidigitation"],
         "spells": ["healing-word", "dissonant-whispers", "thunderwave", "shatter", "suggestion", "invisibility"],
+    },
+    "warlock-srd-l1-3": {
+        "cantrips": ["eldritch-blast", "mage-hand", "prestidigitation", "light"],
+        "spells": ["hex", "armor-of-agathys", "hellish-rebuke", "magic-missile", "shield", "misty-step", "darkness", "hold-person"],
+    },
+    "paladin-srd-l1-3": {
+        "cantrips": [],
+        "spells": ["bless", "cure-wounds", "shield-of-faith", "wrathful-smite", "lesser-restoration"],
     },
 }
 

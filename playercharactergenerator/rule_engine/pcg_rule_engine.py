@@ -138,6 +138,8 @@ class PCGRuleEngine:
                 preparedFormula=spell_row.get("preparedFormula"),
                 maxSpellLevel=max_spell_level,
                 spellListId=spell_list_id,
+                pactSlots=spell_row.get("pactSlots"),
+                pactSlotLevel=spell_row.get("pactSlotLevel"),
                 availableCantrips=available_cantrips,
                 availableSpells=available_spells,
             )
