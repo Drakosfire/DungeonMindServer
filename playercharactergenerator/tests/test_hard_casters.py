@@ -79,3 +79,77 @@ def test_spell_validation_paladin_l2_half_caster_prepared_formula() -> None:
     assert ok is True, {"issues": issues, "sections": sections}
 
 
+def test_spell_validation_ranger_l2_known_half_caster_counts_and_membership() -> None:
+    engine = PCGRuleEngine()
+    input_data = GenerationInput(
+        classId="ranger",
+        raceId="human",
+        level=2,
+        backgroundId="folk-hero",
+        concept="A watchful trailblazer who hunts monsters in the wild and protects frontier villages from unseen threats.",
+    )
+    constraints = engine.get_constraints(input_data)
+    assert constraints.spellcasting is not None
+    assert constraints.spellcasting.caster_type == "known"
+    assert constraints.spellcasting.spells_known == 2
+
+    # Folk Hero grants Animal Handling + Survival; ranger chooses 3 more.
+    choices = ValidationChoices(
+        abilityScores=AbilityScores(
+            strength=10,
+            dexterity=15,
+            constitution=14,
+            intelligence=8,
+            wisdom=13,
+            charisma=10,
+        ),
+        selectedSkills=["Animal Handling", "Survival", "Perception", "Stealth", "Nature"],
+        equipmentPackageId="B",
+        featureChoices={
+            "ranger-fighting-style": "archery",
+        },
+        selectedCantrips=[],
+        selectedSpells=["hunters-mark", "goodberry"],
+    )
+
+    ok, issues, sections = validate_translated_choices(input_data=input_data, constraints=constraints, choices=choices)
+    assert ok is True, {"issues": issues, "sections": sections}
+
+
+def test_spell_validation_ranger_l3_known_counts_and_membership() -> None:
+    engine = PCGRuleEngine()
+    input_data = GenerationInput(
+        classId="ranger",
+        raceId="human",
+        level=3,
+        backgroundId="folk-hero",
+        concept="A determined hunter who relies on keen senses, careful planning, and a few primal tricks to survive the wild.",
+    )
+    constraints = engine.get_constraints(input_data)
+    assert constraints.spellcasting is not None
+    assert constraints.spellcasting.caster_type == "known"
+    assert constraints.spellcasting.spells_known == 3
+
+    choices = ValidationChoices(
+        abilityScores=AbilityScores(
+            strength=10,
+            dexterity=15,
+            constitution=14,
+            intelligence=8,
+            wisdom=13,
+            charisma=10,
+        ),
+        selectedSkills=["Animal Handling", "Survival", "Perception", "Stealth", "Nature"],
+        equipmentPackageId="B",
+        featureChoices={
+            "ranger-fighting-style": "archery",
+            "ranger-subclass": "hunter",
+        },
+        selectedCantrips=[],
+        selectedSpells=["hunters-mark", "goodberry", "ensnaring-strike"],
+    )
+
+    ok, issues, sections = validate_translated_choices(input_data=input_data, constraints=constraints, choices=choices)
+    assert ok is True, {"issues": issues, "sections": sections}
+
+

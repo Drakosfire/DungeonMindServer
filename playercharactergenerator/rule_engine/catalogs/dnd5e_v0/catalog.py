@@ -312,6 +312,48 @@ CLASSES: List[Dict[str, Any]] = [
             "3": {"ability": "charisma", "cantripsKnown": 0, "casterType": "prepared", "preparedFormula": "abilityModPlusHalfLevel", "maxSpellLevel": 1, "spellListId": "paladin-srd-l1-3"},
         },
     },
+    {
+        "id": "ranger",
+        "name": "Ranger",
+        "hitDie": 10,
+        "primaryAbilities": ["dexterity", "wisdom"],
+        "skillChoices": {
+            "choose": 3,
+            "from": ["Animal Handling", "Athletics", "Insight", "Investigation", "Nature", "Perception", "Stealth", "Survival"],
+        },
+        "equipmentPackages": [
+            {"id": "A", "description": "Scale mail + two shortswords + dungeoneer's pack", "items": ["scale-mail", "shortsword", "shortsword", "dungeoneers-pack"]},
+            {"id": "B", "description": "Leather armor + longbow + 20 arrows + explorer's pack", "items": ["leather-armor", "longbow", "arrows-20", "explorers-pack"]},
+        ],
+        "featureChoicesByLevel": {
+            "2": [
+                {
+                    "featureId": "ranger-fighting-style",
+                    "featureName": "Fighting Style",
+                    "options": [
+                        {"id": "archery", "name": "Archery", "description": "Gain +2 to ranged weapon attack rolls."},
+                        {"id": "defense", "name": "Defense", "description": "While wearing armor, gain +1 AC."},
+                        {"id": "dueling", "name": "Dueling", "description": "When wielding a melee weapon in one hand, +2 damage."},
+                    ],
+                }
+            ],
+            "3": [
+                {
+                    "featureId": "ranger-subclass",
+                    "featureName": "Ranger Archetype",
+                    "options": [
+                        {"id": "hunter", "name": "Hunter", "description": "Relentless predator tactics and martial versatility."},
+                        {"id": "beast-master", "name": "Beast Master", "description": "A loyal animal companion fights at your side."},
+                    ],
+                }
+            ],
+        },
+        "spellcastingByLevel": {
+            # Half-caster: ranger begins spellcasting at level 2, but is a known-caster (spells known table).
+            "2": {"ability": "wisdom", "cantripsKnown": 0, "spellsKnown": 2, "casterType": "known", "maxSpellLevel": 1, "spellListId": "ranger-srd-l2-3"},
+            "3": {"ability": "wisdom", "cantripsKnown": 0, "spellsKnown": 3, "casterType": "known", "maxSpellLevel": 1, "spellListId": "ranger-srd-l2-3"},
+        },
+    },
 ]
 
 
@@ -345,6 +387,9 @@ SPELLS: List[Dict[str, Any]] = [
     {"id": "hellish-rebuke", "name": "Hellish Rebuke", "level": 1, "school": "evocation", "description": "Reaction: fire damage to attacker."},
     {"id": "bless", "name": "Bless", "level": 1, "school": "enchantment", "description": "Add d4 to attacks and saves for up to 3 creatures (concentration)."},
     {"id": "wrathful-smite", "name": "Wrathful Smite", "level": 1, "school": "evocation", "description": "Next hit deals psychic damage; may frighten target (concentration)."},
+    {"id": "hunters-mark", "name": "Hunter's Mark", "level": 1, "school": "divination", "description": "Mark a target; extra damage and tracking (concentration)."},
+    {"id": "goodberry", "name": "Goodberry", "level": 1, "school": "transmutation", "description": "Create berries that heal and provide nourishment."},
+    {"id": "ensnaring-strike", "name": "Ensnaring Strike", "level": 1, "school": "conjuration", "description": "Next hit restrains target with vines (concentration)."},
 
     # --- Level 2 ---
     {"id": "mirror-image", "name": "Mirror Image", "level": 2, "school": "illusion", "description": "Defensive duplicates; harder to hit."},
@@ -380,6 +425,10 @@ SPELL_LISTS: Dict[str, Dict[str, List[str]]] = {
     "paladin-srd-l1-3": {
         "cantrips": [],
         "spells": ["bless", "cure-wounds", "shield-of-faith", "wrathful-smite", "lesser-restoration"],
+    },
+    "ranger-srd-l2-3": {
+        "cantrips": [],
+        "spells": ["hunters-mark", "goodberry", "ensnaring-strike", "cure-wounds", "shield-of-faith"],
     },
 }
 
