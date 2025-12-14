@@ -249,6 +249,25 @@ def compute_derived_stats(
         },
     }
 
+    # Spell slots/resources (small-scope): surface pact magic info for warlock UX.
+    sc = constraints.spellcasting
+    if sc and (sc.pact_slots is not None or sc.pact_slot_level is not None):
+        sections["spellSlots"] = {
+            "success": True,
+            "issues": [],
+            "details": {
+                "kind": "pact",
+                "pactSlots": int(sc.pact_slots or 0),
+                "pactSlotLevel": int(sc.pact_slot_level or 0),
+            },
+        }
+    elif sc:
+        sections["spellSlots"] = {
+            "success": True,
+            "issues": [],
+            "details": {"kind": "standard", "note": "Spell slot math not implemented yet (E5 backlog)."},
+        }
+
     if issues:
         return False, issues, None, sections
 
