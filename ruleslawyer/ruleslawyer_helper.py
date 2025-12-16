@@ -18,21 +18,34 @@ class EmbeddingLoader:
             enhanced_json_path (str, optional): Path to the enhanced JSON file.
             cached_data (dict, optional): Preloaded embeddings and pages/chunks.
         """
-        self.embedding_model = SentenceTransformer(
-            model_name_or_path='BAAI/bge-m3',
-            device='cpu'
-        )
+        print("🔧 [EmbeddingLoader] Initializing SentenceTransformer model...")
+        try:
+            self.embedding_model = SentenceTransformer(
+                model_name_or_path='BAAI/bge-m3',
+                device='cpu',
+                cache_folder='/home/user/.cache/huggingface'  # Explicit cache location
+            )
+            print("✅ [EmbeddingLoader] SentenceTransformer model loaded successfully")
+        except Exception as e:
+            error_msg = f"Failed to load SentenceTransformer model: {str(e)}"
+            print(f"❌ [EmbeddingLoader] {error_msg}")
+            raise Exception(error_msg)
+        
         self.document_summary = None
         self.page_summaries = None
 
         if cached_data:
             self.pages_and_chunks, self.embeddings = cached_data
+            print("✅ [EmbeddingLoader] Using cached embeddings data")
         else:
             self.embeddings_file_path = embeddings_file_path
             self.enhanced_json_path = enhanced_json_path
+            print(f"📂 [EmbeddingLoader] Loading embeddings from: {embeddings_file_path}")
             self.pages_and_chunks, self.embeddings = self._load_embeddings()
             if enhanced_json_path:
+                print(f"📄 [EmbeddingLoader] Loading enhanced JSON from: {enhanced_json_path}")
                 self.document_summary, self.page_summaries = self._load_enhanced_json()
+            print("✅ [EmbeddingLoader] Initialization complete")
 
     def _load_embeddings(self):
         """Load and process the embeddings CSV file."""

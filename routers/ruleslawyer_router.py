@@ -73,36 +73,44 @@ async def health():
 
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
-    print(f"Loading embedding: {request}")
+    logger.info(f"🔄 [RulesLawyer] Loading embedding: {request.embedding}")
+    logger.info(f"📁 [RulesLawyer] Request paths - CSV: {request.embeddings_file_path}, JSON: {request.enhanced_json_path}")
+    
     try:
         # Construct full paths for logging
         embeddings_full_path = os.path.join(RULESLAWYER_DIR, request.embeddings_file_path.lstrip('./'))
         json_full_path = os.path.join(RULESLAWYER_DIR, request.enhanced_json_path.lstrip('./'))
         
-        logger.info(f"Looking for embeddings file: {embeddings_full_path}")
-        logger.info(f"Looking for JSON file: {json_full_path}")
+        logger.info(f"🔍 [RulesLawyer] Resolved paths:")
+        logger.info(f"   Embeddings: {embeddings_full_path}")
+        logger.info(f"   JSON: {json_full_path}")
+        logger.info(f"   RULESLAWYER_DIR: {RULESLAWYER_DIR}")
+        logger.info(f"   Directory exists: {os.path.exists(RULESLAWYER_DIR)}")
         
         # Check if files exist before attempting to load
         if not os.path.exists(embeddings_full_path):
             error_msg = f"Embeddings file not found: {embeddings_full_path}"
-            logger.error(error_msg)
+            logger.error(f"❌ [RulesLawyer] {error_msg}")
             raise HTTPException(status_code=404, detail=error_msg)
         
         if not os.path.exists(json_full_path):
             error_msg = f"JSON file not found: {json_full_path}"
-            logger.error(error_msg)
+            logger.error(f"❌ [RulesLawyer] {error_msg}")
             raise HTTPException(status_code=404, detail=error_msg)
         
+        logger.info(f"✅ [RulesLawyer] Files found, loading embeddings...")
         rules_lawyer_service.load_embeddings(
             embeddings_file_path=request.embeddings_file_path,
             enhanced_json_path=request.enhanced_json_path
         )
+        logger.info(f"✅ [RulesLawyer] Embeddings loaded successfully")
         return {"message": "Embedding loaded successfully"}
     except HTTPException:
         raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         error_detail = f"Failed to load embeddings: {str(e)}"
-        logger.error(f"Error loading embeddings: {error_detail}")
+        logger.error(f"❌ [RulesLawyer] Error loading embeddings: {error_detail}")
+        logger.exception(e)  # Log full traceback
         raise HTTPException(status_code=500, detail=error_detail)
 
 @router.post("/query")

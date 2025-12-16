@@ -4,7 +4,7 @@ import boto3
 import os
 from dotenv import load_dotenv
 
-result = load_dotenv(dotenv_path='/media/drakosfire/Shared1/DungeonMind/DungeonMindServer/.env.development')
+result = load_dotenv(dotenv_path='/media/drakosfire/Shared1/DungeonMind/DungeonMindServerServer/.env.development')
 
 
 def test_r2_client_creation():

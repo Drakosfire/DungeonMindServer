@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Try to load the .env file and check if it succeeded
-result = load_dotenv(dotenv_path='/media/drakosfire/Shared1/DungeonMind/DungeonMindServer/.env.development')
+result = load_dotenv(dotenv_path='/media/drakosfire/Shared1/DungeonMind/DungeonMindServerServer/.env.development')
 # logger.debug(f".env file loaded: {result}")
 
 # Get and log each environment variable
@@ -29,7 +29,7 @@ BUCKET_NAME = os.getenv('R2_BUCKET_NAME')
 # logger.debug(f"BUCKET_NAME: {'set' if BUCKET_NAME else 'not set'}")
 
 # Verify the .env file exists
-env_path = '/media/drakosfire/Shared1/DungeonMind/DungeonMindServer/.env.development'
+env_path = '/media/drakosfire/Shared1/DungeonMind/DungeonMindServerServer/.env.development'
 logger.debug(f".env file exists: {os.path.exists(env_path)}")
 
 def get_r2_client():
