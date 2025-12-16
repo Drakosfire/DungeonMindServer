@@ -13,11 +13,32 @@ from typing import Any, Dict, List
 
 
 RACES: List[Dict[str, Any]] = [
-    {"id": "human", "name": "Human", "abilityBonuses": {}},
-    {"id": "dwarf", "name": "Dwarf", "abilityBonuses": {"constitution": 2}},
-    {"id": "elf", "name": "Elf", "abilityBonuses": {"dexterity": 2}},
-    {"id": "halfling", "name": "Halfling", "abilityBonuses": {"dexterity": 2}},
+    # Base races (kept for backward compatibility, but subraces are preferred)
+    {"id": "human", "name": "Human", "abilityBonuses": {"strength": 1, "dexterity": 1, "constitution": 1, "intelligence": 1, "wisdom": 1, "charisma": 1}},
+    {"id": "dwarf", "name": "Dwarf", "abilityBonuses": {"constitution": 2}, "baseRace": "dwarf"},
+    {"id": "elf", "name": "Elf", "abilityBonuses": {"dexterity": 2}, "baseRace": "elf"},
+    {"id": "halfling", "name": "Halfling", "abilityBonuses": {"dexterity": 2}, "baseRace": "halfling"},
     {"id": "half-orc", "name": "Half-Orc", "abilityBonuses": {"strength": 2, "constitution": 1}},
+    {"id": "dragonborn", "name": "Dragonborn", "abilityBonuses": {"strength": 2, "charisma": 1}},
+    {"id": "gnome", "name": "Gnome", "abilityBonuses": {"intelligence": 2}, "baseRace": "gnome"},
+    {"id": "half-elf", "name": "Half-Elf", "abilityBonuses": {"charisma": 2}},
+    {"id": "tiefling", "name": "Tiefling", "abilityBonuses": {"charisma": 2, "intelligence": 1}},
+    
+    # Dwarf subraces
+    {"id": "hill-dwarf", "name": "Hill Dwarf", "baseRace": "dwarf", "abilityBonuses": {"constitution": 2, "wisdom": 1}},
+    {"id": "mountain-dwarf", "name": "Mountain Dwarf", "baseRace": "dwarf", "abilityBonuses": {"constitution": 2, "strength": 2}},
+    
+    # Elf subraces
+    {"id": "high-elf", "name": "High Elf", "baseRace": "elf", "abilityBonuses": {"dexterity": 2, "intelligence": 1}},
+    {"id": "wood-elf", "name": "Wood Elf", "baseRace": "elf", "abilityBonuses": {"dexterity": 2, "wisdom": 1}},
+    
+    # Halfling subraces
+    {"id": "lightfoot-halfling", "name": "Lightfoot Halfling", "baseRace": "halfling", "abilityBonuses": {"dexterity": 2, "charisma": 1}},
+    {"id": "stout-halfling", "name": "Stout Halfling", "baseRace": "halfling", "abilityBonuses": {"dexterity": 2, "constitution": 1}},
+    
+    # Gnome subraces
+    {"id": "forest-gnome", "name": "Forest Gnome", "baseRace": "gnome", "abilityBonuses": {"intelligence": 2, "dexterity": 1}},
+    {"id": "rock-gnome", "name": "Rock Gnome", "baseRace": "gnome", "abilityBonuses": {"intelligence": 2, "constitution": 1}},
 ]
 
 

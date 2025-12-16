@@ -40,9 +40,37 @@ class PCGRuleEngine:
         if not cls:
             raise ValueError(f"Unknown classId: {input_data.class_id}")
 
-        race = self._catalog.races_by_id.get(input_data.race_id)
-        if not race:
-            raise ValueError(f"Unknown raceId: {input_data.race_id}")
+        # Handle subrace selection: if subrace_id is provided, use it; otherwise use race_id
+        race = None
+        if input_data.subrace_id:
+            race = self._catalog.races_by_id.get(input_data.subrace_id)
+            if not race:
+                raise ValueError(f"Unknown subraceId: {input_data.subrace_id}")
+        else:
+            race = self._catalog.races_by_id.get(input_data.race_id)
+            if not race:
+                raise ValueError(f"Unknown raceId: {input_data.race_id}")
+            
+            # Check if this is a base race that requires a subrace
+            # Base races have baseRace == id (self-reference)
+            # Subraces have baseRace != id (reference to parent)
+            race_id = race.get("id")
+            base_race = race.get("baseRace")
+            
+            # Check if there are subraces available for this race
+            # (i.e., other races with baseRace == this race's id but id != this race's id)
+            available_subraces = [
+                r for r in self._catalog.races_by_id.values()
+                if r.get("baseRace") == race_id and r.get("id") != race_id
+            ]
+            
+            # If this is a base race (baseRace == id) and has subraces available, require subrace selection
+            if base_race == race_id and available_subraces:
+                subrace_names = [r["name"] for r in available_subraces]
+                raise ValueError(
+                    f"Race '{race['name']}' requires a subrace selection. "
+                    f"Available subraces: {', '.join(subrace_names)}"
+                )
 
         background = self._catalog.backgrounds_by_id.get(input_data.background_id)
         if not background:
