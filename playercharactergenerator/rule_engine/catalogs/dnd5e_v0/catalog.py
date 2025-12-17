@@ -54,6 +54,29 @@ BACKGROUNDS: List[Dict[str, Any]] = [
 
 CLASSES: List[Dict[str, Any]] = [
     {
+        "id": "barbarian",
+        "name": "Barbarian",
+        "hitDie": 12,
+        "primaryAbilities": ["strength", "constitution"],
+        "skillChoices": {
+            "choose": 2,
+            "from": [
+                "Animal Handling",
+                "Athletics",
+                "Intimidation",
+                "Nature",
+                "Perception",
+                "Survival",
+            ],
+        },
+        "equipmentPackages": [
+            {"id": "A", "description": "Greataxe + two handaxes", "items": ["greataxe", "handaxe", "handaxe"]},
+            {"id": "B", "description": "Martial melee weapon + two handaxes", "items": ["martial-melee-weapon-choice", "handaxe", "handaxe"]},
+        ],
+        "featureChoicesByLevel": {},
+        "spellcastingByLevel": {},
+    },
+    {
         "id": "fighter",
         "name": "Fighter",
         "hitDie": 10,
