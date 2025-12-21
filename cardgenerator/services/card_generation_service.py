@@ -12,7 +12,6 @@ This service extracts the core generation logic from the monolithic router.
 
 import logging
 import json
-import fal_client
 from typing import Dict, Any, List, Optional, Tuple
 from openai import OpenAI
 from PIL import Image
@@ -21,6 +20,19 @@ from pydantic import BaseModel, ValidationError
 from cardgenerator.prompts.prompt_manager import prompt_manager
 from cardgenerator.card_generator_new import render_text_on_card
 from cardgenerator.utils.error_handler import CardGenerationError, ValidationError as CardValidationError
+
+# Import GenerationEngine services
+from generationengine import (
+    ImageService,
+    MetricsService,
+    ImageGenerationRequest as GEImageGenerationRequest,
+    ImageModel,
+    ImageSize,
+)
+
+# Initialize GenerationEngine services
+_metrics_service = MetricsService()
+_image_service = ImageService(metrics_service=_metrics_service)
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +163,8 @@ class CardGenerationService:
         """
         Generate core images directly from text prompt (Step 2 workflow)
         
+        Uses GenerationEngine ImageService for unified generation infrastructure.
+        
         Args:
             sd_prompt: Stable Diffusion prompt for image generation
             num_images: Number of images to generate
@@ -162,35 +176,56 @@ class CardGenerationService:
             CardGenerationError: If image generation fails
         """
         try:
-            logger.info(f"Generating {num_images} core images with prompt: {sd_prompt[:100]}...")
+            logger.info(f"🎨 [GenerationEngine] Generating {num_images} core images with prompt: {sd_prompt[:100]}...")
             
-            handler = fal_client.submit(
-                "fal-ai/imagen4/preview/fast", 
-                arguments={
-                    "prompt": sd_prompt,
-                    "num_inference_steps": 28,
-                    "guidance_scale": 3.5,
-                    "num_images": num_images,
-                    "image_size": {"width": 1024, "height": 1024}
-                }
+            # Create GenerationEngine request
+            ge_request = GEImageGenerationRequest(
+                prompt=sd_prompt,
+                model=ImageModel.IMAGEN4_FAST,  # Maps to fal-ai/imagen4/preview/fast
+                num_images=num_images,
+                size=ImageSize.SQUARE,  # 1024x1024
             )
             
-            result = handler.get()
-            logger.info(f"Generated {len(result.get('images', []))} images successfully")
+            # Call GenerationEngine ImageService
+            response = await _image_service.generate(ge_request)
+            
+            if not response.success:
+                error_msg = response.error.message if response.error else "Image generation failed"
+                logger.error(f"❌ [GenerationEngine] Core image generation failed: {error_msg}")
+                raise CardGenerationError(f"Failed to generate images: {error_msg}")
+            
+            # Transform GenerationEngine response to GeneratedImageResult format
+            images = []
+            if response.images:
+                for img_result in response.images:
+                    images.append({
+                        "url": img_result.url,
+                        # Include any other fields that GeneratedImageResult expects
+                    })
+            
+            logger.info(f"✅ [GenerationEngine] Generated {len(images)} images successfully")
+            
+            # Log metrics if available
+            if response.metrics:
+                logger.info(f"📊 [GenerationEngine] Metrics: duration={response.metrics.duration_ms}ms, model={response.metrics.model_used}, retries={response.metrics.retry_count}")
             
             return GeneratedImageResult(
-                images=result.get('images', []),
+                images=images,
                 success=True,
-                message=f"Generated {len(result.get('images', []))} images"
+                message=f"Generated {len(images)} images"
             )
             
+        except CardGenerationError:
+            raise
         except Exception as e:
-            logger.error(f"Core image generation failed: {e}")
+            logger.error(f"❌ [GenerationEngine] Core image generation failed: {e}")
             raise CardGenerationError(f"Failed to generate images: {str(e)}")
     
     async def generate_card_images(self, template_url: str, sd_prompt: str, num_images: int) -> GeneratedImageResult:
         """
         Generate card images using template and SD prompt (Step 3 workflow)
+        
+        Uses GenerationEngine ImageService with image-to-image support for unified generation infrastructure.
         
         Args:
             template_url: URL of the template image
@@ -204,7 +239,7 @@ class CardGenerationService:
             CardGenerationError: If generation fails
         """
         try:
-            logger.info(f"Generating {num_images} card images from template")
+            logger.info(f"🎨 [GenerationEngine] Generating {num_images} card images from template using image-to-image")
             
             # Enhanced prompt for card generation
             enhanced_prompt = (
@@ -213,29 +248,49 @@ class CardGenerationService:
                 f"thematic borders, {sd_prompt} in on a background of appropriate setting or location"
             )
             
-            handler = fal_client.submit(
-                "fal-ai/flux-lora/image-to-image",
-                arguments={
-                    "num_inference_steps": 35,
-                    "prompt": enhanced_prompt,
-                    "num_images": num_images,
-                    "image_url": template_url,
-                    "strength": 0.85,
-                    "image_size": {"width": 768, "height": 1024}
-                }
+            # Create GenerationEngine request with image-to-image parameters
+            ge_request = GEImageGenerationRequest(
+                prompt=enhanced_prompt,
+                model=ImageModel.FAL_FLUX_LORA_I2I,  # Image-to-image using flux-lora
+                num_images=num_images,
+                size=ImageSize.PORTRAIT,  # 768x1024 for card format
+                image_url=template_url,
+                strength=0.85,  # Transformation strength
             )
             
-            result = handler.get()
-            logger.info(f"Generated {len(result.get('images', []))} card images successfully")
+            # Call GenerationEngine ImageService
+            response = await _image_service.generate(ge_request)
+            
+            if not response.success:
+                error_msg = response.error.message if response.error else "Image generation failed"
+                logger.error(f"❌ [GenerationEngine] Card image generation failed: {error_msg}")
+                raise CardGenerationError(f"Failed to generate card images: {error_msg}")
+            
+            # Transform GenerationEngine response to GeneratedImageResult format
+            images = []
+            if response.images:
+                for img_result in response.images:
+                    images.append({
+                        "url": img_result.url,
+                        # Include any other fields that GeneratedImageResult expects
+                    })
+            
+            logger.info(f"✅ [GenerationEngine] Generated {len(images)} card images successfully")
+            
+            # Log metrics if available
+            if response.metrics:
+                logger.info(f"📊 [GenerationEngine] Metrics: duration={response.metrics.duration_ms}ms, model={response.metrics.model_used}, retries={response.metrics.retry_count}")
             
             return GeneratedImageResult(
-                images=result.get('images', []),
+                images=images,
                 success=True,
-                message=f"Generated {len(result.get('images', []))} card images"
+                message=f"Generated {len(images)} card images"
             )
             
+        except CardGenerationError:
+            raise
         except Exception as e:
-            logger.error(f"Card image generation failed: {e}")
+            logger.error(f"❌ [GenerationEngine] Card image generation failed: {e}")
             raise CardGenerationError(f"Failed to generate card images: {str(e)}")
     
     async def render_text_on_card(self, image_url: str, item_details: Dict[str, Any]) -> Image.Image:
@@ -248,6 +303,7 @@ class CardGenerationService:
             
         Returns:
             PIL Image with rendered text
+            
             
         Raises:
             CardGenerationError: If rendering fails

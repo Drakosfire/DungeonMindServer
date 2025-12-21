@@ -38,8 +38,16 @@ import fal_client
 from openai import OpenAI
 from cloudflare.handle_images import upload_image_to_cloudflare
 
+# Import GenerationEngine services for spot test
+from generationengine import ImageService, MetricsService, ImageGenerationRequest as GEImageGenerationRequest, ImageModel, ImageSize
+
 # Initialize OpenAI client
 openai_client = OpenAI()
+
+# Initialize GenerationEngine services for spot test
+# TODO: Make MetricsService a singleton or inject via dependency injection
+_metrics_service = MetricsService()
+_image_service = ImageService(metrics_service=_metrics_service)
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +108,7 @@ async def generate_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Generate creature artwork using multiple AI models
+    Generate creature artwork using GenerationEngine (SPOT TEST)
     
     Supports:
     - flux-pro: fal-ai/flux-pro/new (default, high quality)
@@ -110,231 +118,53 @@ async def generate_image(
     Requires authentication - AI generation costs money and images need CDN storage
     """
     try:
-        logger.info(f"Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {request.sd_prompt[:50]}...")
+        logger.info(f"🎨 [GenerationEngine] Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {request.sd_prompt[:50]}...")
         
+        # Map StatBlockGenerator request to GenerationEngine request
+        model_map = {
+            "flux-pro": ImageModel.FLUX_PRO,
+            "imagen4": ImageModel.IMAGEN4,
+            "openai": ImageModel.OPENAI,
+        }
+        
+        ge_model = model_map.get(request.model, ImageModel.FLUX_PRO)
+        
+        ge_request = GEImageGenerationRequest(
+            prompt=request.sd_prompt,
+            model=ge_model,
+            num_images=request.num_images,
+            size=ImageSize.SQUARE,  # StatBlockGenerator uses 1024x1024
+        )
+        
+        # Call GenerationEngine ImageService
+        response = await _image_service.generate(ge_request)
+        
+        if not response.success:
+            logger.error(f"❌ [GenerationEngine] Image generation failed: {response.error.message if response.error else 'Unknown error'}")
+            raise HTTPException(
+                status_code=500,
+                detail=response.error.message if response.error else "Image generation failed"
+            )
+        
+
+        # Transform GenerationEngine response to StatBlockGenerator format
         generated_images = []
-        model_name = request.model
-        
-        # Route to appropriate model
-        if request.model == "openai":
-            # OpenAI image generation using gpt-image-1-mini (faster, direct image API)
-            logger.info("Using OpenAI gpt-image-1-mini for image generation")
-            
-            try:
-                import asyncio
-                from concurrent.futures import ThreadPoolExecutor
-                import base64
-                import io
-                from PIL import Image
-                import httpx
-                
-                # Generate all images in a single API call
-                logger.info(f"Generating {request.num_images} images in single batch...")
-                loop = asyncio.get_event_loop()
-                
-                with ThreadPoolExecutor() as executor:
-                    # Use the new OpenAI Images API with gpt-image-1-mini
-                    response = await loop.run_in_executor(
-                        executor,
-                        lambda: openai_client.images.generate(
-                            model="gpt-image-1-mini",  # Fast, cost-effective model
-                            prompt=request.sd_prompt,
-                            n=request.num_images,  # Generate all images in one call
-                            size="1024x1024"  # Square format
-                        )
-                    )
-                
-                logger.info(f"Received {len(response.data)} images from OpenAI")
-                
-                # Process and upload ALL images in PARALLEL
-                async def process_and_upload_openai_image(img_idx: int, image_data: Any) -> Optional[Dict[str, Any]]:
-                    """Process and upload a single OpenAI image to Cloudflare"""
-                    try:
-                        logger.info(f"Processing OpenAI image {img_idx + 1}/{request.num_images}")
-                        
-                        # Decode base64 image data
-                        image_bytes = base64.b64decode(image_data.b64_json)
-                        
-                        # Open image with PIL
-                        image = Image.open(io.BytesIO(image_bytes))
-                        logger.info(f"Image {img_idx + 1} size: {image.size}, mode: {image.mode}")
-                        
-                        # Save temporarily
-                        temp_filename = f"temp_openai_mini_{datetime.now().timestamp()}_{img_idx}.png"
-                        temp_path = f"/tmp/{temp_filename}"
-                        image.save(temp_path)
-                        
-                        # Upload to Cloudflare
-                        cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
-                        cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
-                        
-                        upload_url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1"
-                        headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
-                        
-                        # Read file content
-                        with open(temp_path, 'rb') as f:
-                            file_content = f.read()
-                        
-                        # Upload to Cloudflare
-                        async with httpx.AsyncClient(timeout=30.0) as client:
-                            files = {"file": ("image.png", file_content, "image/png")}
-                            cf_response = await client.post(upload_url, headers=headers, files=files)
-                            cf_result = cf_response.json()
-                            
-                            if cf_result.get("success"):
-                                image_url = cf_result["result"]["variants"][0]
-                                logger.info(f"✅ Successfully uploaded OpenAI image {img_idx + 1} to Cloudflare")
-                                return {
-                                    "id": f"img_openai_mini_{datetime.now().timestamp()}_{img_idx}",
-                                    "url": image_url,
-                                    "prompt": request.sd_prompt,
-                                    "created_at": datetime.now().isoformat()
-                                }
-                            else:
-                                logger.error(f"❌ Cloudflare upload failed for image {img_idx + 1}: {cf_result}")
-                                return None
-                    except Exception as upload_error:
-                        logger.error(f"❌ Failed to process/upload OpenAI image {img_idx + 1}: {upload_error}")
-                        return None
-                    finally:
-                        # Clean up temp file
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
-                
-                # Launch all uploads in PARALLEL with asyncio.gather()
-                upload_tasks = [
-                    process_and_upload_openai_image(idx, img_data)
-                    for idx, img_data in enumerate(response.data)
-                ]
-                upload_results = await asyncio.gather(*upload_tasks)
-                
-                # Collect successful uploads
-                generated_images = [img for img in upload_results if img is not None]
-                
-                model_name = "openai-gpt-image-1-mini"
-                logger.info(f"✅ OpenAI generation complete. Total images: {len(generated_images)}")
-                
-            except Exception as openai_error:
-                logger.error(f"❌ OpenAI image generation failed: {openai_error}")
-                logger.exception("Full traceback:")
-                raise HTTPException(status_code=500, detail=f"OpenAI generation failed: {str(openai_error)}")
-        
-        elif request.model == "imagen4":
-            # Google Imagen4 via Fal.ai
-            logger.info("Using Imagen4 via Fal.ai")
-            
-            fal_result = fal_client.subscribe(
-                "fal-ai/imagen4/preview",
-                arguments={
+        if response.images:
+            for img_result in response.images:
+                generated_images.append({
+                    "id": f"img_{datetime.now().timestamp()}_{len(generated_images)}",
+                    "url": img_result.url,
                     "prompt": request.sd_prompt,
-                    "num_inference_steps": 28,
-                    "guidance_scale": 3.5,
-                    "num_images": request.num_images,
-                    "image_size": {
-                        "width": 1024,
-                        "height": 1024
-                    }
-                }
-            )
-            
-            if not fal_result or "images" not in fal_result:
-                raise HTTPException(status_code=400, detail="Imagen4 generation failed")
-            
-            # Process Fal.ai images in PARALLEL
-            async def upload_fal_image(idx: int, image_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-                """Upload a single Fal.ai image to Cloudflare"""
-                image_url = image_data.get("url")
-                if not image_url:
-                    return None
-                
-                try:
-                    # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
-                    cloudflare_url = await upload_image_to_cloudflare(image_url)
-                    return {
-                        "id": f"img_{datetime.now().timestamp()}_{idx}",
-                        "url": cloudflare_url,
-                        "original_url": image_url,
-                        "prompt": request.sd_prompt,
-                        "created_at": datetime.now().isoformat()
-                    }
-                except Exception as upload_error:
-                    logger.warning(f"Failed to upload image {idx + 1} to Cloudflare: {upload_error}")
-                    # Fall back to original URL
-                    return {
-                        "id": f"img_{datetime.now().timestamp()}_{idx}",
-                        "url": image_url,
-                        "prompt": request.sd_prompt,
-                        "created_at": datetime.now().isoformat()
-                    }
-            
-            # Upload all images in PARALLEL
-            import asyncio
-            upload_tasks = [
-                upload_fal_image(idx, img_data)
-                for idx, img_data in enumerate(fal_result["images"])
-            ]
-            upload_results = await asyncio.gather(*upload_tasks)
-            generated_images = [img for img in upload_results if img is not None]
-            
-            model_name = "fal-ai/imagen4/preview"
+                    "created_at": datetime.now().isoformat()
+                })
         
-        else:  # flux-pro (default)
-            # FLUX Pro via Fal.ai
-            logger.info("Using FLUX Pro via Fal.ai")
-            
-            fal_result = fal_client.subscribe(
-                "fal-ai/flux-pro/new",
-                arguments={
-                    "prompt": request.sd_prompt,
-                    "num_images": request.num_images,
-                    "image_size": {
-                        "width": 1024,
-                        "height": 1024
-                    },
-                    "enable_safety_checker": True
-                }
-            )
-            
-            if not fal_result or "images" not in fal_result:
-                raise HTTPException(status_code=400, detail="FLUX Pro generation failed")
-            
-            # Process Fal.ai images in PARALLEL
-            async def upload_flux_image(idx: int, image_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-                """Upload a single FLUX Pro image to Cloudflare"""
-                image_url = image_data.get("url")
-                if not image_url:
-                    return None
-                
-                try:
-                    # upload_image_to_cloudflare takes 1 arg (URL) and returns URL string
-                    cloudflare_url = await upload_image_to_cloudflare(image_url)
-                    return {
-                        "id": f"img_{datetime.now().timestamp()}_{idx}",
-                        "url": cloudflare_url,
-                        "original_url": image_url,
-                        "prompt": request.sd_prompt,
-                        "created_at": datetime.now().isoformat()
-                    }
-                except Exception as upload_error:
-                    logger.warning(f"Failed to upload image {idx + 1} to Cloudflare: {upload_error}")
-                    # Fall back to original URL
-                    return {
-                        "id": f"img_{datetime.now().timestamp()}_{idx}",
-                        "url": image_url,
-                        "prompt": request.sd_prompt,
-                        "created_at": datetime.now().isoformat()
-                    }
-            
-            # Upload all images in PARALLEL
-            import asyncio
-            upload_tasks = [
-                upload_flux_image(idx, img_data)
-                for idx, img_data in enumerate(fal_result["images"])
-            ]
-            upload_results = await asyncio.gather(*upload_tasks)
-            generated_images = [img for img in upload_results if img is not None]
-            
-            model_name = "fal-ai/flux-pro/new"
+        logger.info(f"✅ [GenerationEngine] Generated {len(generated_images)} images successfully")
+        
+        # Log metrics if available
+        if response.metrics:
+            logger.info(f"📊 [GenerationEngine] Metrics: duration={response.metrics.duration_ms}ms, model={response.metrics.model_used}, retries={response.metrics.retry_count}")
+        
+        model_name = response.metrics.model_used if response.metrics else request.model
         
         return {
             "success": True,
@@ -348,9 +178,12 @@ async def generate_image(
             }
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error generating creature image: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ [GenerationEngine] Unexpected error: {str(e)}")
+        logger.exception("Full traceback:")
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 @router.post("/upload-image")
 async def upload_image(

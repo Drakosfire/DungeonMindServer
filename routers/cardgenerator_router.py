@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, File, UploadFile
 import os
 import io
 import json
-import fal_client
 import requests
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
@@ -18,6 +17,7 @@ from openai import OpenAI
 # Updated import to use new prompt management system
 from cardgenerator.prompts import prompt_manager
 from cardgenerator.card_generator_new import CardGeneratorV2, render_text_on_card
+from cardgenerator.services.card_generation_service import CardGenerationService
 from .auth_router import get_current_user
 
 # Cloudflare credentials
@@ -144,37 +144,9 @@ router = APIRouter()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-def preview_and_generate_image(sd_prompt, num_images, url):   
-    prompt = f"blank card, no text, blank textbox at top for title, mid for details and bottom for description, detailed high quality thematic borders, {sd_prompt} in on a background of appropriate setting or location"
 
-    handler = fal_client.submit(
-            "fal-ai/flux-lora/image-to-image",
-            arguments={
-                "num_inference_steps": 35,
-                "prompt": prompt,
-                "num_images": num_images,
-                "image_url": url,
-                "strength": 0.85,
-                "image_size": {
-                    "width": 768,
-                    "height": 1024
-                }   
-            }
-        )
-
-    result = handler.get()
-    logger.info(f"Type of result: {type(result)}")
-    logger.info(f"Content of result: {json.dumps(result, indent=2)}")
-    
-    # Extract the image URLs from the result
-    image_urls = [img['url'] for img in result.get('images', [])]
-    
-    logger.info(f"Extracted image URLs: {image_urls}")
-    
-    if not image_urls:
-        logger.warning("No images were generated.")
-        return []
-    return result
+# Initialize CardGenerationService (uses GenerationEngine internally)
+card_generation_service = CardGenerationService()
 
 @router.post('/generate-card-images')
 async def generate_card_images(
@@ -186,8 +158,15 @@ async def generate_card_images(
         # 1. Upload template to Cloudflare
         template_url = await upload_image_to_cloudflare(template)
         
-        # 2. Generate images using the template and SD prompt                        
-        image_urls = preview_and_generate_image(sdPrompt, numImages, template_url)      
+        # 2. Generate images using the template and SD prompt via GenerationEngine
+        result = await card_generation_service.generate_card_images(
+            template_url=template_url,
+            sd_prompt=sdPrompt,
+            num_images=numImages
+        )
+        
+        # Extract image URLs from result
+        image_urls = [img['url'] for img in result.images]
         
         return image_urls
     except Exception as e:
@@ -386,27 +365,24 @@ async def generate_core_images(
     """
     Generate core images directly from text prompt without requiring a template.
     This is used in Step 2 of the new workflow.
+    
+    Uses GenerationEngine ImageService for unified generation infrastructure.
     """
     try:
-       
-        handler = fal_client.submit(
-            "fal-ai/imagen4/preview/fast", 
-            arguments={
-                "prompt": sdPrompt,
-                "num_inference_steps": 28,
-                "guidance_scale": 3.5,
-                "num_images": numImages,
-                "image_size": {
-                    "width": 1024,
-                    "height": 1024
-                }
-            }
+        # Use CardGenerationService which now uses GenerationEngine
+        result = await card_generation_service.generate_core_images(
+            sd_prompt=sdPrompt,
+            num_images=numImages
         )
         
-        result = handler.get()
-        logger.info(f"Generated core images result: {json.dumps(result, indent=2)}")
+        logger.info(f"Generated core images result: {len(result.images)} images")
         
-        return result
+        # Transform GeneratedImageResult to expected API format
+        return {
+            "images": result.images,
+            "success": result.success,
+            "message": result.message
+        }
         
     except Exception as e:
         logger.error("Error generating core images: %s", str(e))
