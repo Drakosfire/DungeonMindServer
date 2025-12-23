@@ -1,0 +1,176 @@
+{
+  "test_date": "2025-10-07T09:05:09.471238",
+  "prompt": "Dr. Jupiter, Small, Dr. Jupiter is a peculiar creature, a mix of a white Shiba Inu and an all white American Eskimo Dog, with pointy ears the color of a toasted marshmallow. Adorned with a lab coat and a stethoscope, this small canine is known for its medical prowess, often seen with a head mirror on its forehead. Dr. Jupiter roams the lands offering healing and medical assistance to those in need, always eager to help with a wagging tail and a cheerful bark., fantasy art, detailed portrait, dramatic lighting, high quality, in the style of an oil painting in a doctor's office.",
+  "num_images_requested": 4,
+  "results": [
+    {
+      "model_name": "openai-gpt-image-1-mini",
+      "success": false,
+      "error": "Error code: 400 - {'error': {'message': \"Unknown parameter: 'response_format'.\", 'type': 'invalid_request_error', 'param': 'response_format', 'code': 'unknown_parameter'}}",
+      "total_duration": 0.0,
+      "images": [],
+      "metadata": {},
+      "timing_breakdown": []
+    },
+    {
+      "model_name": "fal-ai/flux-pro/new",
+      "success": true,
+      "error": null,
+      "total_duration": 0.0,
+      "images": [
+        {
+          "index": 1,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/flux_pro_1.png",
+          "filename": "flux_pro_1.png",
+          "url": "https://fal.media/files/penguin/4-bitjewCd3QuSA9E2YpY_250a4f985b7f4335902b8631dfe66e90.jpg",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.7307050228118896
+        },
+        {
+          "index": 2,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/flux_pro_2.png",
+          "filename": "flux_pro_2.png",
+          "url": "https://fal.media/files/rabbit/wHZ8J4wTS640HHJc0gcSP_d9067bfa1fab49c090e4179cf74b9106.jpg",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.528458833694458
+        },
+        {
+          "index": 3,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/flux_pro_3.png",
+          "filename": "flux_pro_3.png",
+          "url": "https://fal.media/files/panda/Alh8G1LqfklpLIoaVa5Hr_2ff7e2c724584571a81d43cad203a767.jpg",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.47118687629699707
+        },
+        {
+          "index": 4,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/flux_pro_4.png",
+          "filename": "flux_pro_4.png",
+          "url": "https://fal.media/files/koala/i_ICzhsMGJEADVBCKeAoR_a9a353722c2844c1a0049183c225f36f.jpg",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.5134158134460449
+        }
+      ],
+      "metadata": {
+        "model": "fal-ai/flux-pro/new",
+        "batch_generation": true,
+        "images_generated": 4,
+        "api_time": 17.39040446281433,
+        "download_time": 2.26172137260437,
+        "total_time": 0.0
+      },
+      "timing_breakdown": [
+        {
+          "step_name": "Fal.ai Flux-Pro API Call",
+          "start_time": 1759849474.1493301,
+          "end_time": 1759849491.5397346,
+          "duration_seconds": 17.39040446281433,
+          "details": "4 images batch"
+        },
+        {
+          "step_name": "Download & Save Images",
+          "start_time": 1759849491.539923,
+          "end_time": 1759849493.8016443,
+          "duration_seconds": 2.26172137260437,
+          "details": "4 images download"
+        }
+      ]
+    },
+    {
+      "model_name": "fal-ai/imagen4/preview",
+      "success": true,
+      "error": null,
+      "total_duration": 0.0,
+      "images": [
+        {
+          "index": 1,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/imagen4_1.png",
+          "filename": "imagen4_1.png",
+          "url": "https://v3.fal.media/files/panda/19eb4JNHWia8ZgtnKanqa_output.png",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.8978302478790283
+        },
+        {
+          "index": 2,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/imagen4_2.png",
+          "filename": "imagen4_2.png",
+          "url": "https://v3.fal.media/files/rabbit/s2gkzLCNqaqPiJIvEgAIM_output.png",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.8526766300201416
+        },
+        {
+          "index": 3,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/imagen4_3.png",
+          "filename": "imagen4_3.png",
+          "url": "https://v3b.fal.media/files/b/rabbit/sNcDFDP8UGoXr3fNqH0bE_output.png",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.4848616123199463
+        },
+        {
+          "index": 4,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_090433/imagen4_4.png",
+          "filename": "imagen4_4.png",
+          "url": "https://v3b.fal.media/files/b/tiger/AoAnUMaMEClq5B70f5GB-_output.png",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "download_duration": 0.6022136211395264
+        }
+      ],
+      "metadata": {
+        "model": "fal-ai/imagen4/preview",
+        "batch_generation": true,
+        "images_generated": 4,
+        "api_time": 12.78539252281189,
+        "download_time": 2.8820550441741943,
+        "total_time": 0.0
+      },
+      "timing_breakdown": [
+        {
+          "step_name": "Fal.ai Imagen4 API Call",
+          "start_time": 1759849493.8024888,
+          "end_time": 1759849506.5878813,
+          "duration_seconds": 12.78539252281189,
+          "details": "4 images batch"
+        },
+        {
+          "step_name": "Download & Save Images",
+          "start_time": 1759849506.5881789,
+          "end_time": 1759849509.470234,
+          "duration_seconds": 2.8820550441741943,
+          "details": "4 images download"
+        }
+      ]
+    }
+  ]
+}

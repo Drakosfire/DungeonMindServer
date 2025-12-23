@@ -1,0 +1,259 @@
+{
+  "test_date": "2025-10-07T09:20:57.719068",
+  "prompt": "Dr. Jupiter, Small, Dr. Jupiter is a peculiar creature, a mix of a white Shiba Inu and an all white American Eskimo Dog, with pointy ears the color of a toasted marshmallow. Adorned with a lab coat and a stethoscope, this small canine is known for its medical prowess, often seen with a head mirror on its forehead. Dr. Jupiter roams the lands offering healing and medical assistance to those in need, always eager to help with a wagging tail and a cheerful bark., fantasy art, detailed portrait, dramatic lighting, high quality, in the style of an oil painting in a doctor's office.",
+  "num_images_requested": 4,
+  "results": [
+    {
+      "model_name": "openai-gpt-image-1",
+      "success": true,
+      "error": null,
+      "total_duration": 0.0,
+      "images": [
+        {
+          "index": 1,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_1.png",
+          "filename": "openai_gpt_image_1_1.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 86.2214982509613,
+          "process_duration": 0.3759143352508545
+        },
+        {
+          "index": 2,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_2.png",
+          "filename": "openai_gpt_image_1_2.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 59.40121102333069,
+          "process_duration": 0.3620123863220215
+        },
+        {
+          "index": 3,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_3.png",
+          "filename": "openai_gpt_image_1_3.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 82.6282970905304,
+          "process_duration": 0.4238898754119873
+        },
+        {
+          "index": 4,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_4.png",
+          "filename": "openai_gpt_image_1_4.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1024
+          ],
+          "mode": "RGB",
+          "api_duration": 43.37401032447815,
+          "process_duration": 0.28872251510620117
+        }
+      ],
+      "metadata": {
+        "model": "gpt-image-1",
+        "response_format": "b64_json (default)",
+        "images_generated": 4,
+        "avg_api_time": 67.90625417232513,
+        "avg_process_time": 0.3626347780227661,
+        "total_time": 0.0
+      },
+      "timing_breakdown": [
+        {
+          "step_name": "OpenAI API Call 1",
+          "start_time": 1759849984.6206093,
+          "end_time": 1759850070.8421075,
+          "duration_seconds": 86.2214982509613,
+          "details": "Image 1 generation"
+        },
+        {
+          "step_name": "Process & Save 1",
+          "start_time": 1759850070.8423557,
+          "end_time": 1759850071.21827,
+          "duration_seconds": 0.3759143352508545,
+          "details": "Image 1 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 2",
+          "start_time": 1759850071.2183735,
+          "end_time": 1759850130.6195846,
+          "duration_seconds": 59.40121102333069,
+          "details": "Image 2 generation"
+        },
+        {
+          "step_name": "Process & Save 2",
+          "start_time": 1759850130.6198971,
+          "end_time": 1759850130.9819095,
+          "duration_seconds": 0.3620123863220215,
+          "details": "Image 2 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 3",
+          "start_time": 1759850130.982045,
+          "end_time": 1759850213.610342,
+          "duration_seconds": 82.6282970905304,
+          "details": "Image 3 generation"
+        },
+        {
+          "step_name": "Process & Save 3",
+          "start_time": 1759850213.6105843,
+          "end_time": 1759850214.0344741,
+          "duration_seconds": 0.4238898754119873,
+          "details": "Image 3 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 4",
+          "start_time": 1759850214.0345812,
+          "end_time": 1759850257.4085915,
+          "duration_seconds": 43.37401032447815,
+          "details": "Image 4 generation"
+        },
+        {
+          "step_name": "Process & Save 4",
+          "start_time": 1759850257.408841,
+          "end_time": 1759850257.6975634,
+          "duration_seconds": 0.28872251510620117,
+          "details": "Image 4 process/save"
+        }
+      ]
+    },
+    {
+      "model_name": "openai-gpt-image-1-mini",
+      "success": true,
+      "error": null,
+      "total_duration": 0.0,
+      "images": [
+        {
+          "index": 1,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_mini_1.png",
+          "filename": "openai_gpt_image_1_mini_1.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 50.50497126579285,
+          "process_duration": 0.318631649017334
+        },
+        {
+          "index": 2,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_mini_2.png",
+          "filename": "openai_gpt_image_1_mini_2.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 51.643259048461914,
+          "process_duration": 0.5087525844573975
+        },
+        {
+          "index": 3,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_mini_3.png",
+          "filename": "openai_gpt_image_1_mini_3.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 48.80385184288025,
+          "process_duration": 0.3036024570465088
+        },
+        {
+          "index": 4,
+          "path": "/media/drakosfire/Projects/DungeonOverMind/DungeonMindServer/tests/image_comparison_output/20251007_091304/openai_gpt_image_1_mini_4.png",
+          "filename": "openai_gpt_image_1_mini_4.png",
+          "url": "base64",
+          "size": [
+            1024,
+            1536
+          ],
+          "mode": "RGB",
+          "api_duration": 47.56454396247864,
+          "process_duration": 0.36951756477355957
+        }
+      ],
+      "metadata": {
+        "model": "gpt-image-1-mini",
+        "response_format": "b64_json (default)",
+        "images_generated": 4,
+        "avg_api_time": 49.62915652990341,
+        "avg_process_time": 0.37512606382369995,
+        "total_time": 0.0
+      },
+      "timing_breakdown": [
+        {
+          "step_name": "OpenAI API Call 1",
+          "start_time": 1759850257.700094,
+          "end_time": 1759850308.2050653,
+          "duration_seconds": 50.50497126579285,
+          "details": "Image 1 generation"
+        },
+        {
+          "step_name": "Process & Save 1",
+          "start_time": 1759850308.2052975,
+          "end_time": 1759850308.523929,
+          "duration_seconds": 0.318631649017334,
+          "details": "Image 1 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 2",
+          "start_time": 1759850308.5240366,
+          "end_time": 1759850360.1672957,
+          "duration_seconds": 51.643259048461914,
+          "details": "Image 2 generation"
+        },
+        {
+          "step_name": "Process & Save 2",
+          "start_time": 1759850360.1676004,
+          "end_time": 1759850360.676353,
+          "duration_seconds": 0.5087525844573975,
+          "details": "Image 2 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 3",
+          "start_time": 1759850360.6764266,
+          "end_time": 1759850409.4802785,
+          "duration_seconds": 48.80385184288025,
+          "details": "Image 3 generation"
+        },
+        {
+          "step_name": "Process & Save 3",
+          "start_time": 1759850409.4805248,
+          "end_time": 1759850409.7841272,
+          "duration_seconds": 0.3036024570465088,
+          "details": "Image 3 process/save"
+        },
+        {
+          "step_name": "OpenAI API Call 4",
+          "start_time": 1759850409.784208,
+          "end_time": 1759850457.348752,
+          "duration_seconds": 47.56454396247864,
+          "details": "Image 4 generation"
+        },
+        {
+          "step_name": "Process & Save 4",
+          "start_time": 1759850457.3490505,
+          "end_time": 1759850457.718568,
+          "duration_seconds": 0.36951756477355957,
+          "details": "Image 4 process/save"
+        }
+      ]
+    }
+  ]
+}

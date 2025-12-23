@@ -1,0 +1,41 @@
+{
+  "test_date": "2025-10-07T09:09:44.905491",
+  "prompt": "Dr. Jupiter, Small, Dr. Jupiter is a peculiar creature, a mix of a white Shiba Inu and an all white American Eskimo Dog, with pointy ears the color of a toasted marshmallow. Adorned with a lab coat and a stethoscope, this small canine is known for its medical prowess, often seen with a head mirror on its forehead. Dr. Jupiter roams the lands offering healing and medical assistance to those in need, always eager to help with a wagging tail and a cheerful bark., fantasy art, detailed portrait, dramatic lighting, high quality, in the style of an oil painting in a doctor's office.",
+  "num_images_requested": 4,
+  "results": [
+    {
+      "model_name": "openai-gpt-image-1",
+      "success": false,
+      "error": "'NoneType' object is not subscriptable",
+      "total_duration": 0.0,
+      "images": [],
+      "metadata": {},
+      "timing_breakdown": [
+        {
+          "step_name": "OpenAI API Call 1",
+          "start_time": 1759849643.5470066,
+          "end_time": 1759849729.544852,
+          "duration_seconds": 85.99784541130066,
+          "details": "Image 1 generation"
+        }
+      ]
+    },
+    {
+      "model_name": "openai-gpt-image-1-mini",
+      "success": false,
+      "error": "'NoneType' object is not subscriptable",
+      "total_duration": 0.0,
+      "images": [],
+      "metadata": {},
+      "timing_breakdown": [
+        {
+          "step_name": "OpenAI API Call 1",
+          "start_time": 1759849729.5475109,
+          "end_time": 1759849784.9034417,
+          "duration_seconds": 55.3559308052063,
+          "details": "Image 1 generation"
+        }
+      ]
+    }
+  ]
+}

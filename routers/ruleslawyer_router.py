@@ -4,9 +4,10 @@ from typing import Optional
 from pydantic import BaseModel
 import logging
 from ruleslawyer.ruleslawyer_helper import EmbeddingLoader
-from openai import OpenAI
 import os
 from pathlib import Path
+from generationengine.services.text_service import TextGenerationService
+from generationengine.models.requests import TextGenerationRequest, TextModel
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +20,9 @@ RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
 # Global variables for single embedding set
 current_embeddings = None
 current_pages_and_chunks = None
-openai_client = OpenAI()
+
+# Initialize TextGenerationService for OpenAI Responses API
+text_generation_service = TextGenerationService()
 SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Format every response using Markdown so the UI can render it properly. Follow these Markdown rules:
 
     • Start with a succinct sentence that answers the question.
@@ -144,7 +147,7 @@ async def query_rules(request: QueryRequest):
         logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
         async def generate_stream():
-            """Generator function that streams the LLM response"""
+            """Generator function that streams the LLM response using GenerationEngine"""
             try:
                 # Get relevant context
                 search_start_time = time_module.time()
@@ -153,49 +156,38 @@ async def query_rules(request: QueryRequest):
                 logger.info(f"🔍 [RulesLawyer] Semantic search completed in {search_duration:.2f}ms")
                 
                 context_items = [loader.pages_and_chunks[i] for i in indices]
-                prompt = loader.format_prompt(query=request.message, context_items=context_items)
+                user_prompt = loader.format_prompt(query=request.message, context_items=context_items)
                 
-                # Prepare messages for OpenAI
-                messages = [{"role": "user", "content": f"{SYSTEM_PROMPT} {prompt}"}]
-                
-                # Stream from OpenAI
-                api_start_time = time_module.time()
-                stream = openai_client.chat.completions.create(
-                    model="gpt-4",
-                    messages=messages,
-                    temperature=1,
-                    max_tokens=512,
-                    top_p=1,
-                    frequency_penalty=0,
-                    presence_penalty=0,
-                    stream=True  # Enable streaming
+                # Create TextGenerationRequest for GenerationEngine
+                # Note: max_tokens is not supported in Responses API streaming mode
+                generation_request = TextGenerationRequest(
+                    system_prompt=SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    model=TextModel.GPT_5_1,
+                    temperature=1.0,
+                    # max_tokens not supported in Responses API streaming - omitted
                 )
                 
+                # Stream from GenerationEngine (Responses API)
+                api_start_time = time_module.time()
                 first_token_received = False
                 first_token_time = None
                 
-                # Forward tokens as they arrive
-                for chunk in stream:
-                    if chunk.choices[0].delta.content is not None:
-                        content = chunk.choices[0].delta.content
-                        
-                        # Track time to first token (TTFT)
-                        if not first_token_received:
-                            first_token_received = True
-                            first_token_time = time_module.time()
-                            ttft = (first_token_time - request_start_time) * 1000
-                            logger.info(f"🚀 [RulesLawyer] First token received: {ttft:.2f}ms (TTFT)")
-                        
-                        # Format as SSE: data: <content>\n\n
-                        # Frontend expects raw text, not JSON-encoded
-                        yield f"data: {content}\n\n"
+                # Forward tokens as they arrive from GenerationEngine
+                async for chunk in text_generation_service.generate_stream(generation_request):
+                    # Track time to first token (TTFT)
+                    if not first_token_received and chunk.startswith("data: ") and not chunk.startswith("data: [DONE]"):
+                        first_token_received = True
+                        first_token_time = time_module.time()
+                        ttft = (first_token_time - request_start_time) * 1000
+                        logger.info(f"🚀 [RulesLawyer] First token received: {ttft:.2f}ms (TTFT)")
+                    
+                    # GenerationEngine already formats as SSE, so yield directly
+                    yield chunk
                 
                 # Log completion
                 total_duration = (time_module.time() - request_start_time) * 1000
                 logger.info(f"✅ [RulesLawyer] Streaming completed in {total_duration:.2f}ms")
-                
-                # Send completion signal
-                yield "data: [DONE]\n\n"
                 
             except Exception as e:
                 total_duration = (time_module.time() - request_start_time) * 1000

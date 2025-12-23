@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 import textwrap
 import json
+import os
 
 class EmbeddingLoader:
     def __init__(self, embeddings_file_path=None, enhanced_json_path=None, cached_data=None):
@@ -20,11 +21,21 @@ class EmbeddingLoader:
         """
         print("🔧 [EmbeddingLoader] Initializing SentenceTransformer model...")
         try:
-            self.embedding_model = SentenceTransformer(
-                model_name_or_path='BAAI/bge-m3',
-                device='cpu',
-                cache_folder='/home/user/.cache/huggingface'  # Explicit cache location
-            )
+            # Use environment variable for cache folder if set, otherwise use default location
+            # HF_HOME or HUGGINGFACE_HUB_CACHE env vars are respected by SentenceTransformer
+            # If not set, SentenceTransformer uses default ~/.cache/huggingface
+            cache_folder = os.getenv('HF_HOME') or os.getenv('HUGGINGFACE_HUB_CACHE')
+            if cache_folder:
+                print(f"📦 [EmbeddingLoader] Using cache folder from env: {cache_folder}")
+            
+            model_kwargs = {
+                'model_name_or_path': 'BAAI/bge-m3',
+                'device': 'cpu',
+            }
+            if cache_folder:
+                model_kwargs['cache_folder'] = cache_folder
+            
+            self.embedding_model = SentenceTransformer(**model_kwargs)
             print("✅ [EmbeddingLoader] SentenceTransformer model loaded successfully")
         except Exception as e:
             error_msg = f"Failed to load SentenceTransformer model: {str(e)}"
