@@ -320,14 +320,24 @@ async def generate_bot_response_stream(message, chat_history, embeddings_loader,
                         yielded_count += 1
                         full_response += content
                         
+                        # Debug: Log full response state periodically
+                        if token_count == 1 or token_count % 50 == 0:
+                            print(f"📋 [stream_generator] Token #{token_count} - Full response state:")
+                            print(f"   - Current delta: {repr(content)}")
+                            print(f"   - Full response length: {len(full_response)}")
+                            print(f"   - Last 200 chars: {repr(full_response[-200:])}")
+                            print(f"   - Newline count: {full_response.count(chr(10))}")
+                            print(f"   - Has markdown headers: {'##' in full_response or '###' in full_response}")
+                        
                         if first_token_time is None:
                             first_token_time = time_module.time()
                             ttft = (first_token_time - request_start_time) * 1000
                             preview = content[:100] if len(content) > 100 else content
                             print(f"🚀 [TTFT] First token received and yielded: {ttft:.2f}ms")
-                            print(f"🚀 [TTFT] First token content: '{preview}'")
+                            print(f"🚀 [TTFT] First token content: {repr(preview)}")
+                            print(f"🚀 [TTFT] First token raw bytes: {content.encode('utf-8')}")
                         
-                        yield f"data: {content}\n\n"
+                        yield f"data: {json.dumps(content)}\n\n"
                     
                     elif event_type == "response.error":
                         error_message = getattr(getattr(event, "error", None), "message", "Unknown Responses error")
@@ -339,6 +349,17 @@ async def generate_bot_response_stream(message, chat_history, embeddings_loader,
                         print("🏁 [stream_generator] Responses stream reported completion event")
             
             print(f"🏁 [stream_generator] Stream complete: {token_count} tokens processed, {yielded_count} tokens yielded")
+            
+            # Debug: Log final complete response
+            print(f"📋 [stream_generator] FINAL COMPLETE RESPONSE:")
+            print(f"   - Length: {len(full_response)}")
+            print(f"   - Newline count: {full_response.count(chr(10))}")
+            print(f"   - Has markdown headers (##): {full_response.count('##')}")
+            print(f"   - Has markdown lists (-): {full_response.count(chr(10) + '-')}")
+            print(f"   - Full content (first 500 chars): {repr(full_response[:500])}")
+            print(f"   - Full content (last 500 chars): {repr(full_response[-500:])}")
+            print(f"   - Full content (raw): {repr(full_response)}")
+            
             yield "data: [DONE]\n\n"
             
             chat_history.append((message, full_response))
