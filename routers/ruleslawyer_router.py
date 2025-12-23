@@ -20,7 +20,15 @@ RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
 current_embeddings = None
 current_pages_and_chunks = None
 openai_client = OpenAI()
-SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Use the examples provided as a guide for style and brevity. When responding:
+SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Format every response using Markdown so the UI can render it properly. Follow these Markdown rules:
+
+    • Start with a succinct sentence that answers the question.
+    • Use headings (## or ###) for sections such as "Explanation", "Example", or "References".
+    • Use bullet lists for steps, rulings, or options.
+    • Use inline code (`like this`) or fenced code blocks for dice expressions or formulas when helpful.
+    • End with "Citations: p.XX" (or multiple pages) on its own line, followed by "What else can I help with?"
+
+When responding:
 
     1. Identify the key point of the query.
     2. Provide a straightforward answer, omitting the thought process.
@@ -71,6 +79,15 @@ rules_lawyer_service = RulesLawyerService()
 async def health():
     return {"status": "ok"}
 
+# Status endpoint to check if embeddings are loaded
+@router.get("/status")
+async def get_status():
+    """Check if embeddings are currently loaded."""
+    return {
+        "embeddings_loaded": rules_lawyer_service.loader is not None,
+        "current_embedding": None  # Could track this if needed
+    }
+
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
     logger.info(f"🔄 [RulesLawyer] Loading embedding: {request.embedding}")
@@ -115,14 +132,26 @@ async def load_embedding(request: EmbeddingRequest):
 
 @router.post("/query")
 async def query_rules(request: QueryRequest):
+    import time as time_module
+    request_start_time = time_module.time()
+    
+    logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chat_history)}")
+    
     try:
+        loader_start_time = time_module.time()
         loader = rules_lawyer_service.get_loader()
+        loader_duration = (time_module.time() - loader_start_time) * 1000
+        logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
         async def generate_stream():
             """Generator function that streams the LLM response"""
             try:
                 # Get relevant context
+                search_start_time = time_module.time()
                 scores, indices = loader.print_top_results_and_scores(query=request.message)
+                search_duration = (time_module.time() - search_start_time) * 1000
+                logger.info(f"🔍 [RulesLawyer] Semantic search completed in {search_duration:.2f}ms")
+                
                 context_items = [loader.pages_and_chunks[i] for i in indices]
                 prompt = loader.format_prompt(query=request.message, context_items=context_items)
                 
@@ -130,6 +159,7 @@ async def query_rules(request: QueryRequest):
                 messages = [{"role": "user", "content": f"{SYSTEM_PROMPT} {prompt}"}]
                 
                 # Stream from OpenAI
+                api_start_time = time_module.time()
                 stream = openai_client.chat.completions.create(
                     model="gpt-4",
                     messages=messages,
@@ -141,19 +171,35 @@ async def query_rules(request: QueryRequest):
                     stream=True  # Enable streaming
                 )
                 
+                first_token_received = False
+                first_token_time = None
+                
                 # Forward tokens as they arrive
                 for chunk in stream:
                     if chunk.choices[0].delta.content is not None:
                         content = chunk.choices[0].delta.content
+                        
+                        # Track time to first token (TTFT)
+                        if not first_token_received:
+                            first_token_received = True
+                            first_token_time = time_module.time()
+                            ttft = (first_token_time - request_start_time) * 1000
+                            logger.info(f"🚀 [RulesLawyer] First token received: {ttft:.2f}ms (TTFT)")
+                        
                         # Format as SSE: data: <content>\n\n
                         # Frontend expects raw text, not JSON-encoded
                         yield f"data: {content}\n\n"
+                
+                # Log completion
+                total_duration = (time_module.time() - request_start_time) * 1000
+                logger.info(f"✅ [RulesLawyer] Streaming completed in {total_duration:.2f}ms")
                 
                 # Send completion signal
                 yield "data: [DONE]\n\n"
                 
             except Exception as e:
-                logger.error(f"Error in stream generation: {str(e)}")
+                total_duration = (time_module.time() - request_start_time) * 1000
+                logger.error(f"❌ [RulesLawyer] Error in stream generation after {total_duration:.2f}ms: {str(e)}", exc_info=True)
                 yield f"data: [ERROR]{str(e)}\n\n"
         
         return StreamingResponse(
@@ -162,8 +208,10 @@ async def query_rules(request: QueryRequest):
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
             }
         )
     except Exception as e:
-        logger.error(f"Error processing query: {str(e)}")
+        total_duration = (time_module.time() - request_start_time) * 1000
+        logger.error(f"❌ [RulesLawyer] Error processing query after {total_duration:.2f}ms: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to process query")
