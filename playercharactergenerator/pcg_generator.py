@@ -1,5 +1,5 @@
 """
-Core Player Character Generator logic using OpenAI
+Core Player Character Generator logic using GenerationEngine
 
 Generates AI preferences for D&D 5e character creation.
 """
@@ -9,7 +9,9 @@ import json
 import os
 from typing import Dict, Any, Tuple, Optional
 from datetime import datetime
-from openai import OpenAI
+
+from generationengine.services.text_service import TextGenerationService
+from generationengine.models.requests import TextGenerationRequest, TextModel
 
 from .models.pcg_models import (
     GenerationInput,
@@ -38,24 +40,23 @@ class PlayerCharacterGenerator:
     def __init__(self):
         self.prompt_manager = PCGPromptManager()
         self.rule_engine = PCGRuleEngine()
-        self.openai_client = None
-        self.model = "gpt-5.2"
-        # Some newer OpenAI models reject `max_tokens` and require `max_completion_tokens`.
-        # Keep the param name explicit so logs/health can prove what the running server uses.
-        self.token_limit_param_name = "max_completion_tokens"
+        self.text_service = None
+        # Use GPT_5_1 for now (GPT-5.2 not yet in TextModel enum)
+        # TODO: Add GPT_5_2 to TextModel enum if available in Responses API
+        self.model = TextModel.GPT_5_1
+        self.model_name = "gpt-5.1"  # For logging/health check
 
-        # Initialize OpenAI client if API key is available
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if api_key:
-            self.openai_client = OpenAI(api_key=api_key)
+        # Initialize TextGenerationService if API key is available
+        try:
+            self.text_service = TextGenerationService()
             logger.info(
-                "PlayerCharacterGenerator initialized | model=%s | token_limit_param=%s | module_path=%s",
-                self.model,
-                self.token_limit_param_name,
+                "PlayerCharacterGenerator initialized | model=%s | module_path=%s",
+                self.model_name,
                 __file__,
             )
-        else:
-            logger.warning("No OpenAI API key found - AI generation will not work")
+        except ValueError as e:
+            logger.warning(f"TextGenerationService initialization failed: {str(e)}")
+            self.text_service = None
 
     async def generate_preferences(
         self,
@@ -74,8 +75,8 @@ class PlayerCharacterGenerator:
             concept = request.input.concept
             logger.info(f"Generating preferences for: {concept[:50]}...")
 
-            if not self.openai_client:
-                return False, {"error": "OpenAI client not initialized"}
+            if not self.text_service:
+                return False, {"error": "TextGenerationService not initialized"}
 
             # Get or create constraints
             if request.constraints:
@@ -97,7 +98,7 @@ class PlayerCharacterGenerator:
                 constraints
             )
 
-            # Call OpenAI
+            # Call GenerationEngine
             response = await self._call_openai(system_prompt, user_prompt)
 
             if not response["success"]:
@@ -120,7 +121,7 @@ class PlayerCharacterGenerator:
                 "rawResponse": raw_response,
                 "generationInfo": {
                     "promptVersion": self.prompt_manager.version,
-                    "model": self.model,
+                    "model": self.model_name,
                     "timestamp": datetime.now().isoformat(),
                     "promptTokens": response.get("promptTokens", 0),
                     "completionTokens": response.get("completionTokens", 0),
@@ -138,7 +139,7 @@ class PlayerCharacterGenerator:
         user_prompt: str
     ) -> Dict[str, Any]:
         """
-        Call OpenAI API for preference generation
+        Call GenerationEngine TextGenerationService for preference generation
 
         Args:
             system_prompt: System message
@@ -148,42 +149,54 @@ class PlayerCharacterGenerator:
             Dict with success, content, and token counts
         """
         try:
-            logger.debug(f"Calling OpenAI with prompt length: {len(user_prompt)} chars")
+            logger.debug(f"Calling GenerationEngine with prompt length: {len(user_prompt)} chars")
 
-            request_kwargs: Dict[str, Any] = {
-                "model": self.model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.7,
-                self.token_limit_param_name: 2000,
-            }
-
-            # Explicit breadcrumb for debugging OpenAI 400s about token parameter naming.
-            logger.info(
-                "Calling OpenAI chat.completions | model=%s | token_limit_param=%s",
-                self.model,
-                self.token_limit_param_name,
+            # Build TextGenerationRequest
+            # Note: max_tokens not supported in Responses API - removed
+            ge_request = TextGenerationRequest(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                model=self.model,
+                temperature=0.7,
             )
 
-            response = self.openai_client.chat.completions.create(**request_kwargs)
+            logger.info(
+                "Calling GenerationEngine TextGenerationService | model=%s",
+                self.model_name,
+            )
 
-            content = response.choices[0].message.content
-            usage = response.usage
+            # Call GenerationEngine
+            response = await self.text_service.generate(
+                ge_request,
+                service_name="playercharactergenerator"
+            )
 
-            logger.info(f"OpenAI response received: {usage.total_tokens} tokens")
+            if not response.success:
+                error_msg = response.error.message if response.error else "Unknown error"
+                logger.error(f"GenerationEngine error: {error_msg}")
+                return {"success": False, "error": error_msg}
+
+            # Extract content and metrics
+            content = response.content
+            metrics = response.metrics
+
+            # Note: Responses API may not provide prompt/completion breakdown
+            # Use total tokens for all counts (approximation)
+            total_tokens = metrics.tokens_used if metrics else 0
+            logger.info(f"GenerationEngine response received: {total_tokens} tokens")
 
             return {
                 "success": True,
                 "content": content,
-                "promptTokens": usage.prompt_tokens,
-                "completionTokens": usage.completion_tokens,
-                "totalTokens": usage.total_tokens,
+                # Responses API doesn't provide prompt/completion breakdown
+                # Use total tokens as approximation (may need adjustment)
+                "promptTokens": total_tokens,  # Approximation
+                "completionTokens": total_tokens,  # Approximation
+                "totalTokens": total_tokens,
             }
 
         except Exception as e:
-            logger.error(f"OpenAI API error: {str(e)}")
+            logger.error(f"GenerationEngine API error: {str(e)}")
             return {"success": False, "error": str(e)}
 
     def _parse_preferences(self, raw_response: str) -> Optional[AiPreferences]:
@@ -255,11 +268,10 @@ class PlayerCharacterGenerator:
             Health status dict
         """
         return {
-            "status": "healthy" if self.openai_client else "degraded",
-            "openai_configured": self.openai_client is not None,
+            "status": "healthy" if self.text_service else "degraded",
+            "text_service_configured": self.text_service is not None,
             "prompt_version": self.prompt_manager.version,
-            "model": self.model,
-            "token_limit_param": self.token_limit_param_name,
+            "model": self.model_name,
             "module_path": __file__,
         }
 

@@ -4,14 +4,13 @@ Image Management Router
 Focused router handling only image upload/delete operations.
 Clean separation from card generation logic.
 
-Extracted from monolithic cardgenerator_router.py as part of architectural refactoring.
 """
 
 import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, File, UploadFile, Query
 from pydantic import BaseModel
-
+# TODO: This is a fragile dependency, need to fix this
 from cardgenerator.services.image_management_service import image_management_service
 from cardgenerator.utils.error_handler import ImageProcessingError
 
