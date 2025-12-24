@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1 \
     PATH=/root/.local/bin:$PATH
 
 # Install dependencies and tools
-RUN apt-get update && apt-get install -y iputils-ping && \
+RUN apt-get update && apt-get install -y iputils-ping git && \
     python -m pip install --upgrade pip && \
     pip install uv && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
