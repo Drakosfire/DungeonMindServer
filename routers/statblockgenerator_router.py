@@ -62,6 +62,22 @@ STATBLOCK_SESSIONS_COLLECTION = "statblock_sessions"
 STATBLOCK_PROJECTS_COLLECTION = "statblock_projects"
 STATBLOCK_CREATURES_COLLECTION = "statblock_creatures"
 
+
+@router.get("/health")
+async def health_check():
+    """
+    Health check endpoint for StatBlockGenerator service.
+    Returns service status and basic configuration info.
+    """
+    return {
+        "status": "ok",
+        "service": "statblockgenerator",
+        "generator_ready": statblock_generator is not None,
+        "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "fal_configured": bool(os.getenv("FAL_KEY"))
+    }
+
+
 @router.post("/generate-statblock")
 async def generate_statblock(
     request: CreatureGenerationRequest,

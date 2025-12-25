@@ -213,7 +213,33 @@ app.include_router(
 # Health check route
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
-    return {"status": "ok"}
+    """
+    Global health check endpoint for DungeonMind API.
+    Returns overall server status and environment info.
+    """
+    return {
+        "status": "ok",
+        "service": "dungeonmind-api",
+        "environment": env,
+        "services": {
+            "statblockgenerator": "/api/statblockgenerator/health",
+            "playercharactergenerator": "/api/playercharactergenerator/health",
+            "cardgenerator": "/api/cardgenerator/health",
+            "ruleslawyer": "/api/ruleslawyer/health"
+        }
+    }
+
+
+@app.get("/api/health", response_class=JSONResponse)
+async def api_health_check():
+    """
+    API-prefixed health check for consistent frontend access.
+    """
+    return {
+        "status": "ok",
+        "service": "dungeonmind-api",
+        "environment": env
+    }
 
 # Serve React app directly
 @app.get("/", response_class=RedirectResponse)

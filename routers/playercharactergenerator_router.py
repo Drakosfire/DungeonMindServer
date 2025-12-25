@@ -54,6 +54,22 @@ pcg_rule_engine = PCGRuleEngine()
 PCG_PROJECTS_COLLECTION = "playercharacter_projects"
 
 
+@router.get("/health")
+async def health_check():
+    """
+    Health check endpoint for PlayerCharacterGenerator service.
+    Returns service status and basic configuration info.
+    """
+    import os
+    return {
+        "status": "ok",
+        "service": "playercharactergenerator",
+        "generator_ready": pcg_generator is not None,
+        "rule_engine_ready": pcg_rule_engine is not None,
+        "openai_configured": bool(os.getenv("OPENAI_API_KEY"))
+    }
+
+
 def normalize_character_ids(character: Dict[str, Any]) -> Dict[str, Any]:
     """
     Ensure all list items in character data have stable IDs
