@@ -57,6 +57,9 @@ from routers.statblockgenerator_router import router as statblockgenerator_route
 # Import PlayerCharacterGenerator router
 from routers.playercharactergenerator_router import router as playercharactergenerator_router
 
+# Import Demo router for testing GenerationDrawerEngine
+from routers.demo_router import router as demo_router
+
 # Import new global session and object routers
 from routers.global_session_router import router as global_session_router
 from routers.global_objects_router import router as global_objects_router
@@ -208,6 +211,12 @@ app.include_router(
 app.include_router(
     playercharactergenerator_router,
     tags=["Player Character Generator"]
+)
+
+# Include Demo router for testing GenerationDrawerEngine
+app.include_router(
+    demo_router,
+    tags=["Demo/Testing"]
 )
 
 # Health check route
