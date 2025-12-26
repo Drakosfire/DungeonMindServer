@@ -134,7 +134,9 @@ async def generate_image(
     Requires authentication - AI generation costs money and images need CDN storage
     """
     try:
-        logger.info(f"🎨 [GenerationEngine] Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {request.sd_prompt[:50]}...")
+        # Get the effective prompt (supports both sd_prompt and description)
+        prompt = request.effective_prompt
+        logger.info(f"🎨 [GenerationEngine] Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {prompt[:50]}...")
         
         # Map StatBlockGenerator request to GenerationEngine request
         model_map = {
@@ -146,7 +148,7 @@ async def generate_image(
         ge_model = model_map.get(request.model, ImageModel.FLUX_PRO)
         
         ge_request = GEImageGenerationRequest(
-            prompt=request.sd_prompt,
+            prompt=prompt,
             model=ge_model,
             num_images=request.num_images,
             size=ImageSize.SQUARE,  # StatBlockGenerator uses 1024x1024
@@ -170,7 +172,7 @@ async def generate_image(
                 generated_images.append({
                     "id": f"img_{datetime.now().timestamp()}_{len(generated_images)}",
                     "url": img_result.url,
-                    "prompt": request.sd_prompt,
+                    "prompt": prompt,
                     "created_at": datetime.now().isoformat()
                 })
         
@@ -187,7 +189,7 @@ async def generate_image(
             "data": {
                 "images": generated_images,
                 "generation_info": {
-                    "prompt": request.sd_prompt,
+                    "prompt": prompt,
                     "model": model_name,
                     "num_images": len(generated_images)
                 }
