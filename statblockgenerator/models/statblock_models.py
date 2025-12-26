@@ -334,18 +334,9 @@ class CreatureGenerationRequest(BaseModel):
 
 class ImageGenerationRequest(BaseModel):
     """Request for generating creature images"""
-    sd_prompt: Optional[str] = Field(None, description="Stable Diffusion prompt")
-    description: Optional[str] = Field(None, description="Alias for sd_prompt (frontend compatibility)")
+    sd_prompt: str = Field(..., description="Stable Diffusion prompt")
     num_images: int = Field(4, ge=1, le=8, description="Number of images to generate")
     model: str = Field("flux-pro", description="Image generation model: 'flux-pro', 'imagen4', or 'openai'")
-    
-    @property
-    def effective_prompt(self) -> str:
-        """Get the prompt, preferring sd_prompt over description"""
-        prompt = self.sd_prompt or self.description
-        if not prompt:
-            raise ValueError("Either sd_prompt or description must be provided")
-        return prompt
 
 class ModelGenerationRequest(BaseModel):
     """Request for generating 3D model"""
