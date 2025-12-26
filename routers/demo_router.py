@@ -90,9 +90,15 @@ class DemoGenerateTextRequest(BaseModel):
 
 class DemoGenerateImageRequest(BaseModel):
     """Request for demo image generation"""
-    prompt: str
+    prompt: Optional[str] = None
+    description: Optional[str] = None  # Alias for prompt (frontend sends this)
     count: int = 1
     sessionId: Optional[str] = None
+    
+    @property
+    def effective_prompt(self) -> str:
+        """Get the prompt, preferring explicit prompt over description"""
+        return self.prompt or self.description or "A fantasy creature"
 
 
 class DemoLibraryResponse(BaseModel):
@@ -446,7 +452,8 @@ async def demo_generate_image(request: DemoGenerateImageRequest):
     This is for testing the generation drawer UI without using real AI credits.
     """
     try:
-        logger.info(f"🎨 [Demo] Image generation request: {request.prompt[:50]}...")
+        prompt = request.effective_prompt
+        logger.info(f"🎨 [Demo] Image generation request: {prompt[:50]}...")
         
         # Simulate generation time (2-3 seconds)
         time.sleep(2.5)
@@ -459,14 +466,14 @@ async def demo_generate_image(request: DemoGenerateImageRequest):
             image_id = f"gen-{uuid.uuid4().hex[:8]}"
             
             # Create a placeholder with the prompt text
-            prompt_text = request.prompt[:20].replace(" ", "+")
+            prompt_text = prompt[:20].replace(" ", "+")
             colors = ["7c3aed", "059669", "dc2626", "2563eb", "d97706"]
             color = colors[i % len(colors)]
             
             image_record = {
                 "id": image_id,
                 "url": f"https://placehold.co/512x512/{color}/ffffff?text={prompt_text}",
-                "prompt": request.prompt,
+                "prompt": prompt,
                 "createdAt": datetime.now().isoformat(),
                 "service": "demo-generation",
                 "sessionId": session_id
