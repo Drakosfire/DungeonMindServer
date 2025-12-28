@@ -18,6 +18,10 @@ from statblockgenerator.statblock_generator import StatBlockGenerator
 from statblockgenerator.models.statblock_models import (
     CreatureGenerationRequest,
     ImageGenerationRequest,
+    ImageGenerationResponse,
+    GeneratedImageData,
+    ImageGenerationInfo,
+    ImageGenerationResponseData,
     ModelGenerationRequest,
     StatBlockValidationRequest,
     ProjectCreateRequest,
@@ -118,11 +122,11 @@ async def generate_statblock(
         logger.error(f"❌ [Generation Error] User: {user_id} | Duration: {elapsed:.2f}s | Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/generate-image")
+@router.post("/generate-image", response_model=ImageGenerationResponse)
 async def generate_image(
     request: ImageGenerationRequest,
     current_user: User = Depends(get_current_user)
-):
+) -> ImageGenerationResponse:
     """
     Generate creature artwork using GenerationEngine (SPOT TEST)
     
@@ -163,16 +167,16 @@ async def generate_image(
             )
         
 
-        # Transform GenerationEngine response to StatBlockGenerator format
-        generated_images = []
+        # Transform GenerationEngine response to typed contract
+        generated_images: List[GeneratedImageData] = []
         if response.images:
-            for img_result in response.images:
-                generated_images.append({
-                    "id": f"img_{datetime.now().timestamp()}_{len(generated_images)}",
-                    "url": img_result.url,
-                    "prompt": request.sd_prompt,
-                    "created_at": datetime.now().isoformat()
-                })
+            for idx, img_result in enumerate(response.images):
+                generated_images.append(GeneratedImageData(
+                    id=f"img_{datetime.now().timestamp()}_{idx}",
+                    url=img_result.url,
+                    prompt=request.sd_prompt,
+                    created_at=datetime.now().isoformat()
+                ))
         
         logger.info(f"✅ [GenerationEngine] Generated {len(generated_images)} images successfully")
         
@@ -182,17 +186,17 @@ async def generate_image(
         
         model_name = response.metrics.model_used if response.metrics else request.model
         
-        return {
-            "success": True,
-            "data": {
-                "images": generated_images,
-                "generation_info": {
-                    "prompt": request.sd_prompt,
-                    "model": model_name,
-                    "num_images": len(generated_images)
-                }
-            }
-        }
+        return ImageGenerationResponse(
+            success=True,
+            data=ImageGenerationResponseData(
+                images=generated_images,
+                generation_info=ImageGenerationInfo(
+                    prompt=request.sd_prompt,
+                    model=model_name,
+                    num_images=len(generated_images)
+                )
+            )
+        )
         
     except HTTPException:
         raise

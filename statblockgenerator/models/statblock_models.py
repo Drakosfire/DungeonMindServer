@@ -338,6 +338,46 @@ class ImageGenerationRequest(BaseModel):
     num_images: int = Field(4, ge=1, le=8, description="Number of images to generate")
     model: str = Field("flux-pro", description="Image generation model: 'flux-pro', 'imagen4', or 'openai'")
 
+
+# =============================================================================
+# IMAGE GENERATION RESPONSE CONTRACT
+# =============================================================================
+
+class GeneratedImageData(BaseModel):
+    """
+    Single generated image - the contract between backend and frontend.
+    
+    Note: Uses snake_case (Python convention). Frontend should normalize to camelCase.
+    """
+    id: str = Field(..., description="Unique image identifier")
+    url: str = Field(..., description="CDN URL of the generated image")
+    prompt: str = Field(..., description="Prompt used to generate the image")
+    created_at: str = Field(..., description="ISO timestamp of when the image was created")
+
+
+class ImageGenerationInfo(BaseModel):
+    """Metadata about the generation request"""
+    prompt: str = Field(..., description="The prompt used")
+    model: str = Field(..., description="Model used for generation")
+    num_images: int = Field(..., description="Number of images generated")
+
+
+class ImageGenerationResponseData(BaseModel):
+    """Data payload of successful image generation"""
+    images: List[GeneratedImageData] = Field(..., description="List of generated images")
+    generation_info: ImageGenerationInfo = Field(..., description="Generation metadata")
+
+
+class ImageGenerationResponse(BaseModel):
+    """
+    Complete response from /generate-image endpoint.
+    
+    This is the contract that frontend should expect.
+    """
+    success: bool = Field(..., description="Whether generation succeeded")
+    data: ImageGenerationResponseData = Field(..., description="Response payload")
+
+
 class ModelGenerationRequest(BaseModel):
     """Request for generating 3D model"""
     image_url: str = Field(..., description="Source image URL")

@@ -55,9 +55,9 @@ packages = [
 ]
 
 [tool.uv.sources]
-# Git install (fixed package discovery issue)
-generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git" }
-# For local development, use: generationengine = { path = "../GenerationEngine", editable = true }
+# For local development (editable install)
+generationengine = { path = "../GenerationEngine", editable = true }
+# For production, use: generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git" }
 
 [dependency-groups]
 dev = [
