@@ -17,18 +17,11 @@ from auth_service import User
 from statblockgenerator.statblock_generator import StatBlockGenerator
 from statblockgenerator.models.statblock_models import (
     CreatureGenerationRequest,
-    ImageGenerationRequest,
-    ImageGenerationResponse,
-    GeneratedImageData,
-    ImageGenerationInfo,
-    ImageGenerationResponseData,
-    ModelGenerationRequest,
     StatBlockValidationRequest,
     ProjectCreateRequest,
     SessionSaveRequest,
     StatBlockDetails,
     StatBlockProject,
-    StatBlockGeneratorState
 )
 
 # Import Firestore utilities (following CardGenerator pattern)
@@ -42,16 +35,10 @@ import fal_client
 from openai import OpenAI
 from cloudflare.handle_images import upload_image_to_cloudflare
 
-# Import GenerationEngine services for spot test
-from generationengine import ImageService, MetricsService, ImageGenerationRequest as GEImageGenerationRequest, ImageModel, ImageSize
+# NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
-# Initialize OpenAI client
+# Initialize OpenAI client (still used for text generation)
 openai_client = OpenAI()
-
-# Initialize GenerationEngine services for spot test
-# TODO: Make MetricsService a singleton or inject via dependency injection
-_metrics_service = MetricsService()
-_image_service = ImageService(metrics_service=_metrics_service)
 
 logger = logging.getLogger(__name__)
 
@@ -122,88 +109,7 @@ async def generate_statblock(
         logger.error(f"❌ [Generation Error] User: {user_id} | Duration: {elapsed:.2f}s | Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/generate-image", response_model=ImageGenerationResponse)
-async def generate_image(
-    request: ImageGenerationRequest,
-    current_user: User = Depends(get_current_user)
-) -> ImageGenerationResponse:
-    """
-    Generate creature artwork using GenerationEngine (SPOT TEST)
-    
-    Supports:
-    - flux-pro: fal-ai/flux-pro/new (default, high quality)
-    - imagen4: fal-ai/imagen4/preview (Google's model)
-    - openai: OpenAI gpt-image-1-mini (fast, cost-effective)
-    
-    Requires authentication - AI generation costs money and images need CDN storage
-    """
-    try:
-        logger.info(f"🎨 [GenerationEngine] Generating creature image for user: {current_user.email}, model: {request.model}, prompt: {request.sd_prompt[:50]}...")
-        
-        # Map StatBlockGenerator request to GenerationEngine request
-        model_map = {
-            "flux-pro": ImageModel.FLUX_PRO,
-            "imagen4": ImageModel.IMAGEN4,
-            "openai": ImageModel.OPENAI,
-        }
-        
-        ge_model = model_map.get(request.model, ImageModel.FLUX_PRO)
-        
-        ge_request = GEImageGenerationRequest(
-            prompt=request.sd_prompt,
-            model=ge_model,
-            num_images=request.num_images,
-            size=ImageSize.SQUARE,  # StatBlockGenerator uses 1024x1024
-        )
-        
-        # Call GenerationEngine ImageService
-        response = await _image_service.generate(ge_request)
-        
-        if not response.success:
-            logger.error(f"❌ [GenerationEngine] Image generation failed: {response.error.message if response.error else 'Unknown error'}")
-            raise HTTPException(
-                status_code=500,
-                detail=response.error.message if response.error else "Image generation failed"
-            )
-        
 
-        # Transform GenerationEngine response to typed contract
-        generated_images: List[GeneratedImageData] = []
-        if response.images:
-            for idx, img_result in enumerate(response.images):
-                generated_images.append(GeneratedImageData(
-                    id=f"img_{datetime.now().timestamp()}_{idx}",
-                    url=img_result.url,
-                    prompt=request.sd_prompt,
-                    created_at=datetime.now().isoformat()
-                ))
-        
-        logger.info(f"✅ [GenerationEngine] Generated {len(generated_images)} images successfully")
-        
-        # Log metrics if available
-        if response.metrics:
-            logger.info(f"📊 [GenerationEngine] Metrics: duration={response.metrics.duration_ms}ms, model={response.metrics.model_used}, retries={response.metrics.retry_count}")
-        
-        model_name = response.metrics.model_used if response.metrics else request.model
-        
-        return ImageGenerationResponse(
-            success=True,
-            data=ImageGenerationResponseData(
-                images=generated_images,
-                generation_info=ImageGenerationInfo(
-                    prompt=request.sd_prompt,
-                    model=model_name,
-                    num_images=len(generated_images)
-                )
-            )
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ [GenerationEngine] Unexpected error: {str(e)}")
-        logger.exception("Full traceback:")
-        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")
 
 @router.post("/upload-image")
 async def upload_image(
