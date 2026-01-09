@@ -27,6 +27,7 @@ def main():
     print("   - ruleslawyer/")
     print("   - storegenerator/")
     print("   - sms/")
+    print("   - mapgenerator/")
     print("")
     print("🌐 Server will be available at: http://localhost:7860")
     print("📊 Health check: http://localhost:7860/health")
@@ -48,7 +49,8 @@ def main():
             "firestore",
             "ruleslawyer",
             "storegenerator",
-            "sms"
+            "sms",
+            "mapgenerator"
         ],
         log_level="info"
     )

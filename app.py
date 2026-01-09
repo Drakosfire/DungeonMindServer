@@ -60,6 +60,9 @@ from routers.playercharactergenerator_router import router as playercharactergen
 # Import Demo router for testing GenerationDrawerEngine
 from routers.demo_router import router as demo_router
 
+# Import MapGenerator router
+from routers.map_router import router as map_router
+
 # Import new global session and object routers
 from routers.global_session_router import router as global_session_router
 from routers.global_objects_router import router as global_objects_router
@@ -219,6 +222,12 @@ app.include_router(
     tags=["Demo/Testing"]
 )
 
+# Include MapGenerator router
+app.include_router(
+    map_router,
+    tags=["Map Generator"]
+)
+
 # Health check route
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
@@ -234,7 +243,8 @@ async def health_check():
             "statblockgenerator": "/api/statblockgenerator/health",
             "playercharactergenerator": "/api/playercharactergenerator/health",
             "cardgenerator": "/api/cardgenerator/health",
-            "ruleslawyer": "/api/ruleslawyer/health"
+            "ruleslawyer": "/api/ruleslawyer/health",
+            "mapgenerator": "/api/mapgenerator/health"
         }
     }
 
@@ -278,7 +288,7 @@ if __name__ == "__main__":
             host="0.0.0.0", 
             port=7860,
             reload=True,
-            reload_dirs=["routers", "cardgenerator", "cloudflare", "cloudflareR2", "firestore", "ruleslawyer", "storegenerator", "sms"]
+            reload_dirs=["routers", "cardgenerator", "cloudflare", "cloudflareR2", "firestore", "ruleslawyer", "storegenerator", "sms", "mapgenerator"]
         )
     else:
         # Use direct app object for production

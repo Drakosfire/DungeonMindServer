@@ -60,7 +60,7 @@ class BulkUploadRequest(BaseModel):
 class ImageGenerateRequest(BaseModel):
     """Request model for image generation."""
     prompt: str = Field(..., description="Text prompt for image generation")
-    model: str = Field("flux-pro", description="Model: flux-pro, imagen4, openai, nano-banana")
+    model: str = Field("flux-2-pro", description="Model: flux-2-pro, nano-banana-pro, gpt-image-1.5")
     num_images: int = Field(1, ge=1, le=8, description="Number of images to generate")
     # Future: size, aspect_ratio, style could be added here
 
@@ -186,10 +186,9 @@ async def generate_image(
     Generate images using AI models.
     
     Supports:
-    - flux-pro: High quality, balanced speed (~10s)
-    - imagen4: Google's model, premium quality (~15s)
-    - openai: Fast, cost-effective (~5s)
-    - nano-banana: Ultra-fast, aspect ratio support (~3s)
+    - flux-2-pro: High quality, balanced speed (~10s)
+    - nano-banana-pro: Ultra-fast, aspect ratio support (~3s)
+    - gpt-image-1.5: OpenAI GPT-4 Vision powered (~5s)
     
     Requires authentication - AI generation costs money and images need CDN storage.
     """

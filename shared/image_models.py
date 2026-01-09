@@ -7,13 +7,11 @@ Single source of truth for model mappings used across routers.
 from generationengine import ImageModel
 
 # Map frontend model IDs to GenerationEngine ImageModel enum
+# All models support both text-to-image and inpainting via /edit endpoints
 MODEL_MAP = {
-    "flux-pro": ImageModel.FLUX_PRO,
-    "openai": ImageModel.OPENAI,
-    "nano-banana": ImageModel.NANO_BANANA,
-    "hunyuan": ImageModel.HUNYUAN,
-    "dreamina": ImageModel.DREAMINA,
-    "flux-kontext": ImageModel.FLUX_KONTEXT,
+    "flux-2-pro": ImageModel.FLUX_2_PRO,
+    "nano-banana-pro": ImageModel.NANO_BANANA_PRO,
+    "gpt-image-1.5": ImageModel.GPT_IMAGE_15,
 }
 
 # Capabilities returned by /api/images/capabilities
@@ -21,40 +19,22 @@ MODEL_MAP = {
 IMAGE_CAPABILITIES = {
     "models": [
         {
-            "id": "flux-pro",
-            "name": "FLUX Pro",
+            "id": "flux-2-pro",
+            "name": "FLUX 2 Pro",
             "description": "High quality, balanced speed (~10s)",
             "default": True,
             "tier": "free"
         },
         {
-            "id": "flux-kontext",
-            "name": "FLUX Kontext Max",
-            "description": "Advanced FLUX with context understanding (~12s)",
-            "tier": "free"
-        },
-        {
-            "id": "hunyuan",
-            "name": "Hunyuan v3",
-            "description": "Tencent's high-quality model (~8s)",
-            "tier": "free"
-        },
-        {
-            "id": "dreamina",
-            "name": "Dreamina v3.1",
-            "description": "ByteDance's creative model (~6s)",
-            "tier": "free"
-        },
-        {
-            "id": "nano-banana",
-            "name": "Nano Banana",
+            "id": "nano-banana-pro",
+            "name": "Nano Banana Pro",
             "description": "Ultra-fast, aspect ratio support (~3s)",
             "tier": "free"
         },
         {
-            "id": "openai",
-            "name": "OpenAI GPT-Image",
-            "description": "Fast, cost-effective (~5s)",
+            "id": "gpt-image-1.5",
+            "name": "GPT Image 1.5",
+            "description": "OpenAI GPT-4 Vision powered (~5s)",
             "tier": "free"
         },
     ],
