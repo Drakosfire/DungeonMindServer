@@ -66,6 +66,18 @@ class ScaleMetadata(BaseModel):
     unit: Literal["ft", "m", "squares"]
 
 
+class ProjectGeneratedImage(BaseModel):
+    """A generated image associated with a project"""
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    
+    id: str
+    url: str
+    prompt: str = ""
+    created_at: str = Field(alias="createdAt", default="")
+    session_id: str = Field(alias="sessionId", default="")
+    service: str = "map"
+
+
 class MapProject(BaseModel):
     """The root entity representing a saved map project"""
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
@@ -76,6 +88,13 @@ class MapProject(BaseModel):
     grid_config: GridConfig = Field(alias="gridConfig")
     labels: list[MapLabel] = Field(default_factory=list, max_length=100)
     scale_metadata: Optional[ScaleMetadata] = Field(None, alias="scaleMetadata")
+    generated_images: list[ProjectGeneratedImage] = Field(
+        alias="generatedImages", 
+        default_factory=list,
+        max_length=50,
+        description="Gallery of generated images for this project"
+    )
+    mask_image_url: Optional[str] = Field(None, alias="maskImageUrl", description="URL to persisted mask image in R2")
     user_id: str = Field(alias="userId")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
@@ -104,6 +123,12 @@ class UpdateMapProjectRequest(BaseModel):
     grid_config: Optional[GridConfig] = Field(None, alias="gridConfig")
     labels: Optional[list[MapLabel]] = Field(None, max_length=100)
     scale_metadata: Optional[ScaleMetadata] = Field(None, alias="scaleMetadata")
+    generated_images: Optional[list[ProjectGeneratedImage]] = Field(
+        None, 
+        alias="generatedImages",
+        max_length=50
+    )
+    mask_image_url: Optional[str] = Field(None, alias="maskImageUrl", description="URL to persisted mask image in R2")
 
 
 class GenerateMapRequest(BaseModel):
@@ -151,6 +176,22 @@ class MapProjectSummary(BaseModel):
 class ListMapProjectsResponse(BaseModel):
     """Response from project list endpoint"""
     projects: list[MapProjectSummary]
+    total: int
+
+
+class MaskItem(BaseModel):
+    """A saved mask from a project"""
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    
+    mask_url: str = Field(alias="maskUrl")
+    project_id: str = Field(alias="projectId")
+    project_name: str = Field(alias="projectName")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class ListMasksResponse(BaseModel):
+    """Response from masks list endpoint"""
+    masks: list[MaskItem]
     total: int
 
 

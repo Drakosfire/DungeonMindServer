@@ -36,10 +36,13 @@ from mapgenerator.models import (
     ExportMapRequest,
     ExportMapResponse,
     ListMapProjectsResponse,
+    ListMasksResponse,
+    MaskItem,
     MapProjectSummary,
     GridConfig,
     MapLabel,
     ScaleMetadata,
+    ProjectGeneratedImage,
     DEFAULT_GRID_CONFIG,
 )
 from mapgenerator.compositing import composite_map_export
@@ -350,6 +353,59 @@ async def list_projects(
         raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
 
 
+@router.get("/masks", response_model=ListMasksResponse)
+async def list_masks(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    List all saved masks from user's map projects.
+    
+    Returns masks from all projects that have a mask_image_url saved.
+    Requires authentication.
+    """
+    logger.info(f"🎭 [MapGenerator] List masks: user={current_user.sub}")
+    
+    try:
+        user_id = current_user.sub
+        
+        # Query Firestore for user's projects
+        projects_ref = db.collection(MAP_PROJECTS_COLLECTION)
+        query = projects_ref.where(filter=FieldFilter("userId", "==", user_id))
+        
+        masks = []
+        for doc in query.stream():
+            project_data = doc.to_dict()
+            
+            # Only include projects with a saved mask
+            mask_url = project_data.get("mask_image_url")
+            if not mask_url:
+                continue
+            
+            # Get updated_at as datetime
+            updated_at_raw = project_data.get("updated_at")
+            if isinstance(updated_at_raw, datetime):
+                updated_at = updated_at_raw
+            elif isinstance(updated_at_raw, str):
+                updated_at = datetime.fromisoformat(updated_at_raw.replace("Z", "+00:00"))
+            else:
+                updated_at = datetime.now()
+            
+            masks.append(MaskItem(
+                mask_url=mask_url,
+                project_id=doc.id,
+                project_name=project_data.get("name", "Untitled"),
+                updated_at=updated_at
+            ))
+        
+        logger.info(f"🎭 [MapGenerator] Found {len(masks)} masks from projects")
+        
+        return ListMasksResponse(masks=masks, total=len(masks))
+        
+    except Exception as e:
+        logger.error(f"❌ [MapGenerator] Error listing masks: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list masks: {str(e)}")
+
+
 @router.post("/projects", response_model=MapProject, status_code=201)
 async def create_project(
     request: CreateMapProjectRequest,
@@ -390,6 +446,7 @@ async def create_project(
             "base_image_url": request.base_image_url or "",
             "grid_config": grid_config.model_dump(by_alias=False),  # Store as snake_case
             "labels": [],
+            "generated_images": [],  # Initialize empty gallery
             "scale_metadata": request.scale_metadata.model_dump(by_alias=False) if request.scale_metadata else None,
             "userId": user_id,  # Keep userId as-is for Firestore querying
             "created_at": now,
@@ -463,6 +520,10 @@ async def get_project(
         scale_metadata_data = project_data.get("scale_metadata")
         scale_metadata = ScaleMetadata(**scale_metadata_data) if scale_metadata_data else None
         
+        # Get generated_images if present
+        generated_images_data = project_data.get("generated_images", [])
+        generated_images = [ProjectGeneratedImage(**img) for img in generated_images_data]
+        
         project = MapProject(
             id=doc.id,
             name=project_data.get("name", "Untitled"),
@@ -470,12 +531,14 @@ async def get_project(
             grid_config=grid_config,
             labels=[MapLabel(**label) for label in project_data.get("labels", [])],
             scale_metadata=scale_metadata,
+            generated_images=generated_images,
+            mask_image_url=project_data.get("mask_image_url"),
             user_id=project_data.get("userId"),
             created_at=created_at,
             updated_at=updated_at,
         )
         
-        logger.info(f"✅ [MapGenerator] Retrieved project: {project_id}")
+        logger.info(f"✅ [MapGenerator] Retrieved project: {project_id} with {len(generated_images)} images, mask: {bool(project.mask_image_url)}")
         
         return project
         
@@ -526,6 +589,10 @@ async def update_project(
             updates["labels"] = [label.model_dump(by_alias=False) for label in request.labels]
         if request.scale_metadata is not None:
             updates["scale_metadata"] = request.scale_metadata.model_dump(by_alias=False)
+        if request.generated_images is not None:
+            updates["generated_images"] = [img.model_dump(by_alias=False) for img in request.generated_images]
+        if request.mask_image_url is not None:
+            updates["mask_image_url"] = request.mask_image_url
         
         # Always update timestamp
         updates["updated_at"] = datetime.now()
@@ -563,6 +630,10 @@ async def update_project(
         scale_metadata_data = updated_data.get("scale_metadata")
         scale_metadata = ScaleMetadata(**scale_metadata_data) if scale_metadata_data else None
         
+        # Get generated_images if present
+        generated_images_data = updated_data.get("generated_images", [])
+        generated_images = [ProjectGeneratedImage(**img) for img in generated_images_data]
+        
         project = MapProject(
             id=updated_doc.id,
             name=updated_data.get("name", "Untitled"),
@@ -570,12 +641,14 @@ async def update_project(
             grid_config=grid_config,
             labels=[MapLabel(**label) for label in updated_data.get("labels", [])],
             scale_metadata=scale_metadata,
+            generated_images=generated_images,
+            mask_image_url=updated_data.get("mask_image_url"),
             user_id=updated_data.get("userId"),
             created_at=created_at,
             updated_at=updated_at,
         )
         
-        logger.info(f"✅ [MapGenerator] Updated project: {project_id}")
+        logger.info(f"✅ [MapGenerator] Updated project: {project_id} with {len(generated_images)} images, mask: {bool(project.mask_image_url)}")
         
         return project
         
@@ -710,16 +783,35 @@ async def export_map(request: ExportMapRequest):
         )
         
         # Save to bytes
-        output_format = request.format.upper()  # PNG or JPEG
+        # Validate and normalize format
+        requested_format = request.format.lower()
+        if requested_format not in ['png', 'jpeg']:
+            logger.warning(f"⚠️ [MapGenerator] Invalid format '{requested_format}', defaulting to PNG")
+            requested_format = 'png'
+        
+        output_format = requested_format.upper()  # PNG or JPEG
+        logger.info(f"💾 [MapGenerator] Saving image with format: {output_format} (requested: {request.format})")
         output_bytes = io.BytesIO()
         save_kwargs = {}
+        
         if output_format == 'JPEG':
             save_kwargs['quality'] = request.quality
-            # Convert to RGB if needed for JPEG
+            # Convert to RGB if needed for JPEG (JPEG doesn't support alpha channel)
             if composite_image.mode != 'RGB':
+                logger.info(f"🔄 [MapGenerator] Converting image from {composite_image.mode} to RGB for JPEG")
                 composite_image = composite_image.convert('RGB')
+        elif output_format == 'PNG':
+            # PNG can handle RGBA, so no conversion needed
+            pass
+        else:
+            logger.error(f"❌ [MapGenerator] Unsupported format: {output_format}, defaulting to PNG")
+            output_format = 'PNG'
         
+        # Ensure format is explicitly set (PIL requires uppercase format names)
         composite_image.save(output_bytes, format=output_format, **save_kwargs)
+        output_bytes.seek(0)
+        file_size = len(output_bytes.getvalue())
+        logger.info(f"✅ [MapGenerator] Image saved: format={output_format}, size={file_size} bytes")
         output_bytes.seek(0)
         file_size = len(output_bytes.getvalue())
         
