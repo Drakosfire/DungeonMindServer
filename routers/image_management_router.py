@@ -119,8 +119,8 @@ async def upload_single_image(file: UploadFile = File(...)):
         logger.error(f"Image upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"Unexpected error in image upload: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        logger.error(f"Unexpected error in image upload: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post('/upload-bulk')
 async def upload_multiple_images(request: BulkUploadRequest):
@@ -277,6 +277,7 @@ SERVICE_COLLECTION_MAP = {
     "statblock": "statblock_projects",
     "card": "card_projects",
     "pcg": "pcg_projects",
+    "map": "map_projects",
 }
 
 
@@ -326,8 +327,12 @@ async def get_image_library(
         )
         
         # Query user's projects
+        # Note: Different services use different field names for user ownership
+        # - map: uses "userId" 
+        # - others: use "createdBy"
         projects_ref = db.collection(collection_name)
-        query = projects_ref.where("createdBy", "==", user_id)
+        user_field = "userId" if service == "map" else "createdBy"
+        query = projects_ref.where(user_field, "==", user_id)
         
         # Aggregate all images from all projects
         all_images: List[LibraryImage] = []
@@ -337,22 +342,40 @@ async def get_image_library(
             project_data = doc.to_dict()
             project_id = project_data.get("id", doc.id)
             
-            # Extract images from generatedContent (common pattern across services)
-            generated_content = project_data.get("state", {}).get("generatedContent", {})
-            images = generated_content.get("images", [])
-            
-            for img in images:
-                img_url = img.get("url")
+            # Handle map projects differently - they store base_image_url directly
+            if service == "map":
+                img_url = project_data.get("base_image_url")
                 if img_url and img_url not in seen_urls:
                     seen_urls.add(img_url)
+                    # Get created_at from project, handle both datetime and string
+                    created_at = project_data.get("created_at", "")
+                    if hasattr(created_at, 'isoformat'):
+                        created_at = created_at.isoformat()
                     all_images.append(LibraryImage(
-                        id=img.get("id", f"{project_id}_{len(all_images)}"),
+                        id=project_id,
                         url=img_url,
-                        prompt=img.get("prompt", ""),
-                        createdAt=img.get("timestamp", img.get("createdAt", "")),
-                        sessionId=img.get("sessionId", sessionId or ""),
+                        prompt=project_data.get("name", "Map"),
+                        createdAt=str(created_at),
+                        sessionId=project_id,
                         service=service
                     ))
+            else:
+                # Extract images from generatedContent (common pattern for other services)
+                generated_content = project_data.get("state", {}).get("generatedContent", {})
+                images = generated_content.get("images", [])
+                
+                for img in images:
+                    img_url = img.get("url")
+                    if img_url and img_url not in seen_urls:
+                        seen_urls.add(img_url)
+                        all_images.append(LibraryImage(
+                            id=img.get("id", f"{project_id}_{len(all_images)}"),
+                            url=img_url,
+                            prompt=img.get("prompt", ""),
+                            createdAt=img.get("timestamp", img.get("createdAt", "")),
+                            sessionId=img.get("sessionId", sessionId or ""),
+                            service=service
+                        ))
         
         # Sort by createdAt (most recent first)
         all_images.sort(key=lambda x: x.createdAt, reverse=True)

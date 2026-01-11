@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 
 async def upload_image_to_cloudflare(image_input: Union[str, UploadFile]):
     logger.info("Uploading image to Cloudflare")
+    
+    # Validate credentials are set
+    if not cloudflare_account_id:
+        error_msg = "CLOUDFLARE_ACCOUNT_ID environment variable is not set"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+    if not cloudflare_api_token:
+        error_msg = "CLOUDFLARE_IMAGES_API_TOKEN environment variable is not set"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+    
     url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1"
     headers = {
         "Authorization": f"Bearer {cloudflare_api_token}",
