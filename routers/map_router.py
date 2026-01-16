@@ -56,7 +56,8 @@ from mapgenerator.prompt_compiler import (
 )
 from mapgenerator.prompt_config import get_defaults
 from mapgenerator.inpainting import generate_inpainted_map, InpaintingValidationError
-from mapgenerator.svg_mask import generate_mask_from_description
+# SVG mask import is lazy (inside function) to avoid requiring Cairo at startup
+# from mapgenerator.svg_mask import generate_mask_from_description
 from cloudflareR2.cloudflareR2_utils import upload_temp_file_and_get_url
 
 # Firestore
@@ -325,6 +326,17 @@ async def generate_svg_mask(
     Requires authentication.
     """
     logger.info(f"🎨 [MapGenerator] SVG mask generation: desc={request.description[:50]}..., user={current_user.sub}")
+    
+    # Lazy import to avoid requiring Cairo library at server startup
+    try:
+        from mapgenerator.svg_mask import generate_mask_from_description
+    except ImportError as e:
+        if "cairo" in str(e).lower() or "cairosvg" in str(e).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="SVG mask generation is not available: Cairo graphics library is not installed. This feature requires system dependencies."
+            )
+        raise
     
     start_time = time.time()
     
