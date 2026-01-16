@@ -133,20 +133,38 @@ class UpdateMapProjectRequest(BaseModel):
 
 class GenerateMapRequest(BaseModel):
     """Request to generate a battle map using AI"""
-    prompt: str = Field(min_length=10, max_length=2000)
+    prompt: str = Field(min_length=10, max_length=8000)
     style_options: Optional[dict] = Field(None, description="Style toggles from frontend (MapStyleOptions)")
     width: Literal[512, 1024, 2048] = 1024
     height: Literal[512, 1024, 2048] = 1024
 
 
 class GenerateMaskedMapRequest(BaseModel):
-    """Request model for masked map generation (inpainting)."""
+    """Request model for masked map generation (inpainting/editing)."""
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
     
-    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt: str = Field(..., min_length=1, max_length=8000)
     mask_base64: str = Field(..., alias="maskBase64", description="Base64-encoded PNG mask")
     base_image_base64: str = Field(..., alias="baseImageBase64", description="Base64-encoded PNG base image")
     style_options: Optional[dict] = Field(None, alias="styleOptions", description="Optional style configuration")
+    mode: Literal["inpaint", "edit"] = Field(
+        default="inpaint",
+        description="Generation mode: 'inpaint' uses mask to define map structure and fills entire image; 'edit' modifies only masked region and preserves non-masked areas"
+    )
+
+
+class GenerateSvgMaskRequest(BaseModel):
+    """Request to generate an SVG mask from text description"""
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    
+    description: str = Field(
+        ..., 
+        min_length=10, 
+        max_length=2000,
+        description="Natural language description of the map layout (e.g., 'A dungeon with three chambers connected by corridors')"
+    )
+    width: int = Field(default=1024, ge=256, le=2048, description="Output mask width in pixels")
+    height: int = Field(default=1024, ge=256, le=2048, description="Output mask height in pixels")
 
 
 class ExportMapRequest(BaseModel):
@@ -215,6 +233,20 @@ class ExportMapResponse(BaseModel):
     file_size: int = Field(alias="fileSize")
     width: int
     height: int
+
+
+class GenerateSvgMaskResponse(BaseModel):
+    """Response from SVG mask generation endpoint"""
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    
+    svg: str = Field(description="The generated SVG code")
+    mask_base64: str = Field(
+        alias="maskBase64", 
+        description="Base64-encoded PNG mask (data:image/png;base64,...)"
+    )
+    width: int
+    height: int
+    generation_time: float = Field(alias="generationTime", description="Time taken in seconds")
 
 
 # =============================================================================

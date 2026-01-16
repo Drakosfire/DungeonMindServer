@@ -60,9 +60,9 @@ async def upload_image_to_cloudflare(image_input: Union[str, UploadFile]):
         result = response.json()["result"]
         public_url = result.get("variants")[0]
         
-        # Ensure URL ends with /public
-        if not public_url.endswith('/public'):
-            public_url = '/'.join(public_url.split('/')[:-1]) + '/public'
+        # Ensure URL ends with /Full (1024x1024 variant, case-sensitive)
+        if not public_url.endswith('/Full'):
+            public_url = '/'.join(public_url.split('/')[:-1]) + '/Full'
             
         logger.info(f"Image uploaded successfully. Public URL: {public_url}")
         return public_url

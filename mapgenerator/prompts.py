@@ -65,29 +65,41 @@ Style: {rendering_description}, {palette_description}, {composition_notes}, top-
 """
 
 # =============================================================================
-# MASK-DRIVEN GENERATION (INPAINTING) PROMPTS
+# MASK-DRIVEN GENERATION PROMPTS
 # =============================================================================
 
-# Simple inpainting prompt template - focused and targeted
-# {user_description} - what the user wants in the masked region
-INPAINTING_PROMPT_TEMPLATE = """{user_description}
+# INPAINT MODE: Mask defines structure, fill ENTIRE image (no white space)
+# Use case: Drawing cave/dungeon shape on papyrus, generating a complete map
+INPAINT_PROMPT_TEMPLATE = """A complete top-down fantasy TTRPG battle map. The white mask regions define the PRIMARY CONTENT AREA.
+Fill the ENTIRE image with no white space remaining:
+- Inside mask (white regions): Generate the main content described below
+- Outside mask (black regions): Generate appropriate surrounding terrain (stone walls, grass, water, void, etc. based on context)
 
-Top-down view, seamlessly blending with the existing fantasy battle map style. Match the lighting, color palette, and hand-painted aesthetic of the surrounding area.
+GENERATION REQUIREMENTS:
+- Fill the ENTIRE image canvas - no empty or white areas
+- The mask shape defines the map structure and boundaries
+- Interior of mask = main content area (rooms, paths, terrain)
+- Exterior of mask = surrounding environment (walls, borders, outside terrain)
+- Maintain cohesive visual style throughout
+- Top-down view, hand-painted fantasy battle map style
 
-INPAINTING CONSTRAINTS:
+USER REQUEST: {user_description}
+"""
+
+# EDIT MODE: Traditional inpainting - modify ONLY masked region, preserve rest
+# Use case: Adding elements to an existing generated map
+EDIT_PROMPT_TEMPLATE = """Top-down fantasy battle map editing. Seamlessly blend with the existing map style, matching the lighting, color palette, and hand-painted aesthetic.
+
+EDITING CONSTRAINTS:
 - Generate content ONLY within the masked (transparent) region
 - Blend seamlessly with the existing image at mask boundaries
 - Preserve all content in the non-masked (opaque) areas
 - Match the style, lighting, and perspective of the existing image
 - Ensure smooth transitions at the edge of the masked region
+
+USER REQUEST: {user_description}
 """
 
-# Legacy suffix for full map generation with mask (kept for backwards compatibility)
-MASK_PROMPT_SUFFIX = """
-INPAINTING CONSTRAINTS:
-- Generate content ONLY within the masked (transparent) region
-- Blend seamlessly with the existing image at mask boundaries
-- Preserve all content in the non-masked (opaque) areas
-- Match the style, lighting, and perspective of the existing image
-- Ensure smooth transitions at the edge of the masked region
-"""
+# Legacy alias (for backwards compatibility)
+INPAINTING_PROMPT_TEMPLATE = EDIT_PROMPT_TEMPLATE
+

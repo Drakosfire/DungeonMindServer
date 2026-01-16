@@ -27,8 +27,8 @@ from .prompts import (
     PROMPT_COMPILER_TEMPLATE,
     SCALE_DESCRIPTIONS,
     RENDERING_DESCRIPTIONS,
-    MASK_PROMPT_SUFFIX,
-    INPAINTING_PROMPT_TEMPLATE,
+    INPAINT_PROMPT_TEMPLATE,
+    EDIT_PROMPT_TEMPLATE,
 )
 from .prompt_config import get_defaults
 
@@ -271,33 +271,31 @@ def compile_image_prompt(mapspec: MapSpec, has_mask: bool = False) -> str:
     prompt = " ".join(prompt.split())
     prompt = prompt.replace(" .", ".").replace("..", ".")
     
-    # Append mask constraints if inpainting mode
-    if has_mask:
-        prompt = f"{prompt}\n{MASK_PROMPT_SUFFIX}"
-        logger.info("🎭 [PromptCompiler] Mask constraints appended to prompt")
-    
     # Warn if prompt exceeds limit (shouldn't happen with max_tokens=800 on MapSpec)
-    if len(prompt) > 2000:
-        logger.warning(f"⚠️ [PromptCompiler] Prompt exceeds 2000 chars ({len(prompt)}), may be truncated by image API")
+    if len(prompt) > 8000:
+        logger.warning(f"⚠️ [PromptCompiler] Prompt exceeds 8000 chars ({len(prompt)}), may be truncated by image API")
     
     logger.info(f"✅ [PromptCompiler] Image prompt compiled: {len(prompt)} chars")
     
     return prompt
 
 
-def compile_inpainting_prompt(user_description: str) -> str:
+def compile_inpainting_prompt(user_description: str, mode: str = "inpaint") -> str:
     """
-    Compile a targeted prompt for inpainting.
+    Compile a targeted prompt for masked generation.
     
     Unlike compile_image_prompt (which describes an entire map),
-    this creates a focused prompt for filling a masked region.
+    this creates a focused prompt for mask-based generation.
     
     Args:
-        user_description: What the user wants in the masked region
-            (e.g., "a campfire with bedrolls", "a stone bridge over a stream")
+        user_description: What the user wants generated
+            (e.g., "a dungeon cave system", "a campfire with bedrolls")
+        mode: Generation mode:
+            - "inpaint": Mask defines structure, fill ENTIRE image (no white space)
+            - "edit": Traditional inpainting, modify only masked region
     
     Returns:
-        Compiled inpainting prompt (~200-400 chars vs ~800+ for full map)
+        Compiled prompt for the generation mode
     """
     # Clean up user input
     description = user_description.strip()
@@ -306,14 +304,22 @@ def compile_inpainting_prompt(user_description: str) -> str:
     if description and description[0].islower():
         description = description[0].upper() + description[1:]
     
-    # Compile using the inpainting template
-    prompt = INPAINTING_PROMPT_TEMPLATE.format(user_description=description)
+    # Select template based on mode
+    if mode == "inpaint":
+        template = INPAINT_PROMPT_TEMPLATE
+        logger.info("🎭 [PromptCompiler] Using INPAINT template (fill entire image)")
+    else:
+        template = EDIT_PROMPT_TEMPLATE
+        logger.info("🎭 [PromptCompiler] Using EDIT template (modify masked region only)")
+    
+    # Compile using the selected template
+    prompt = template.format(user_description=description)
     
     # Clean up whitespace
     prompt = prompt.strip()
     
-    logger.info(f"🎭 [PromptCompiler] Inpainting prompt compiled: {len(prompt)} chars")
-    logger.debug(f"🎭 [PromptCompiler] Inpainting prompt: {prompt[:100]}...")
+    logger.info(f"🎭 [PromptCompiler] Masked prompt compiled ({mode}): {len(prompt)} chars")
+    logger.debug(f"🎭 [PromptCompiler] Masked prompt: {prompt[:150]}...")
     
     return prompt
 

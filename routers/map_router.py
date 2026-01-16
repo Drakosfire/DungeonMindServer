@@ -33,6 +33,8 @@ from mapgenerator.models import (
     GenerateMapRequest,
     GenerateMapResponse,
     GenerateMaskedMapRequest,
+    GenerateSvgMaskRequest,
+    GenerateSvgMaskResponse,
     ExportMapRequest,
     ExportMapResponse,
     ListMapProjectsResponse,
@@ -54,6 +56,7 @@ from mapgenerator.prompt_compiler import (
 )
 from mapgenerator.prompt_config import get_defaults
 from mapgenerator.inpainting import generate_inpainted_map, InpaintingValidationError
+from mapgenerator.svg_mask import generate_mask_from_description
 from cloudflareR2.cloudflareR2_utils import upload_temp_file_and_get_url
 
 # Firestore
@@ -249,10 +252,11 @@ async def generate_masked_map(
         )
     
     try:
-        # For inpainting, we use a SIMPLE targeted prompt instead of full MapSpec
-        # The user describes what goes in the masked region, not the entire map
-        logger.info("🎭 [MapGenerator] Compiling targeted inpainting prompt...")
-        image_prompt = compile_inpainting_prompt(request.prompt)
+        # Compile prompt based on mode:
+        # - "inpaint": Mask defines structure, fill entire image (for papyrus → complete map)
+        # - "edit": Traditional inpainting, modify only masked region (for existing maps)
+        logger.info(f"🎭 [MapGenerator] Compiling masked generation prompt (mode={request.mode})...")
+        image_prompt = compile_inpainting_prompt(request.prompt, mode=request.mode)
         
         # Get standard negative prompt (grid, text, characters, etc.)
         negative_prompt = get_inpainting_negative_prompt()
@@ -290,6 +294,71 @@ async def generate_masked_map(
         raise HTTPException(
             status_code=500,
             detail=f"Masked map generation failed: {str(e)}"
+        )
+
+
+# =============================================================================
+# SVG MASK GENERATION
+# =============================================================================
+
+@router.post("/generate-svg-mask", response_model=GenerateSvgMaskResponse)
+async def generate_svg_mask(
+    request: GenerateSvgMaskRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate an SVG mask from a text description using AI.
+    
+    Flow:
+    1. User description → LLM → SVG code
+    2. SVG code → cairosvg → PNG mask
+    3. PNG mask → base64 for frontend use
+    
+    The generated mask can be used with the /generate-masked endpoint
+    to create maps using the AI-generated layout.
+    
+    Example descriptions:
+    - "A dungeon with three chambers connected by corridors"
+    - "A river running through a forest clearing"
+    - "A circular arena with pillars around the edge"
+    
+    Requires authentication.
+    """
+    logger.info(f"🎨 [MapGenerator] SVG mask generation: desc={request.description[:50]}..., user={current_user.sub}")
+    
+    start_time = time.time()
+    
+    try:
+        # Generate SVG and mask
+        svg_string, mask_base64 = await generate_mask_from_description(
+            description=request.description,
+            width=request.width,
+            height=request.height,
+        )
+        
+        generation_time = time.time() - start_time
+        
+        logger.info(f"✅ [MapGenerator] SVG mask generation complete: {generation_time:.2f}s")
+        
+        return GenerateSvgMaskResponse(
+            svg=svg_string,
+            maskBase64=mask_base64,
+            width=request.width,
+            height=request.height,
+            generationTime=generation_time,
+        )
+        
+    except ValueError as e:
+        # Validation errors from SVG parsing
+        logger.warning(f"⚠️ [MapGenerator] SVG validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ [MapGenerator] SVG mask generation error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"SVG mask generation failed: {str(e)}"
         )
 
 
@@ -883,6 +952,12 @@ async def download_proxy(url: str, filename: Optional[str] = None):
     try:
         # Decode URL if it was URL-encoded
         decoded_url = unquote(url)
+        
+        # Normalize Cloudflare Images URLs: /full -> /Full (case-sensitive)
+        # The lowercase /full variant returns 403, must use /Full for 1024x1024
+        if "imagedelivery.net" in decoded_url and decoded_url.endswith("/full"):
+            decoded_url = decoded_url[:-5] + "/Full"
+            logger.info("📥 [MapGenerator] Normalized /full to /Full for Cloudflare Images URL")
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.get(decoded_url)
