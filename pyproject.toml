@@ -57,9 +57,9 @@ packages = [
 
 [tool.uv.sources]
 # Production: Use git-based dependency (works in Docker/CI)
-# generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git" }
+generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git" }
 # For local development, override with: generationengine = { path = "../GenerationEngine", editable = true }
-generationengine = { path = "../GenerationEngine", editable = true }
+# generationengine = { path = "../GenerationEngine", editable = true }
 
 [dependency-groups]
 dev = [
