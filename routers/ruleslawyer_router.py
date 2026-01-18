@@ -1,9 +1,17 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 import logging
-from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response, generate_bot_response_stream
+from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response_stream
+from models.ruleslawyer_models import (
+    RulesQueryRequest,
+    RulebookRefreshRequest,
+    SaveRuleRequest,
+)
+from dependencies import get_current_user, get_ruleslawyer_db
+from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
+from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
 from openai import AsyncOpenAI
 import os
 from pathlib import Path
@@ -62,19 +70,33 @@ class EmbeddingRequest(BaseModel):
     embeddings_file_path: str
     enhanced_json_path: str
 
-class QueryRequest(BaseModel):
-    message: str
-    chat_history: list = []
+def _to_chat_history_tuples(chat_history: list) -> list[tuple[str, str]]:
+    tuples: list[tuple[str, str]] = []
+    current_user_msg: str | None = None
+
+    for turn in chat_history:
+        role = getattr(turn, "role", None) or turn.get("role")
+        content = getattr(turn, "content", None) or turn.get("content")
+        if role == "user":
+            current_user_msg = content
+        elif role == "assistant" and current_user_msg is not None:
+            tuples.append((current_user_msg, content))
+            current_user_msg = None
+
+    return tuples
 
 class RulesLawyerService:
     def __init__(self):
         self.loader: Optional[EmbeddingLoader] = None
+        self.active_rulebook_id: str | None = None
     
-    def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str) -> None:
+    def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
         self.loader = EmbeddingLoader(
             embeddings_file_path=os.path.join(RULESLAWYER_DIR, embeddings_file_path.lstrip('./')),
             enhanced_json_path=os.path.join(RULESLAWYER_DIR, enhanced_json_path.lstrip('./'))
         )
+        if rulebook_id:
+            self.active_rulebook_id = rulebook_id
     
     def get_loader(self) -> EmbeddingLoader:
         if not self.loader:
@@ -83,6 +105,14 @@ class RulesLawyerService:
 
 # Create a single instance of the service
 rules_lawyer_service = RulesLawyerService()
+
+
+def get_ruleslawyer_registry(db=Depends(get_ruleslawyer_db)) -> RulesLawyerRegistry:
+    return RulesLawyerRegistry(db)
+
+
+def get_saved_rules_repo(db=Depends(get_ruleslawyer_db)) -> RulesLawyerSavedRulesRepository:
+    return RulesLawyerSavedRulesRepository(db)
 
 # Health Check
 @router.get("/health")
@@ -94,9 +124,63 @@ async def health():
 async def get_status():
     """Check if embeddings are currently loaded."""
     return {
-        "embeddings_loaded": rules_lawyer_service.loader is not None,
-        "current_embedding": None  # Could track this if needed
+        "embeddingsLoaded": rules_lawyer_service.loader is not None,
+        "activeRulebookId": rules_lawyer_service.active_rulebook_id
     }
+
+
+@router.get("/rulebooks")
+async def list_rulebooks(
+    registry: RulesLawyerRegistry = Depends(get_ruleslawyer_registry),
+):
+    try:
+        return {"rulebooks": registry.list_rulebooks()}
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to list rulebooks", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to load rulebooks right now.") from e
+
+
+@router.post("/rulebooks/refresh")
+async def refresh_rulebooks(
+    request: RulebookRefreshRequest,
+    registry: RulesLawyerRegistry = Depends(get_ruleslawyer_registry),
+):
+    try:
+        return registry.refresh_rulebooks(request.rulebookIds, request.reason)
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to refresh rulebooks", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to refresh rulebooks right now.") from e
+
+
+@router.get("/saved-rules")
+async def list_saved_rules(
+    repo: RulesLawyerSavedRulesRepository = Depends(get_saved_rules_repo),
+    current_user=Depends(get_current_user)
+):
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else getattr(current_user, "sub", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        return {"rules": repo.list_by_user(user_id)}
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to list saved rules", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to load saved rules right now.") from e
+
+
+@router.post("/saved-rules")
+async def save_rule(
+    request: SaveRuleRequest,
+    repo: RulesLawyerSavedRulesRepository = Depends(get_saved_rules_repo),
+    current_user=Depends(get_current_user)
+):
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else getattr(current_user, "sub", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        return repo.save_rule(user_id, request.model_dump())
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to save rule", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to save rule right now.") from e
 
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
@@ -108,7 +192,8 @@ async def load_embedding(request: EmbeddingRequest):
     try:
         rules_lawyer_service.load_embeddings(
             embeddings_file_path=request.embeddings_file_path,
-            enhanced_json_path=request.enhanced_json_path
+            enhanced_json_path=request.enhanced_json_path,
+            rulebook_id=request.embedding
         )
         logger.info(f"✅ [RulesLawyer] Embeddings loaded successfully")
         return {"message": "Embedding loaded successfully"}
@@ -116,17 +201,17 @@ async def load_embedding(request: EmbeddingRequest):
         logger.error(f"File not found: {str(e)}")
         logger.error(f"Looking in directory: {RULESLAWYER_DIR}")
         logger.error(f"Files in directory: {list(RULESLAWYER_DIR.iterdir()) if RULESLAWYER_DIR.exists() else 'Directory does not exist'}")
-        raise HTTPException(status_code=404, detail=f"Embedding file not found: {str(e)}. Checked in: {RULESLAWYER_DIR}")
+        raise HTTPException(status_code=404, detail="Embedding file not found. Please verify rulebook data is available.") from e
     except Exception as e:
         logger.error(f"Error loading embeddings: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to load embeddings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to load embeddings. Please try again later.") from e
 
 @router.post("/query")
-async def query_rules(request: QueryRequest):
+async def query_rules(request: RulesQueryRequest):
     import time as time_module
     request_start_time = time_module.time()
     
-    logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chat_history)}")
+    logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chatHistory)}")
     
     try:
         loader_start_time = time_module.time()
@@ -135,13 +220,15 @@ async def query_rules(request: QueryRequest):
         logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
         # Use streaming response - await async function to get generator
+        chat_history = _to_chat_history_tuples(request.chatHistory)
         stream_generator, history = await generate_bot_response_stream(
             message=request.message,
-            chat_history=request.chat_history,
+            chat_history=chat_history,
             embeddings_loader=loader,
             client=openai_client,
             system_prompt=SYSTEM_PROMPT,
-            request_start_time=request_start_time
+            request_start_time=request_start_time,
+            rulebook_id=request.rulebookId
         )
         
         return StreamingResponse(
@@ -153,6 +240,9 @@ async def query_rules(request: QueryRequest):
                 "X-Accel-Buffering": "no"
             }
         )
+    except HTTPException as e:
+        logger.warning(f"⚠️ [RulesLawyer] Query rejected: {e.detail}")
+        raise
     except Exception as e:
         total_duration = (time_module.time() - request_start_time) * 1000
         logger.error(f"❌ [RulesLawyer] Error processing query after {total_duration:.2f}ms: {str(e)}", exc_info=True)

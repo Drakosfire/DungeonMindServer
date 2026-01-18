@@ -70,7 +70,7 @@ Style: {rendering_description}, {palette_description}, {composition_notes}, top-
 
 # INPAINT MODE: Mask defines structure, fill ENTIRE image (no white space)
 # Use case: Drawing cave/dungeon shape on papyrus, generating a complete map
-INPAINT_PROMPT_TEMPLATE = """A complete top-down fantasy TTRPG battle map. The white mask regions define the PRIMARY CONTENT AREA.
+INPAINT_PROMPT_TEMPLATE = """A complete top-down fantasy TTRPG battle map. You must respect the mask regions and fill the ENTIRE image with no white space remaining. The white mask regions define the PRIMARY CONTENT AREA.
 Fill the ENTIRE image with no white space remaining:
 - Inside mask (white regions): Generate the main content described below
 - Outside mask (black regions): Generate appropriate surrounding terrain (stone walls, grass, water, void, etc. based on context)
