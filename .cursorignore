@@ -84,7 +84,7 @@ API Keys
 secrets.txt
 serviceAccountKey.json
 .env*
-
+Tonigh
 # Test files and coverage
 .coverage
 .pytest_cache/
@@ -101,8 +101,8 @@ deploy*.bat
 checksums_*.txt
 
 # Large data files
-*.csv
-*.json
+.csv
+.json
 *.xml
 *.yaml
 *.yml
