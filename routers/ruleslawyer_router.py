@@ -8,8 +8,10 @@ from models.ruleslawyer_models import (
     RulesQueryRequest,
     RulebookRefreshRequest,
     SaveRuleRequest,
+    UpdateSavedRuleRequest,
 )
 from dependencies import get_current_user, get_ruleslawyer_db
+from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
 from openai import AsyncOpenAI
@@ -111,8 +113,8 @@ def get_ruleslawyer_registry(db=Depends(get_ruleslawyer_db)) -> RulesLawyerRegis
     return RulesLawyerRegistry(db)
 
 
-def get_saved_rules_repo(db=Depends(get_ruleslawyer_db)) -> RulesLawyerSavedRulesRepository:
-    return RulesLawyerSavedRulesRepository(db)
+def get_saved_rules_repo() -> RulesLawyerSavedRulesRepository:
+    return RulesLawyerSavedRulesRepository(firestore_db)
 
 # Health Check
 @router.get("/health")
@@ -181,6 +183,55 @@ async def save_rule(
     except Exception as e:
         logger.error("❌ [RulesLawyer] Failed to save rule", exc_info=True)
         raise HTTPException(status_code=500, detail="Unable to save rule right now.") from e
+
+
+@router.put("/saved-rules/{rule_id}")
+async def update_rule(
+    rule_id: str,
+    request: UpdateSavedRuleRequest,
+    repo: RulesLawyerSavedRulesRepository = Depends(get_saved_rules_repo),
+    current_user=Depends(get_current_user),
+):
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else getattr(current_user, "sub", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    payload = request.model_dump(exclude_none=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail="No update fields provided")
+
+    try:
+        updated = repo.update_rule(user_id, rule_id, payload)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Saved rule not found")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to update saved rule", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to update saved rule right now.") from e
+
+
+@router.delete("/saved-rules/{rule_id}")
+async def delete_rule(
+    rule_id: str,
+    repo: RulesLawyerSavedRulesRepository = Depends(get_saved_rules_repo),
+    current_user=Depends(get_current_user),
+):
+    user_id = current_user.get("sub") if isinstance(current_user, dict) else getattr(current_user, "sub", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        deleted = repo.delete_rule(user_id, rule_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Saved rule not found")
+        return {"success": True, "id": rule_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("❌ [RulesLawyer] Failed to delete saved rule", exc_info=True)
+        raise HTTPException(status_code=500, detail="Unable to delete saved rule right now.") from e
 
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):

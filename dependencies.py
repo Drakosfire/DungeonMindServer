@@ -1,6 +1,6 @@
 import os
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 
 from ruleslawyer.constants import (
@@ -14,7 +14,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 _ruleslawyer_mongo_client = None
 
 
-async def get_current_user(request):
+async def get_current_user(request: Request):
     user = request.session.get('user')
     if not user:
         raise HTTPException(

@@ -76,6 +76,13 @@ class SaveRuleRequest(BaseModel):
     tags: List[str] = Field(default_factory=list, description="Optional user tags")
 
 
+class UpdateSavedRuleRequest(BaseModel):
+    queryText: Optional[str] = Field(None, description="Original user query")
+    responseText: Optional[str] = Field(None, description="Markdown response text")
+    citations: Optional[List[Citation]] = Field(None, description="Citations for the response")
+    tags: Optional[List[str]] = Field(None, description="Optional user tags")
+
+
 class SavedRuleList(BaseModel):
     rules: List[SavedRule] = Field(default_factory=list, description="Saved rules list")
 
