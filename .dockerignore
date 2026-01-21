@@ -34,3 +34,5 @@ compressimages.sh
 robots.txt
 secret.txt
 serviceAccountKey.json
+./venv
+/models/hf-cache
