@@ -6,7 +6,6 @@ from fastapi.security import OAuth2PasswordBearer
 from ruleslawyer.constants import (
     DEFAULT_RULESLAWYER_DB_NAME,
     RULESLAWYER_DB_NAME_ENV,
-    RULESLAWYER_MONGODB_URI_ENV,
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -36,7 +35,7 @@ def get_ruleslawyer_db():
             detail="MongoDB client is not available",
         ) from exc
 
-    mongo_uri = os.environ.get(MONGODB_URI, "mongodb://chat-mongodb:27017")
+    mongo_uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
     db_name = os.environ.get(RULESLAWYER_DB_NAME_ENV, DEFAULT_RULESLAWYER_DB_NAME)
 
     if _ruleslawyer_mongo_client is None:
