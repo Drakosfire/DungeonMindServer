@@ -23,20 +23,36 @@ class EmbeddingLoader:
         """
         print("🔧 [EmbeddingLoader] Initializing SentenceTransformer model...")
         try:
-            # Use environment variable for cache folder if set, otherwise use default location
-            # HF_HOME or HUGGINGFACE_HUB_CACHE env vars are respected by SentenceTransformer
-            # If not set, SentenceTransformer uses default ~/.cache/huggingface
-            cache_folder = os.getenv('HF_HOME') or os.getenv('HUGGINGFACE_HUB_CACHE')
+            cache_folder = (
+                os.getenv("EMBEDDING_MODEL_PATH")
+                or os.getenv("HF_HOME")
+                or os.getenv("HUGGINGFACE_HUB_CACHE")
+                or os.getenv("SENTENCE_TRANSFORMERS_HOME")
+            )
             if cache_folder:
-                print(f"📦 [EmbeddingLoader] Using cache folder from env: {cache_folder}")
-            
+                os.makedirs(cache_folder, exist_ok=True)
+                print(f"📦 [EmbeddingLoader] Using cache folder: {cache_folder}")
+                os.environ.setdefault("HF_HOME", cache_folder)
+                os.environ.setdefault("HUGGINGFACE_HUB_CACHE", cache_folder)
+                os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", cache_folder)
+            else:
+                default_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
+                print(f"📦 [EmbeddingLoader] Using default cache folder: {default_cache}")
+                cache_folder = default_cache
+
+            expected_model_dir = os.path.join(cache_folder, "hub", "models--BAAI--bge-m3")
+            if os.path.isdir(expected_model_dir):
+                print(f"✅ [EmbeddingLoader] Found cached model directory: {expected_model_dir}")
+            else:
+                print(f"⚠️ [EmbeddingLoader] Cached model directory not found at: {expected_model_dir}")
+
             model_kwargs = {
-                'model_name_or_path': 'BAAI/bge-m3',
-                'device': 'cpu',
+                "model_name_or_path": "BAAI/bge-m3",
+                "device": "cpu",
             }
             if cache_folder:
-                model_kwargs['cache_folder'] = cache_folder
-            
+                model_kwargs["cache_folder"] = cache_folder
+
             self.embedding_model = SentenceTransformer(**model_kwargs)
             print("✅ [EmbeddingLoader] SentenceTransformer model loaded successfully")
         except Exception as e:

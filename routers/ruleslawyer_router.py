@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 
 # Get the base directory for ruleslawyer files
 # __file__ is routers/ruleslawyer_router.py, so go up one level to DungeonMindServer, then into ruleslawyer/
-RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
+DEFAULT_RULESLAWYER_DIR = Path(__file__).parent.parent / "ruleslawyer"
+RULESLAWYER_DATA_DIR = Path(
+    os.getenv("RULESLAWYER_DATA_DIR", str(DEFAULT_RULESLAWYER_DIR))
+).resolve()
 
 # Global variables for single embedding set
 current_embeddings = None
@@ -94,8 +97,8 @@ class RulesLawyerService:
     
     def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
         self.loader = EmbeddingLoader(
-            embeddings_file_path=os.path.join(RULESLAWYER_DIR, embeddings_file_path.lstrip('./')),
-            enhanced_json_path=os.path.join(RULESLAWYER_DIR, enhanced_json_path.lstrip('./'))
+            embeddings_file_path=os.path.join(RULESLAWYER_DATA_DIR, embeddings_file_path.lstrip('./')),
+            enhanced_json_path=os.path.join(RULESLAWYER_DATA_DIR, enhanced_json_path.lstrip('./'))
         )
         if rulebook_id:
             self.active_rulebook_id = rulebook_id
@@ -236,9 +239,9 @@ async def delete_rule(
 @router.post("/loadembeddings")
 async def load_embedding(request: EmbeddingRequest):
     logger.info(f"Loading embedding: {request}")
-    logger.info(f"RULESLAWYER_DIR: {RULESLAWYER_DIR}")
-    logger.info(f"Expected embeddings file: {RULESLAWYER_DIR / request.embeddings_file_path.lstrip('./')}")
-    logger.info(f"Expected JSON file: {RULESLAWYER_DIR / request.enhanced_json_path.lstrip('./')}")
+    logger.info(f"RULESLAWYER_DATA_DIR: {RULESLAWYER_DATA_DIR}")
+    logger.info(f"Expected embeddings file: {RULESLAWYER_DATA_DIR / request.embeddings_file_path.lstrip('./')}")
+    logger.info(f"Expected JSON file: {RULESLAWYER_DATA_DIR / request.enhanced_json_path.lstrip('./')}")
     
     try:
         rules_lawyer_service.load_embeddings(
@@ -250,8 +253,10 @@ async def load_embedding(request: EmbeddingRequest):
         return {"message": "Embedding loaded successfully"}
     except FileNotFoundError as e:
         logger.error(f"File not found: {str(e)}")
-        logger.error(f"Looking in directory: {RULESLAWYER_DIR}")
-        logger.error(f"Files in directory: {list(RULESLAWYER_DIR.iterdir()) if RULESLAWYER_DIR.exists() else 'Directory does not exist'}")
+        logger.error(f"Looking in directory: {RULESLAWYER_DATA_DIR}")
+        logger.error(
+            f"Files in directory: {list(RULESLAWYER_DATA_DIR.iterdir()) if RULESLAWYER_DATA_DIR.exists() else 'Directory does not exist'}"
+        )
         raise HTTPException(status_code=404, detail="Embedding file not found. Please verify rulebook data is available.") from e
     except Exception as e:
         logger.error(f"Error loading embeddings: {str(e)}", exc_info=True)
