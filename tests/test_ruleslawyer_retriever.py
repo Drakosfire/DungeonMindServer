@@ -46,3 +46,27 @@ def test_retriever_returns_scores():
     assert "score" in result
     assert "lexical_score" in result
     assert "semantic_score" in result
+
+
+def test_retriever_tokenizer_ignores_punctuation():
+    pages_and_chunks = [
+        {"content": "Fireball, damage, and saving throw text.", "page": 112},
+        {"content": "General spell overview.", "page": 40},
+    ]
+    embeddings = np.array([
+        [0.9, 0.1],
+        [0.9, 0.1],
+    ])
+
+    retriever = HybridRetriever(
+        pages_and_chunks=pages_and_chunks,
+        embeddings=embeddings,
+        encode_fn=lambda _: np.array([1.0, 0.0]),
+        lexical_weight=0.6,
+        semantic_weight=0.4,
+    )
+
+    results = retriever.retrieve("fireball", top_k=2)
+
+    assert results[0]["chunk"]["page"] == 112
+    assert results[0]["lexical_score"] > results[1]["lexical_score"]
