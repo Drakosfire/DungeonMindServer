@@ -181,7 +181,7 @@ class CardGenerationService:
             # Create GenerationEngine request
             ge_request = GEImageGenerationRequest(
                 prompt=sd_prompt,
-                model=ImageModel.IMAGEN4_FAST,  # Maps to fal-ai/imagen4/preview/fast
+                model=ImageModel.NANO_BANANA_PRO,  # fal-ai/nano-banana-pro (~3s; replaces removed imagen4-fast)
                 num_images=num_images,
                 size=ImageSize.SQUARE,  # 1024x1024
             )
@@ -251,7 +251,7 @@ class CardGenerationService:
             # Create GenerationEngine request with image-to-image parameters
             ge_request = GEImageGenerationRequest(
                 prompt=enhanced_prompt,
-                model=ImageModel.FAL_FLUX_LORA_I2I,  # Image-to-image using flux-lora
+                model=ImageModel.FLUX_LORA_I2I,  # fal-ai/flux-lora/image-to-image
                 num_images=num_images,
                 size=ImageSize.PORTRAIT,  # 768x1024 for card format
                 image_url=template_url,
