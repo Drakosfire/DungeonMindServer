@@ -61,6 +61,19 @@ def test_empty_prompt_allowed_when_source_context_is_sufficient():
     assert request.source_statblock is not None
 
 
+def test_render_existing_mode_requires_source_statblock():
+    payload = json.loads((FIXTURE_DIR / "generate_from_prompt.basic.json").read_text())
+    payload["mode"] = "render_existing"
+    payload["prompt"] = None
+    payload["source_statblock"] = None
+
+    with pytest.raises(ValidationError) as exc_info:
+        StatBlockDraftRequest.model_validate(payload)
+
+    assert "render_existing" in str(exc_info.value)
+    assert "source_statblock" in str(exc_info.value)
+
+
 def test_success_response_requires_draft():
     with pytest.raises(ValidationError) as exc_info:
         StatBlockDraftResponse(success=True)

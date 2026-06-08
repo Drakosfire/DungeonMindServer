@@ -118,7 +118,9 @@ def test_render_draft_wraps_existing_statblock_without_generation(monkeypatch):
     assert data["draft"]["markdown"].startswith("# Bog Knife Outrider")
     assert data["draft"]["combat_defaults"]["armor_class"] == 14
     assert data["draft"]["combat_defaults"]["hit_points"] == 27
-    assert data["draft"]["provenance"]["mode"] == "generate_from_source_statblock"
+    assert data["draft"]["provenance"]["mode"] == "render_existing"
+    assert data["draft"]["provenance"]["generator"] == "statblock_draft_adapter.render_existing"
+    assert data["draft"]["provenance"]["generator"] != "StatBlockGenerator.generate_creature"
     assert data["draft"]["provenance"]["generation_info"] == {
         "source": "render-draft",
         "generated": False,

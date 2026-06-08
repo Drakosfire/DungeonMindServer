@@ -100,7 +100,7 @@ async def v2_health_check():
 @router.post("/v2/generate-draft", response_model=StatBlockDraftResponse)
 async def generate_statblock_draft(request: StatBlockDraftRequest):
     """Generate a command-board-ready statblock draft without persisting it."""
-    if request.mode in {"generate_from_source_statblock", "revise_existing"}:
+    if request.mode in {"generate_from_source_statblock", "revise_existing", "render_existing"}:
         response = StatBlockDraftResponse(
             success=False,
             error=ContractError(
@@ -152,7 +152,7 @@ async def render_statblock_draft(request: StatBlockDraftRenderRequest):
     try:
         adapter_request = StatBlockDraftRequest(
             request_id=request.request_id,
-            mode="generate_from_source_statblock",
+            mode="render_existing",
             intent=DraftIntent(summary=f"Render existing statblock: {request.statblock.name}"),
             source_statblock=request.statblock,
             source_refs=request.source_refs,
@@ -162,6 +162,7 @@ async def render_statblock_draft(request: StatBlockDraftRenderRequest):
             request=adapter_request,
             statblock_data=request.statblock,
             generation_info={"source": "render-draft", "generated": False},
+            generator="statblock_draft_adapter.render_existing",
         )
         return StatBlockDraftResponse(success=True, draft=draft)
 
