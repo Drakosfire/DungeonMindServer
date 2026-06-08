@@ -11,7 +11,9 @@ from statblockgenerator.services.statblock_draft_adapter import (
     render_markdown,
 )
 
-FIXTURE_DIR = Path("Docs/Design/fixtures/statblockgenerator-command-board-contract")
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "Docs/Design/fixtures/statblockgenerator-command-board-contract"
+FIXTURE_PATHS = sorted(FIXTURE_DIR.glob("*.json"))
+assert FIXTURE_PATHS, f"No command-board contract fixtures found in {FIXTURE_DIR}"
 
 
 def sample_statblock(**overrides):
@@ -129,3 +131,24 @@ def test_build_draft_includes_lifecycle_provenance_and_review_status():
     assert draft.provenance.request_id == request.request_id
     assert draft.provenance.persist_requested is False
     assert draft.provenance.generation_info["model_used"] == "mock"
+
+
+def test_missing_markdown_warning_respects_output_option():
+    request = sample_request()
+    request.output_options.include_markdown = False
+
+    draft = build_draft(request, sample_statblock().model_dump(by_alias=True))
+
+    assert draft.markdown == ""
+    assert not any(warning.code == "missing_markdown" for warning in draft.warnings)
+
+
+def test_hidden_review_warnings_do_not_set_warning_status():
+    request = sample_request()
+    request.output_options.include_review_warnings = False
+    statblock = sample_statblock(challengeRating="2")
+
+    draft = build_draft(request, statblock.model_dump(by_alias=True))
+
+    assert draft.warnings == []
+    assert draft.review_status == "needs_dm_review"

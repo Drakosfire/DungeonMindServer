@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 from routers import statblockgenerator_router
 from statblockgenerator.models.statblock_models import StatBlockDetails
 
-FIXTURE_DIR = Path("Docs/Design/fixtures/statblockgenerator-command-board-contract")
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "Docs/Design/fixtures/statblockgenerator-command-board-contract"
+FIXTURE_PATHS = sorted(FIXTURE_DIR.glob("*.json"))
+assert FIXTURE_PATHS, f"No command-board contract fixtures found in {FIXTURE_DIR}"
 
 
 def sample_statblock():
@@ -99,3 +101,16 @@ def test_generate_draft_failure_returns_stable_error_envelope(monkeypatch):
     assert data["draft"] is None
     assert data["error"]["code"] == "generation_failed"
     assert data["error"]["message"] == "OpenAI client not initialized"
+
+
+def test_generate_draft_returns_501_for_accepted_unimplemented_modes():
+    payload = json.loads((FIXTURE_DIR / "generate_from_source_statblock.tripod_variant.json").read_text())
+
+    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload)
+
+    assert response.status_code == 501
+    data = response.json()
+    assert data["success"] is False
+    assert data["draft"] is None
+    assert data["error"]["code"] == "not_implemented"
+    assert data["error"]["details"]["mode"] == "generate_from_source_statblock"

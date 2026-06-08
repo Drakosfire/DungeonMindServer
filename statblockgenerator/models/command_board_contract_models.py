@@ -164,3 +164,13 @@ class StatBlockDraftResponse(BaseModel):
     draft: Optional[StatBlockDraft] = None
     error: Optional[ContractError] = None
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    @model_validator(mode="after")
+    def validate_success_envelope(self) -> "StatBlockDraftResponse":
+        if self.success and self.draft is None:
+            raise ValueError("successful draft responses require draft")
+
+        if not self.success and self.error is None:
+            raise ValueError("failed draft responses require error")
+
+        return self

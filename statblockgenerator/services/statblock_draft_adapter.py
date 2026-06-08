@@ -203,7 +203,7 @@ def build_warnings(
             )
         )
 
-    if not markdown.strip():
+    if request.output_options.include_markdown and not markdown.strip():
         warnings.append(
             ReviewWarning(
                 code="missing_markdown",
@@ -235,7 +235,8 @@ def build_draft(
     markdown = render_markdown(statblock) if request.output_options.include_markdown else ""
     combat_defaults = derive_combat_defaults(statblock)
     warnings = build_warnings(request, statblock, markdown, validation_warnings)
-    review_status = "warnings" if warnings else "needs_dm_review"
+    emitted_warnings = warnings if request.output_options.include_review_warnings else []
+    review_status = "warnings" if emitted_warnings else "needs_dm_review"
 
     return StatBlockDraft(
         draft_id=f"draft-{request.request_id or uuid4().hex}",
@@ -244,7 +245,7 @@ def build_draft(
         statblock=statblock,
         markdown=markdown,
         combat_defaults=combat_defaults,
-        warnings=warnings if request.output_options.include_review_warnings else [],
+        warnings=emitted_warnings,
         provenance=DraftProvenance(
             request_id=request.request_id,
             mode=request.mode,
