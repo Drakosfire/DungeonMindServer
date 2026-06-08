@@ -99,6 +99,15 @@ class StatBlockDraftRequest(BaseModel):
         return self
 
 
+class StatBlockDraftRenderRequest(BaseModel):
+    """Request envelope for rendering an existing statblock as a v2 draft."""
+
+    request_id: Optional[str] = None
+    statblock: StatBlockDetails
+    source_refs: List[SourceRef] = Field(default_factory=list)
+    output_options: OutputOptions = Field(default_factory=OutputOptions)
+
+
 class CombatDefaults(BaseModel):
     """Deterministic combat defaults derived from the structured statblock."""
 
