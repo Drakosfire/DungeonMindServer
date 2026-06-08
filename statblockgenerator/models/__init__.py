@@ -2,6 +2,19 @@
 Data models for StatBlock Generator
 """
 
+from .command_board_contract_models import (
+    CombatDefaults,
+    ContractError,
+    DraftProvenance,
+    EncounterContext,
+    OutputOptions,
+    ReviewWarning,
+    SourceRef,
+    StatBlockDraft,
+    StatBlockDraftRequest,
+    StatBlockDraftResponse,
+    TerrainContext,
+)
 from .statblock_models import (
     StatBlockDetails,
     AbilityScores,
@@ -29,5 +42,16 @@ __all__ = [
     "CreatureType", 
     "Alignment",
     "StatBlockProject",
-    "StatBlockGeneratorState"
+    "StatBlockGeneratorState",
+    "CombatDefaults",
+    "ContractError",
+    "DraftProvenance",
+    "EncounterContext",
+    "OutputOptions",
+    "ReviewWarning",
+    "SourceRef",
+    "StatBlockDraft",
+    "StatBlockDraftRequest",
+    "StatBlockDraftResponse",
+    "TerrainContext",
 ]
