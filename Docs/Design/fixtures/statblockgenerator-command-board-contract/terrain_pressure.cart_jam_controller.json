@@ -1,0 +1,49 @@
+{
+  "request_id": "db-cmd-cart-jam-controller-001",
+  "mode": "terrain_pressure",
+  "intent": {
+    "summary": "Create a controller whose abilities exploit a cart jam without overwhelming the party.",
+    "target_cr": "2",
+    "target_role": "controller",
+    "tone": "street-level chaos",
+    "complexity": "medium"
+  },
+  "prompt": "A wiry bandit sapper uses jammed carts, ropes, and loose cargo to split the battlefield.",
+  "source_statblock": null,
+  "revision_instructions": [
+    "At least one action should move or restrain a target using cart terrain.",
+    "At least one warning should flag if the terrain assumption is required for balance.",
+    "Avoid permanent conditions."
+  ],
+  "encounter_context": {
+    "party_level": 4,
+    "party_size": 4,
+    "round": 1,
+    "threat_pressure": "medium",
+    "objective": "Delay pursuit through the market lane."
+  },
+  "terrain_context": {
+    "summary": "Two overturned carts block a narrow market lane while crates spill into the street.",
+    "features": ["overturned carts", "narrow lane", "loose crates", "half cover"],
+    "hazards": ["spilled oil", "skittish mule"],
+    "constraints": ["Controller should be weaker in open terrain", "No forced movement over 10 feet"]
+  },
+  "source_refs": [
+    {
+      "id": "map:market-lane-cart-jam",
+      "kind": "map_region",
+      "label": "Market lane cart jam region"
+    },
+    {
+      "id": "encounter:market-pursuit",
+      "kind": "encounter",
+      "label": "Market pursuit encounter"
+    }
+  ],
+  "output_options": {
+    "include_markdown": true,
+    "include_combat_defaults": true,
+    "include_review_warnings": true,
+    "persist": false
+  }
+}

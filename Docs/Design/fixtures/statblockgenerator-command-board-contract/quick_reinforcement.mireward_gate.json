@@ -1,0 +1,49 @@
+{
+  "request_id": "db-cmd-mireward-gate-reinforcement-001",
+  "mode": "quick_reinforcement",
+  "intent": {
+    "summary": "Generate a quick reinforcement that buys two rounds at Mireward Gate.",
+    "target_cr": "1/2",
+    "target_role": "blocker",
+    "tone": "muddy desperate militia",
+    "complexity": "low"
+  },
+  "prompt": "A fragile gate warden reinforcement arrives from the fog and tries to slow the heroes without becoming a major boss.",
+  "source_statblock": null,
+  "revision_instructions": [
+    "Must be runnable immediately with no spell list lookup.",
+    "Should die in one or two solid hits.",
+    "Give it one action that changes positioning at the gate."
+  ],
+  "encounter_context": {
+    "party_level": 3,
+    "party_size": 5,
+    "round": 3,
+    "threat_pressure": "medium-high",
+    "objective": "Hold the gate for two more rounds while villagers escape."
+  },
+  "terrain_context": {
+    "summary": "A half-broken wooden gate in rain and mud.",
+    "features": ["gate arch", "mud", "standing water", "torchlight"],
+    "hazards": ["collapsing beam"],
+    "constraints": ["No flight", "No legendary actions", "Action text must fit on command-board card"]
+  },
+  "source_refs": [
+    {
+      "id": "encounter:mireward-gate",
+      "kind": "encounter",
+      "label": "Mireward Gate active encounter"
+    },
+    {
+      "id": "combat:mireward-gate-round-3",
+      "kind": "combat_state",
+      "label": "Round 3 combat snapshot"
+    }
+  ],
+  "output_options": {
+    "include_markdown": true,
+    "include_combat_defaults": true,
+    "include_review_warnings": true,
+    "persist": false
+  }
+}

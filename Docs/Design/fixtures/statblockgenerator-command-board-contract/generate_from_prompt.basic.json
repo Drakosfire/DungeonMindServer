@@ -1,0 +1,40 @@
+{
+  "request_id": "db-cmd-basic-001",
+  "mode": "generate_from_prompt",
+  "intent": {
+    "summary": "Create a low-complexity swamp ambusher for a level 3 party.",
+    "target_cr": "1",
+    "target_role": "skirmisher",
+    "tone": "muddy folk-horror",
+    "complexity": "low"
+  },
+  "prompt": "A reed-cloaked goblin outrider who fights from shallow bog water and retreats when bloodied.",
+  "source_statblock": null,
+  "revision_instructions": [],
+  "encounter_context": {
+    "party_level": 3,
+    "party_size": 4,
+    "round": null,
+    "threat_pressure": "low",
+    "objective": "Introduce the danger of the mire before the main fight."
+  },
+  "terrain_context": {
+    "summary": "Knee-deep marsh with reeds and patches of sucking mud.",
+    "features": ["shallow water", "reeds", "difficult terrain"],
+    "hazards": ["sucking mud"],
+    "constraints": ["No flying movement", "Avoid legendary actions"]
+  },
+  "source_refs": [
+    {
+      "id": "encounter:mire-scouts",
+      "kind": "encounter_note",
+      "label": "Mire scouts opening encounter"
+    }
+  ],
+  "output_options": {
+    "include_markdown": true,
+    "include_combat_defaults": true,
+    "include_review_warnings": true,
+    "persist": false
+  }
+}
