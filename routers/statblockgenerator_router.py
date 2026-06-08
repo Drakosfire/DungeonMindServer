@@ -11,6 +11,7 @@ import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
+from .internal_auth import require_dungeonbuddy_internal_key
 from auth_service import User
 
 # Import StatBlock components
@@ -82,7 +83,7 @@ async def health_check():
     }
 
 
-@router.get("/v2/health")
+@router.get("/v2/health", dependencies=[Depends(require_dungeonbuddy_internal_key)])
 async def v2_health_check():
     """Canonical health check for the command-board draft v2 contract."""
     return {
@@ -97,7 +98,11 @@ async def v2_health_check():
     }
 
 
-@router.post("/v2/generate-draft", response_model=StatBlockDraftResponse)
+@router.post(
+    "/v2/generate-draft",
+    response_model=StatBlockDraftResponse,
+    dependencies=[Depends(require_dungeonbuddy_internal_key)],
+)
 async def generate_statblock_draft(request: StatBlockDraftRequest):
     """Generate a command-board-ready statblock draft without persisting it."""
     if request.mode in {"generate_from_source_statblock", "revise_existing", "render_existing"}:
@@ -146,7 +151,11 @@ async def generate_statblock_draft(request: StatBlockDraftRequest):
         return JSONResponse(status_code=500, content=response.model_dump(mode="json"))
 
 
-@router.post("/v2/render-draft", response_model=StatBlockDraftResponse)
+@router.post(
+    "/v2/render-draft",
+    response_model=StatBlockDraftResponse,
+    dependencies=[Depends(require_dungeonbuddy_internal_key)],
+)
 async def render_statblock_draft(request: StatBlockDraftRenderRequest):
     """Render an existing statblock into the command-board draft envelope."""
     try:
