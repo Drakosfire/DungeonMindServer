@@ -1,0 +1,70 @@
+{
+  "request_id": "db-cmd-tripod-variant-001",
+  "mode": "generate_from_source_statblock",
+  "intent": {
+    "summary": "Create a tripod construct variant from an existing guard statblock.",
+    "target_cr": "2",
+    "target_role": "brute-controller",
+    "tone": "arcane salvage horror",
+    "complexity": "medium"
+  },
+  "prompt": "Turn the source guard into a three-legged arcane tripod that pins targets and guards a ruined bridge.",
+  "source_statblock": {
+    "name": "Iron Yard Guard",
+    "size": "Medium",
+    "type": "construct",
+    "alignment": "unaligned",
+    "armorClass": 15,
+    "hitPoints": 45,
+    "hitDice": "6d8+18",
+    "speed": { "walk": 25 },
+    "abilities": { "str": 16, "dex": 10, "con": 16, "int": 3, "wis": 10, "cha": 5 },
+    "senses": { "darkvision": 60, "passive_perception": 10 },
+    "languages": "understands its creator's commands but can't speak",
+    "challengeRating": "2",
+    "xp": 450,
+    "proficiencyBonus": 2,
+    "actions": [
+      {
+        "name": "Slam",
+        "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) bludgeoning damage.",
+        "attack_bonus": 5,
+        "damage": "2d6+3",
+        "damage_type": "bludgeoning"
+      }
+    ],
+    "description": "A tireless construct guard built for a noble's yard.",
+    "sdPrompt": "A squat iron construct guard in a ruined courtyard"
+  },
+  "revision_instructions": [
+    "Change movement and action flavor to emphasize three-legged stability.",
+    "Add one pinning or brace action that matters on a narrow bridge.",
+    "Keep CR near 2 and avoid spellcasting."
+  ],
+  "encounter_context": {
+    "party_level": 4,
+    "party_size": 5,
+    "round": null,
+    "threat_pressure": "medium",
+    "objective": "Prevent the party from crossing the bridge too quickly."
+  },
+  "terrain_context": {
+    "summary": "A cracked stone bridge over fast black water.",
+    "features": ["narrow bridge", "broken parapet", "drop hazard"],
+    "hazards": ["falling into river"],
+    "constraints": ["Large creatures cannot stand side by side"]
+  },
+  "source_refs": [
+    {
+      "id": "statblock:iron-yard-guard",
+      "kind": "source_statblock",
+      "label": "Iron Yard Guard homebrew draft"
+    }
+  ],
+  "output_options": {
+    "include_markdown": true,
+    "include_combat_defaults": true,
+    "include_review_warnings": true,
+    "persist": false
+  }
+}

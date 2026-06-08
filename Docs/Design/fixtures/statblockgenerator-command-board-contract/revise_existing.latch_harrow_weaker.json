@@ -1,0 +1,78 @@
+{
+  "request_id": "db-cmd-latch-harrow-001",
+  "mode": "revise_existing",
+  "intent": {
+    "summary": "Weaken Latch Harrow for a tired party without changing the horror identity.",
+    "target_cr": "1",
+    "target_role": "lurker",
+    "tone": "claustrophobic cellar horror",
+    "complexity": "low"
+  },
+  "prompt": "Make the existing statblock less lethal while keeping its latch-and-drag theme.",
+  "source_statblock": {
+    "name": "Latch Harrow",
+    "size": "Medium",
+    "type": "undead",
+    "alignment": "chaotic evil",
+    "armorClass": 14,
+    "hitPoints": 52,
+    "hitDice": "8d8+16",
+    "speed": { "walk": 30, "climb": 20 },
+    "abilities": { "str": 15, "dex": 14, "con": 14, "int": 6, "wis": 12, "cha": 8 },
+    "damageResistance": "necrotic",
+    "conditionImmunity": "frightened",
+    "senses": { "darkvision": 60, "passive_perception": 11 },
+    "languages": "understands Common but speaks only in door-creaks",
+    "challengeRating": "3",
+    "xp": 700,
+    "proficiencyBonus": 2,
+    "actions": [
+      {
+        "name": "Hooking Latch",
+        "desc": "Melee Weapon Attack: +4 to hit, reach 10 ft., one target. Hit: 11 (2d8 + 2) piercing damage, and the target is grappled.",
+        "attack_bonus": 4,
+        "damage": "2d8+2",
+        "damage_type": "piercing"
+      }
+    ],
+    "description": "A gaunt undead thing made of old door iron and knotted tendons.",
+    "sdPrompt": "A gaunt undead latch monster in a root cellar"
+  },
+  "revision_instructions": [
+    "Target CR 1 or lower.",
+    "Reduce hit points and damage.",
+    "Keep one memorable control rider, but make escape straightforward.",
+    "Return a warning if the grapple math still feels too punishing."
+  ],
+  "encounter_context": {
+    "party_level": 2,
+    "party_size": 4,
+    "round": 5,
+    "threat_pressure": "high",
+    "objective": "Let the party survive a final scare after spending resources."
+  },
+  "terrain_context": {
+    "summary": "Low cellar with crates, door frames, and one narrow stairwell.",
+    "features": ["low ceiling", "crates", "narrow stairs"],
+    "hazards": [],
+    "constraints": ["Avoid area attacks", "Avoid multiattack"]
+  },
+  "source_refs": [
+    {
+      "id": "statblock:latch-harrow",
+      "kind": "source_statblock",
+      "label": "Latch Harrow original draft"
+    },
+    {
+      "id": "combat:cellar-round-5",
+      "kind": "combat_state",
+      "label": "Cellar fight round 5"
+    }
+  ],
+  "output_options": {
+    "include_markdown": true,
+    "include_combat_defaults": true,
+    "include_review_warnings": true,
+    "persist": false
+  }
+}
