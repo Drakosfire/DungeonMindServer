@@ -34,11 +34,22 @@ import os
 import fal_client
 from openai import OpenAI
 from cloudflare.handle_images import upload_image_to_cloudflare
+from fastapi.responses import JSONResponse
+
+from statblockgenerator.models.command_board_contract_models import (
+    ContractError,
+    StatBlockDraftRequest,
+    StatBlockDraftResponse,
+)
+from statblockgenerator.services.statblock_draft_adapter import (
+    build_draft,
+    build_generation_request,
+)
 
 # NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
 # Initialize OpenAI client (still used for text generation)
-openai_client = OpenAI()
+openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +78,70 @@ async def health_check():
         "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
         "fal_configured": bool(os.getenv("FAL_KEY"))
     }
+
+
+@router.get("/v2/health")
+async def v2_health_check():
+    """Canonical health check for the command-board draft v2 contract."""
+    return {
+        "status": "ok",
+        "service": "statblockgenerator",
+        "contract": "command_board_draft_v2",
+        "version": "0.1.0",
+        "generator_ready": statblock_generator is not None,
+        "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "supports": ["generate-draft"],
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.post("/v2/generate-draft", response_model=StatBlockDraftResponse)
+async def generate_statblock_draft(request: StatBlockDraftRequest):
+    """Generate a command-board-ready statblock draft without persisting it."""
+    if request.mode in {"generate_from_source_statblock", "revise_existing"}:
+        response = StatBlockDraftResponse(
+            success=False,
+            error=ContractError(
+                code="not_implemented",
+                message=f"Mode '{request.mode}' is accepted by the contract but not implemented in this v2 slice.",
+                details={"mode": request.mode},
+            ),
+        )
+        return JSONResponse(status_code=501, content=response.model_dump(mode="json"))
+
+    try:
+        generation_request = build_generation_request(request)
+        success, result = await statblock_generator.generate_creature(generation_request)
+
+        if not success:
+            response = StatBlockDraftResponse(
+                success=False,
+                error=ContractError(
+                    code="generation_failed",
+                    message=result.get("error", "Generation failed"),
+                    details={k: v for k, v in result.items() if k != "error"},
+                ),
+            )
+            return JSONResponse(status_code=400, content=response.model_dump(mode="json"))
+
+        draft = build_draft(
+            request=request,
+            statblock_data=result.get("statblock", result),
+            generation_info=result.get("generation_info", {}),
+        )
+        return StatBlockDraftResponse(success=True, draft=draft)
+
+    except Exception as exc:
+        logger.error(f"v2 draft generation failed: {str(exc)}")
+        response = StatBlockDraftResponse(
+            success=False,
+            error=ContractError(
+                code="draft_adapter_failed",
+                message="Draft generation failed while adapting generator output.",
+                details={"error": str(exc)},
+            ),
+        )
+        return JSONResponse(status_code=500, content=response.model_dump(mode="json"))
 
 
 @router.post("/generate-statblock")
