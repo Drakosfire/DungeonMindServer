@@ -228,6 +228,7 @@ def build_draft(
     statblock_data: Union[StatBlockDetails, Dict[str, Any]],
     generation_info: Optional[Dict[str, Any]] = None,
     validation_warnings: Optional[Iterable[Any]] = None,
+    generator: str = "StatBlockGenerator.generate_creature",
 ) -> StatBlockDraft:
     """Build the stable v2 draft envelope from generator output."""
 
@@ -251,6 +252,7 @@ def build_draft(
             mode=request.mode,
             source_refs=request.source_refs,
             generated_at=datetime.now(timezone.utc).isoformat(),
+            generator=generator,
             persist_requested=request.output_options.persist,
             generation_info=generation_info or {},
         ),

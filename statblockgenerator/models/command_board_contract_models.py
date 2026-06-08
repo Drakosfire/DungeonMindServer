@@ -15,6 +15,7 @@ DraftMode = Literal[
     "revise_existing",
     "quick_reinforcement",
     "terrain_pressure",
+    "render_existing",
 ]
 
 LifecycleState = Literal["live_draft"]
@@ -62,7 +63,10 @@ class OutputOptions(BaseModel):
     """Caller-selected response sections and persistence behavior."""
 
     include_markdown: bool = True
-    include_combat_defaults: bool = True
+    include_combat_defaults: bool = Field(
+        True,
+        description="Reserved for future response shaping; combat defaults are always emitted in v2 draft envelopes.",
+    )
     include_review_warnings: bool = True
     persist: bool = False
 
@@ -96,7 +100,19 @@ class StatBlockDraftRequest(BaseModel):
                     f"mode '{self.mode}' requires prompt, source_statblock, or revision_instructions"
                 )
 
+        if self.mode == "render_existing" and not source_present:
+            raise ValueError("mode 'render_existing' requires source_statblock")
+
         return self
+
+
+class StatBlockDraftRenderRequest(BaseModel):
+    """Request envelope for rendering an existing statblock as a v2 draft."""
+
+    request_id: Optional[str] = None
+    statblock: StatBlockDetails
+    source_refs: List[SourceRef] = Field(default_factory=list)
+    output_options: OutputOptions = Field(default_factory=OutputOptions)
 
 
 class CombatDefaults(BaseModel):
@@ -124,7 +140,7 @@ class ReviewWarning(BaseModel):
 
 
 class DraftProvenance(BaseModel):
-    """Generation provenance for downstream review and traceability."""
+    """Producer provenance for downstream review and traceability."""
 
     request_id: Optional[str] = None
     mode: DraftMode

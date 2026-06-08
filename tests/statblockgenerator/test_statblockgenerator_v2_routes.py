@@ -58,7 +58,7 @@ def test_v2_health_returns_contract_payload():
     assert data["service"] == "statblockgenerator"
     assert data["contract"] == "command_board_draft_v2"
     assert data["version"] == "0.1.0"
-    assert data["supports"] == ["generate-draft"]
+    assert data["supports"] == ["generate-draft", "render-draft"]
 
 
 def test_generate_draft_accepts_basic_fixture(monkeypatch):
@@ -86,6 +86,47 @@ def test_generate_draft_accepts_basic_fixture(monkeypatch):
     assert data["draft"]["provenance"]["request_id"] == "db-cmd-basic-001"
     assert data["draft"]["provenance"]["persist_requested"] is False
     mock_generate.assert_awaited_once()
+
+
+def test_render_draft_wraps_existing_statblock_without_generation(monkeypatch):
+    mock_generate = AsyncMock()
+    monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
+    payload = {
+        "request_id": "db-cmd-render-001",
+        "statblock": sample_statblock().model_dump(by_alias=True),
+        "source_refs": [
+            {
+                "id": "combatant:bog-knife-outrider",
+                "kind": "combatant",
+                "label": "Bog Knife Outrider",
+            }
+        ],
+        "output_options": {
+            "include_markdown": True,
+            "include_combat_defaults": True,
+            "include_review_warnings": True,
+            "persist": False,
+        },
+    }
+
+    response = client().post("/api/statblockgenerator/v2/render-draft", json=payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["draft"]["draft_id"] == "draft-db-cmd-render-001"
+    assert data["draft"]["markdown"].startswith("# Bog Knife Outrider")
+    assert data["draft"]["combat_defaults"]["armor_class"] == 14
+    assert data["draft"]["combat_defaults"]["hit_points"] == 27
+    assert data["draft"]["provenance"]["mode"] == "render_existing"
+    assert data["draft"]["provenance"]["generator"] == "statblock_draft_adapter.render_existing"
+    assert data["draft"]["provenance"]["generator"] != "StatBlockGenerator.generate_creature"
+    assert data["draft"]["provenance"]["generation_info"] == {
+        "source": "render-draft",
+        "generated": False,
+    }
+    assert data["draft"]["provenance"]["source_refs"][0]["id"] == "combatant:bog-knife-outrider"
+    mock_generate.assert_not_awaited()
 
 
 def test_generate_draft_failure_returns_stable_error_envelope(monkeypatch):
