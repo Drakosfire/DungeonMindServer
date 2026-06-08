@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from routers import statblockgenerator_router
+from routers.internal_auth import INTERNAL_KEY_ENV, INTERNAL_KEY_HEADER
 from statblockgenerator.models.statblock_models import StatBlockDetails
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "Docs/Design/fixtures/statblockgenerator-command-board-contract"
@@ -49,8 +50,14 @@ def client():
     return TestClient(app)
 
 
-def test_v2_health_returns_contract_payload():
-    response = client().get("/api/statblockgenerator/v2/health")
+def internal_headers():
+    return {INTERNAL_KEY_HEADER: "test-internal-key"}
+
+
+def test_v2_health_returns_contract_payload(monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "test-internal-key")
+
+    response = client().get("/api/statblockgenerator/v2/health", headers=internal_headers())
 
     assert response.status_code == 200
     data = response.json()
@@ -62,6 +69,7 @@ def test_v2_health_returns_contract_payload():
 
 
 def test_generate_draft_accepts_basic_fixture(monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "test-internal-key")
     payload = json.loads((FIXTURE_DIR / "generate_from_prompt.basic.json").read_text())
     mock_generate = AsyncMock(
         return_value=(
@@ -74,7 +82,7 @@ def test_generate_draft_accepts_basic_fixture(monkeypatch):
     )
     monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
 
-    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload)
+    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload, headers=internal_headers())
 
     assert response.status_code == 200
     data = response.json()
@@ -89,6 +97,7 @@ def test_generate_draft_accepts_basic_fixture(monkeypatch):
 
 
 def test_render_draft_wraps_existing_statblock_without_generation(monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "test-internal-key")
     mock_generate = AsyncMock()
     monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
     payload = {
@@ -109,7 +118,7 @@ def test_render_draft_wraps_existing_statblock_without_generation(monkeypatch):
         },
     }
 
-    response = client().post("/api/statblockgenerator/v2/render-draft", json=payload)
+    response = client().post("/api/statblockgenerator/v2/render-draft", json=payload, headers=internal_headers())
 
     assert response.status_code == 200
     data = response.json()
@@ -130,11 +139,12 @@ def test_render_draft_wraps_existing_statblock_without_generation(monkeypatch):
 
 
 def test_generate_draft_failure_returns_stable_error_envelope(monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "test-internal-key")
     payload = json.loads((FIXTURE_DIR / "generate_from_prompt.basic.json").read_text())
     mock_generate = AsyncMock(return_value=(False, {"error": "OpenAI client not initialized"}))
     monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
 
-    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload)
+    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload, headers=internal_headers())
 
     assert response.status_code == 400
     data = response.json()
@@ -144,10 +154,11 @@ def test_generate_draft_failure_returns_stable_error_envelope(monkeypatch):
     assert data["error"]["message"] == "OpenAI client not initialized"
 
 
-def test_generate_draft_returns_501_for_accepted_unimplemented_modes():
+def test_generate_draft_returns_501_for_accepted_unimplemented_modes(monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "test-internal-key")
     payload = json.loads((FIXTURE_DIR / "generate_from_source_statblock.tripod_variant.json").read_text())
 
-    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload)
+    response = client().post("/api/statblockgenerator/v2/generate-draft", json=payload, headers=internal_headers())
 
     assert response.status_code == 501
     data = response.json()
