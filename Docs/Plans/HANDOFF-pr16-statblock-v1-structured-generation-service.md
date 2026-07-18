@@ -5,6 +5,21 @@
 **Predecessors:** PR13 contract, PR14 trust core, PR15 repository protocols  
 **Successor:** `HANDOFF-pr17-statblock-v1-candidate-api.md`
 
+## PR15 predecessor completion notes
+
+- Use synchronous `CandidateRepository.create/get` and `StatblockPersistenceRepository`
+  (`create_statblock`, `append_revision`, `get`, `get_revision`); async callers must
+  offload calls with `asyncio.to_thread`.
+- Offline fixtures can use `InMemoryCandidateRepository` and
+  `InMemoryStatblockPersistenceRepository(clock=..., id_factory=DeterministicIdFactory())`.
+- Candidate IDs use `cand_<base36>`; statblock/revision IDs use `sb_<base36>` and
+  `rev_<base36>`. Candidate TTL is enforced by `expires_at`; Firestore TTL must also
+  be configured on that field.
+- `compute_request_digest(operation, payload)` covers complete operation parameters;
+  it is distinct from the definition digest. Firestore collections are
+  `dungeonbuddy_statblock_candidates_v1`, `dungeonbuddy_statblocks_v1` with
+  `revisions` subcollections, and `dungeonbuddy_statblock_idempotency_v1`.
+
 ## 0. Mission
 
 Implement the provider-independent application service that generates and revises `StatblockDefinitionV1` using OpenAI Structured Outputs, validates the result, persists a server-owned candidate record, and returns `GeneratedStatblockCandidateV1`.

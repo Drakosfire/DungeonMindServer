@@ -43,6 +43,12 @@ from statblocks_v1.domain.receipts import (
     ValidationStatus,
 )
 from statblocks_v1.domain.rule_elements import Mechanic, RuleElement, StatblockDefinitionV1
+from statblocks_v1.domain.resources import (
+    GeneratedStatblockCandidateV1,
+    IdempotencyRecordV1,
+    StatblockResourceV1,
+    StatblockRevisionResourceV1,
+)
 from statblocks_v1.domain.validation import validate_definition
 
 __all__ = [
@@ -60,6 +66,8 @@ __all__ = [
     "Distance",
     "Duration",
     "Effect",
+    "GeneratedStatblockCandidateV1",
+    "IdempotencyRecordV1",
     "LairProfile",
     "Mechanic",
     "MovementProfile",
@@ -71,6 +79,8 @@ __all__ = [
     "RulesetRef",
     "SenseProfile",
     "StatblockDefinitionV1",
+    "StatblockResourceV1",
+    "StatblockRevisionResourceV1",
     "StatblockFlavorText",
     "TargetProfile",
     "Trigger",
