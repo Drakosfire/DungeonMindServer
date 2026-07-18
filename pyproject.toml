@@ -53,7 +53,12 @@ packages = [
     "cloudflareR2",
     "cardgenerator",
     "storegenerator",
-    "playercharactergenerator"
+    "playercharactergenerator",
+    "statblocks_v1",
+    "statblocks_v1.domain",
+    "statblocks_v1.application",
+    "statblocks_v1.infrastructure",
+    "statblocks_v1.api",
 ]
 
 [tool.uv.sources]
