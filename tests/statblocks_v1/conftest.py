@@ -10,7 +10,7 @@ Or::
 
     PYTHONPATH=. uv run --isolated --no-project \\
       --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \\
-      --with 'pydantic>=2.0' --with 'httpx>=0.27.0' \\
+      --with 'pydantic==2.7.4' --with 'httpx>=0.27.0' \\
       pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 
 ``--confcutdir`` prevents loading ``tests/conftest.py``, which imports the
@@ -21,6 +21,9 @@ sentence-transformers, generationengine, etc.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -28,6 +31,21 @@ from statblocks_v1.api.dependencies import INTERNAL_KEY_ENV, INTERNAL_KEY_HEADER
 from statblocks_v1.testing import create_test_app
 
 TEST_INTERNAL_KEY = "test-statblocks-v1-internal-key"
+FIXTURE_DIRECTORY = (
+    Path(__file__).parents[2]
+    / "Docs"
+    / "Design"
+    / "fixtures"
+    / "dungeonbuddy-statblock-v1"
+)
+
+
+@pytest.fixture
+def load_fixture():
+    def load(name: str) -> dict:
+        return json.loads((FIXTURE_DIRECTORY / f"{name}.json").read_text(encoding="utf-8"))
+
+    return load
 
 
 @pytest.fixture

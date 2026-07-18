@@ -1,0 +1,2398 @@
+{
+  "$defs": {
+    "AbilityName": {
+      "enum": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "type": "string"
+    },
+    "AbilityScores": {
+      "additionalProperties": false,
+      "properties": {
+        "charisma": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "constitution": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "dexterity": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "intelligence": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "strength": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "wisdom": {
+          "maximum": 30,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "type": "object"
+    },
+    "Activation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ActivationKind"
+        },
+        "timing_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trigger"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "trigger",
+        "timing_text"
+      ],
+      "type": "object"
+    },
+    "ActivationKind": {
+      "enum": [
+        "passive",
+        "action",
+        "bonus_action",
+        "reaction",
+        "triggered",
+        "legendary",
+        "lair_initiative",
+        "special"
+      ],
+      "type": "string"
+    },
+    "ArmorClassProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default": {
+          "type": "boolean"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "label",
+        "condition",
+        "default"
+      ],
+      "type": "object"
+    },
+    "AttackMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "attack_bonus": {
+          "type": "integer"
+        },
+        "attack_type": {
+          "$ref": "#/$defs/AttackType"
+        },
+        "hit_effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "attack",
+          "enum": [
+            "attack"
+          ],
+          "type": "string"
+        },
+        "miss_effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reach": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/TargetProfile"
+        }
+      },
+      "required": [
+        "kind",
+        "attack_type",
+        "attack_bonus",
+        "reach",
+        "range",
+        "target",
+        "hit_effects",
+        "miss_effects"
+      ],
+      "type": "object"
+    },
+    "AttackType": {
+      "enum": [
+        "melee_weapon",
+        "ranged_weapon",
+        "melee_spell",
+        "ranged_spell",
+        "special"
+      ],
+      "type": "string"
+    },
+    "AutomationSupport": {
+      "enum": [
+        "full",
+        "partial",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "CastingMode": {
+      "enum": [
+        "prepared",
+        "known",
+        "innate",
+        "charges",
+        "special"
+      ],
+      "type": "string"
+    },
+    "ChallengeProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "proficiency_bonus": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rating": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "xp_override": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "rating",
+        "proficiency_bonus",
+        "xp_override"
+      ],
+      "type": "object"
+    },
+    "CommunicationProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "languages": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "special_modes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "telepathy_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "languages",
+        "telepathy_range",
+        "special_modes"
+      ],
+      "type": "object"
+    },
+    "CompositeMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "composite",
+          "enum": [
+            "composite"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TargetProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "target",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "ConditionEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "condition",
+          "enum": [
+            "condition"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "condition",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "CreatureIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "creature_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "size": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "subtypes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "creature_type",
+        "subtypes",
+        "alignment"
+      ],
+      "type": "object"
+    },
+    "CreaturePhase": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "type": "boolean"
+        },
+        "disabled_element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled_element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "entry_rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "default",
+        "enabled_element_keys",
+        "disabled_element_keys",
+        "entry_rules_text"
+      ],
+      "type": "object"
+    },
+    "DamageEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "damage": {
+          "$ref": "#/$defs/DiceExpression"
+        },
+        "damage_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "damage",
+          "enum": [
+            "damage"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "damage",
+        "damage_type",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "DamageInteraction": {
+      "additionalProperties": false,
+      "properties": {
+        "bypasses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "damage_types": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DamageInteractionKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "damage_types",
+        "qualifiers",
+        "bypasses"
+      ],
+      "type": "object"
+    },
+    "DamageInteractionKind": {
+      "enum": [
+        "vulnerability",
+        "resistance",
+        "immunity"
+      ],
+      "type": "string"
+    },
+    "DefenseProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "armor_classes": {
+          "items": {
+            "$ref": "#/$defs/ArmorClassProfile"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "condition_immunities": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "damage_interactions": {
+          "items": {
+            "$ref": "#/$defs/DamageInteraction"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "armor_classes",
+        "damage_interactions",
+        "condition_immunities"
+      ],
+      "type": "object"
+    },
+    "DiceExpression": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "die": {
+          "minimum": 2,
+          "type": "integer"
+        },
+        "modifier": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "die",
+        "modifier"
+      ],
+      "type": "object"
+    },
+    "DisableElementsEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "const": "disable_elements",
+          "enum": [
+            "disable_elements"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "element_keys"
+      ],
+      "type": "object"
+    },
+    "Distance": {
+      "additionalProperties": false,
+      "properties": {
+        "unit": {
+          "$ref": "#/$defs/DistanceUnit"
+        },
+        "value": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "DistanceUnit": {
+      "const": "feet",
+      "enum": [
+        "feet"
+      ],
+      "type": "string"
+    },
+    "Duration": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DurationKind"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    "DurationKind": {
+      "enum": [
+        "instantaneous",
+        "until_start_turn",
+        "until_end_turn",
+        "rounds",
+        "minutes",
+        "hours",
+        "until_save",
+        "permanent",
+        "special"
+      ],
+      "type": "string"
+    },
+    "ElementUse": {
+      "additionalProperties": false,
+      "properties": {
+        "choice_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "element_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_key",
+        "count",
+        "choice_group"
+      ],
+      "type": "object"
+    },
+    "EnableElementsEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "const": "enable_elements",
+          "enum": [
+            "enable_elements"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "element_keys"
+      ],
+      "type": "object"
+    },
+    "EnterPhaseEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "enter_phase",
+          "enum": [
+            "enter_phase"
+          ],
+          "type": "string"
+        },
+        "phase_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "phase_key"
+      ],
+      "type": "object"
+    },
+    "ForcedMovementEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "distance": {
+          "$ref": "#/$defs/Distance"
+        },
+        "kind": {
+          "const": "forced_movement",
+          "enum": [
+            "forced_movement"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "distance",
+        "direction"
+      ],
+      "type": "object"
+    },
+    "HealingEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "healing": {
+          "$ref": "#/$defs/DiceExpression"
+        },
+        "kind": {
+          "const": "healing",
+          "enum": [
+            "healing"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "healing"
+      ],
+      "type": "object"
+    },
+    "HitPointProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "displayed_average": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fixed_value": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiceExpression"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "method": {
+          "enum": [
+            "formula",
+            "fixed"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "formula",
+        "fixed_value",
+        "displayed_average"
+      ],
+      "type": "object"
+    },
+    "HumanAdjudicatedEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudication_text": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adjudication_text"
+      ],
+      "type": "object"
+    },
+    "HumanAdjudicatedMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudication_tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adjudication_tags"
+      ],
+      "type": "object"
+    },
+    "LairProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initiative_count": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "initiative_tiebreak": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "regional_rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "initiative_count",
+        "initiative_tiebreak",
+        "regional_rules_text"
+      ],
+      "type": "object"
+    },
+    "MovementEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "movement",
+          "enum": [
+            "movement"
+          ],
+          "type": "string"
+        },
+        "movement_mode_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "movement_mode_key",
+        "distance"
+      ],
+      "type": "object"
+    },
+    "MovementMode": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "$ref": "#/$defs/Distance"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/MovementModeKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "mode",
+        "distance",
+        "qualifiers"
+      ],
+      "type": "object"
+    },
+    "MovementModeKind": {
+      "enum": [
+        "walk",
+        "fly",
+        "swim",
+        "climb",
+        "burrow",
+        "hover",
+        "special"
+      ],
+      "type": "string"
+    },
+    "MovementProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "modes": {
+          "items": {
+            "$ref": "#/$defs/MovementMode"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "modes"
+      ],
+      "type": "object"
+    },
+    "MultiattackMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "multiattack",
+          "enum": [
+            "multiattack"
+          ],
+          "type": "string"
+        },
+        "sequences": {
+          "items": {
+            "$ref": "#/$defs/ElementUse"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "sequences"
+      ],
+      "type": "object"
+    },
+    "PassiveMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "passive",
+          "enum": [
+            "passive"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "PhaseTransitionMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "destination_phase_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "phase_transition",
+          "enum": [
+            "phase_transition"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "destination_phase_key",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "ProficiencyDerivation": {
+      "enum": [
+        "standard",
+        "expertise",
+        "explicit_override"
+      ],
+      "type": "string"
+    },
+    "ProficiencyProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "saving_throws": {
+          "items": {
+            "$ref": "#/$defs/SavingThrowBonus"
+          },
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/SkillBonus"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "saving_throws",
+        "skills"
+      ],
+      "type": "object"
+    },
+    "RangeProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "long": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "normal": {
+          "$ref": "#/$defs/Distance"
+        }
+      },
+      "required": [
+        "normal",
+        "long"
+      ],
+      "type": "object"
+    },
+    "RechargeRange": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum": {
+          "maximum": 6,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "minimum": {
+          "maximum": 6,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "type": "object"
+    },
+    "ResourceChangeEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "integer"
+        },
+        "kind": {
+          "const": "resource_change",
+          "enum": [
+            "resource_change"
+          ],
+          "type": "string"
+        },
+        "resource_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "resource_key",
+        "amount"
+      ],
+      "type": "object"
+    },
+    "ResourceCost": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "resource_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_key",
+        "amount"
+      ],
+      "type": "object"
+    },
+    "ResourcePool": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "maximum": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "refresh": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "maximum",
+        "refresh",
+        "rules_text"
+      ],
+      "type": "object"
+    },
+    "RuleElement": {
+      "additionalProperties": false,
+      "properties": {
+        "activation": {
+          "$ref": "#/$defs/Activation"
+        },
+        "automation_support": {
+          "$ref": "#/$defs/AutomationSupport"
+        },
+        "costs": {
+          "items": {
+            "$ref": "#/$defs/ResourceCost"
+          },
+          "type": "array"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "mechanic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AttackMechanic"
+            },
+            {
+              "$ref": "#/$defs/SaveEffectMechanic"
+            },
+            {
+              "$ref": "#/$defs/MultiattackMechanic"
+            },
+            {
+              "$ref": "#/$defs/SpellcastingMechanic"
+            },
+            {
+              "$ref": "#/$defs/PassiveMechanic"
+            },
+            {
+              "$ref": "#/$defs/CompositeMechanic"
+            },
+            {
+              "$ref": "#/$defs/PhaseTransitionMechanic"
+            },
+            {
+              "$ref": "#/$defs/HumanAdjudicatedMechanic"
+            }
+          ]
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rules_text": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "section": {
+          "$ref": "#/$defs/RuleSection"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "section",
+        "summary",
+        "rules_text",
+        "activation",
+        "usage",
+        "costs",
+        "mechanic",
+        "tags",
+        "automation_support"
+      ],
+      "type": "object"
+    },
+    "RuleSection": {
+      "enum": [
+        "trait",
+        "action",
+        "bonus_action",
+        "reaction",
+        "legendary_action",
+        "lair_action",
+        "regional_effect"
+      ],
+      "type": "string"
+    },
+    "RulesetEdition": {
+      "enum": [
+        "2014",
+        "2024"
+      ],
+      "type": "string"
+    },
+    "RulesetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "edition": {
+          "$ref": "#/$defs/RulesetEdition"
+        },
+        "house_ruleset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "system": {
+          "$ref": "#/$defs/RulesetSystem"
+        }
+      },
+      "required": [
+        "system",
+        "edition",
+        "house_ruleset_id"
+      ],
+      "type": "object"
+    },
+    "RulesetSystem": {
+      "const": "dnd5e",
+      "enum": [
+        "dnd5e"
+      ],
+      "type": "string"
+    },
+    "SaveEffectMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "kind": {
+          "const": "save_effect",
+          "enum": [
+            "save_effect"
+          ],
+          "type": "string"
+        },
+        "save": {
+          "$ref": "#/$defs/SavingThrow"
+        },
+        "success_effects": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/TargetProfile"
+        }
+      },
+      "required": [
+        "kind",
+        "save",
+        "target",
+        "failure_effects",
+        "success_effects"
+      ],
+      "type": "object"
+    },
+    "SavingThrow": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
+        "dc": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ability",
+        "dc"
+      ],
+      "type": "object"
+    },
+    "SavingThrowBonus": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
+        "derivation": {
+          "$ref": "#/$defs/ProficiencyDerivation"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ability",
+        "value",
+        "derivation",
+        "note"
+      ],
+      "type": "object"
+    },
+    "Sense": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SenseKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "range": {
+          "$ref": "#/$defs/Distance"
+        }
+      },
+      "required": [
+        "kind",
+        "range",
+        "qualifiers"
+      ],
+      "type": "object"
+    },
+    "SenseKind": {
+      "enum": [
+        "darkvision",
+        "blindsight",
+        "tremorsense",
+        "truesight",
+        "special"
+      ],
+      "type": "string"
+    },
+    "SenseProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "passive_perception": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "senses": {
+          "items": {
+            "$ref": "#/$defs/Sense"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "senses",
+        "passive_perception"
+      ],
+      "type": "object"
+    },
+    "SkillBonus": {
+      "additionalProperties": false,
+      "properties": {
+        "derivation": {
+          "$ref": "#/$defs/ProficiencyDerivation"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skill": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "value": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill",
+        "value",
+        "derivation",
+        "note"
+      ],
+      "type": "object"
+    },
+    "SpellGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "anyOf": [
+            {
+              "maximum": 9,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spells": {
+          "items": {
+            "$ref": "#/$defs/SpellRef"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "usage",
+        "level",
+        "slots",
+        "spells"
+      ],
+      "type": "object"
+    },
+    "SpellRef": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "school": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "school",
+        "source_id",
+        "rules_text"
+      ],
+      "type": "object"
+    },
+    "SpellcastingMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AbilityName"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attack_bonus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "caster_level": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "casting_mode": {
+          "$ref": "#/$defs/CastingMode"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/SpellGroup"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "const": "spellcasting",
+          "enum": [
+            "spellcasting"
+          ],
+          "type": "string"
+        },
+        "save_dc": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "casting_mode",
+        "ability",
+        "save_dc",
+        "attack_bonus",
+        "caster_level",
+        "groups"
+      ],
+      "type": "object"
+    },
+    "StatModifierEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "stat_modifier",
+          "enum": [
+            "stat_modifier"
+          ],
+          "type": "string"
+        },
+        "modifier": {
+          "type": "integer"
+        },
+        "stat": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stat",
+        "modifier",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "StatblockFlavorText": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "description"
+      ],
+      "type": "object"
+    },
+    "SummonEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "creature_description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "summon",
+          "enum": [
+            "summon"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "creature_description",
+        "duration"
+      ],
+      "type": "object"
+    },
+    "TargetKind": {
+      "enum": [
+        "creature",
+        "creatures",
+        "self",
+        "point",
+        "area",
+        "object",
+        "structure",
+        "special"
+      ],
+      "type": "string"
+    },
+    "TargetProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "count",
+        "range",
+        "area",
+        "qualifiers"
+      ],
+      "type": "object"
+    },
+    "Trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "condition_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_element_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "source_element_key",
+        "condition_text"
+      ],
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/UsageKind"
+        },
+        "recharge_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RechargeRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refresh_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resource_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uses": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "recharge_range",
+        "uses",
+        "resource_key",
+        "refresh_text"
+      ],
+      "type": "object"
+    },
+    "UsageKind": {
+      "enum": [
+        "at_will",
+        "recharge",
+        "per_turn",
+        "per_round",
+        "per_day",
+        "once",
+        "resource",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "VitalityProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "hit_points": {
+          "$ref": "#/$defs/HitPointProfile"
+        }
+      },
+      "required": [
+        "hit_points"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abilities": {
+      "$ref": "#/$defs/AbilityScores"
+    },
+    "challenge": {
+      "$ref": "#/$defs/ChallengeProfile"
+    },
+    "communication": {
+      "$ref": "#/$defs/CommunicationProfile"
+    },
+    "defenses": {
+      "$ref": "#/$defs/DefenseProfile"
+    },
+    "flavor_text": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StatblockFlavorText"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "identity": {
+      "$ref": "#/$defs/CreatureIdentity"
+    },
+    "lair": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LairProfile"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "movement": {
+      "$ref": "#/$defs/MovementProfile"
+    },
+    "phases": {
+      "items": {
+        "$ref": "#/$defs/CreaturePhase"
+      },
+      "type": "array"
+    },
+    "proficiencies": {
+      "$ref": "#/$defs/ProficiencyProfile"
+    },
+    "resources": {
+      "items": {
+        "$ref": "#/$defs/ResourcePool"
+      },
+      "type": "array"
+    },
+    "rule_elements": {
+      "items": {
+        "$ref": "#/$defs/RuleElement"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "ruleset": {
+      "$ref": "#/$defs/RulesetRef"
+    },
+    "senses": {
+      "$ref": "#/$defs/SenseProfile"
+    },
+    "vitality": {
+      "$ref": "#/$defs/VitalityProfile"
+    }
+  },
+  "required": [
+    "ruleset",
+    "identity",
+    "defenses",
+    "vitality",
+    "movement",
+    "abilities",
+    "proficiencies",
+    "senses",
+    "communication",
+    "challenge",
+    "resources",
+    "rule_elements",
+    "phases",
+    "lair",
+    "flavor_text"
+  ],
+  "type": "object"
+}

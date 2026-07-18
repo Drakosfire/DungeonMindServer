@@ -1,1 +1,61 @@
-"""Pure domain layer for statblock v1."""
+"""Pure Pydantic domain layer for statblock v1."""
+
+from statblocks_v1.domain.primitives import (
+    Activation,
+    AutomationSupport,
+    DiceExpression,
+    Distance,
+    Duration,
+    Effect,
+    RangeProfile,
+    ResourceCost,
+    TargetProfile,
+    Trigger,
+    Usage,
+)
+from statblocks_v1.domain.profiles import (
+    AbilityScores,
+    ChallengeProfile,
+    CommunicationProfile,
+    CreatureIdentity,
+    DefenseProfile,
+    LairProfile,
+    MovementProfile,
+    ProficiencyProfile,
+    ResourcePool,
+    RulesetRef,
+    SenseProfile,
+    StatblockFlavorText,
+    VitalityProfile,
+)
+from statblocks_v1.domain.rule_elements import Mechanic, RuleElement, StatblockDefinitionV1
+
+__all__ = [
+    "AbilityScores",
+    "Activation",
+    "AutomationSupport",
+    "ChallengeProfile",
+    "CommunicationProfile",
+    "CreatureIdentity",
+    "DefenseProfile",
+    "DiceExpression",
+    "Distance",
+    "Duration",
+    "Effect",
+    "LairProfile",
+    "Mechanic",
+    "MovementProfile",
+    "ProficiencyProfile",
+    "RangeProfile",
+    "ResourceCost",
+    "ResourcePool",
+    "RuleElement",
+    "RulesetRef",
+    "SenseProfile",
+    "StatblockDefinitionV1",
+    "StatblockFlavorText",
+    "TargetProfile",
+    "Trigger",
+    "Usage",
+    "VitalityProfile",
+]
