@@ -11,6 +11,11 @@ from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 SCHEMA_ARTIFACT_DIRECTORY = Path(__file__).with_name("schema_artifacts")
 
+
+class OpenAIStrictSchemaCompilationError(ValueError):
+    """Raised when a canonical schema cannot be compiled losslessly for OpenAI."""
+
+
 # Schema-node metadata keys that OpenAI Structured Outputs does not accept.
 # These must NOT be stripped when they appear as *property names* under
 # ``properties`` (e.g. ArmorClassProfile.default, StatblockFlavorText.description).
@@ -25,9 +30,10 @@ _UNSUPPORTED_OPENAI_METADATA = frozenset(
     }
 )
 
+# Composition / constraint keywords with no lossless OpenAI rewrite.
+# Encountering these in a canonical schema fails compilation (fail closed).
 _UNSUPPORTED_OPENAI_KEYWORDS = frozenset(
     {
-        "oneOf",
         "prefixItems",
         "patternProperties",
         "unevaluatedProperties",
@@ -52,7 +58,8 @@ def openai_strict_json_schema() -> dict[str, Any]:
 
     - Strips documentation-only metadata at schema-node level only.
     - Preserves property names that collide with metadata words.
-    - Rewrites ``oneOf`` → ``anyOf``.
+    - Lossless rewrites: ``oneOf`` → ``anyOf``; single-branch ``allOf`` unwrap.
+    - Fails closed on unsupported constructs without a lossless rewrite.
     - Closes every object (``additionalProperties: false`` + all properties required).
     """
     return _transform_schema_node(copy.deepcopy(canonical_json_schema()))
@@ -82,15 +89,24 @@ def _transform_schema_node(node: Any) -> Any:
     if not isinstance(node, dict):
         return node
 
+    unsupported = _UNSUPPORTED_OPENAI_KEYWORDS & set(node.keys())
+    if unsupported:
+        names = ", ".join(sorted(repr(k) for k in unsupported))
+        raise OpenAIStrictSchemaCompilationError(
+            f"Unsupported OpenAI Structured Outputs construct(s) {names}; "
+            "no lossless rewrite is defined (fail closed)"
+        )
+
+    if "allOf" in node:
+        return _transform_schema_node(_unwrap_single_all_of(node))
+
     transformed: dict[str, Any] = {}
     for key, value in node.items():
         if key in _UNSUPPORTED_OPENAI_METADATA:
             continue
         if key == "oneOf":
+            # Lossless rewrite: OpenAI supports anyOf, not oneOf.
             transformed["anyOf"] = _transform_schema_node(value)
-            continue
-        if key in _UNSUPPORTED_OPENAI_KEYWORDS:
-            # Drop remaining unsupported constructs; model surface should avoid them.
             continue
         if key == "properties" and isinstance(value, dict):
             # Property names are never treated as metadata keywords.
@@ -112,6 +128,35 @@ def _transform_schema_node(node: Any) -> Any:
         if "properties" in transformed:
             transformed["required"] = list(transformed["properties"])
     return transformed
+
+
+def _unwrap_single_all_of(node: dict[str, Any]) -> dict[str, Any]:
+    """Losslessly unwrap Pydantic's single-branch ``allOf`` + sibling metadata pattern.
+
+    Multi-branch ``allOf`` has no lossless OpenAI rewrite and fails closed.
+    """
+    branches = node["allOf"]
+    if not isinstance(branches, list) or len(branches) != 1:
+        count = len(branches) if isinstance(branches, list) else "non-list"
+        raise OpenAIStrictSchemaCompilationError(
+            f"Unsupported allOf with {count} branches; "
+            "only a single-branch allOf unwrap is defined (fail closed)"
+        )
+    sole = branches[0]
+    if not isinstance(sole, dict):
+        raise OpenAIStrictSchemaCompilationError(
+            "Unsupported allOf branch: expected a schema object (fail closed)"
+        )
+    merged = dict(sole)
+    for key, value in node.items():
+        if key == "allOf":
+            continue
+        if key in merged and key not in _UNSUPPORTED_OPENAI_METADATA:
+            raise OpenAIStrictSchemaCompilationError(
+                f"Cannot unwrap allOf: conflicting sibling key {key!r} (fail closed)"
+            )
+        merged[key] = value
+    return merged
 
 
 def _walk_property_paths(

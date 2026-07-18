@@ -638,9 +638,13 @@ SpellGroup
 
 SpellRef
   name
+  school: optional
   source_id: optional
   rules_text: optional
 ```
+
+Spell level is authored only on `SpellGroup.level`, never on `SpellRef`, so a
+group cannot contradict its members.
 
 This supports normal slots, innate at-will spells, per-day spells, and charge-based casting
 without forcing all casters into one block.

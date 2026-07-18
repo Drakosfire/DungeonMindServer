@@ -55,6 +55,6 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `cantrips`, `known_spells` | retained but restructured | `SpellGroup[]` |
 | level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` |
 | `Spell.name` | retained directly | `SpellRef.name` |
-| `Spell.level` | retained directly | `SpellRef.level` |
+| `Spell.level` | retained but restructured | `SpellGroup.level` (sole level authority; not duplicated on `SpellRef`) |
 | `Spell.school` | retained directly | `SpellRef.school` |
 | `Spell.description` | retained but restructured | `SpellRef.rules_text` |

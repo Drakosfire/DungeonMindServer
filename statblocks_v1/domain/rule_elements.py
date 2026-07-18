@@ -91,8 +91,9 @@ class MultiattackMechanic(StrictModel):
 
 
 class SpellRef(StrictModel):
+    """Spell identity within a group; level lives only on ``SpellGroup.level``."""
+
     name: str = Field(min_length=1)
-    level: int | None = Field(default=None, ge=0, le=9)
     school: str | None = None
     source_id: str | None = None
     rules_text: str | None = None

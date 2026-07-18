@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from statblocks_v1.domain.schema import (
     SCHEMA_ARTIFACT_DIRECTORY,
+    OpenAIStrictSchemaCompilationError,
     _UNSUPPORTED_OPENAI_KEYWORDS,
     _UNSUPPORTED_OPENAI_METADATA,
+    _transform_schema_node,
     canonical_json_schema,
     collect_property_paths,
     openai_strict_json_schema,
@@ -62,8 +66,67 @@ def test_openai_strict_schema_uses_anyof_not_oneof_or_prefix_items() -> None:
     schema = openai_strict_json_schema()
     encoded = json.dumps(schema)
     assert '"oneOf"' not in encoded
+    assert '"allOf"' not in encoded
     assert '"prefixItems"' not in encoded
     assert "anyOf" in encoded
+
+
+def test_openai_strict_compiler_fails_closed_on_unsupported_constructs() -> None:
+    """Unsupported composition keywords must raise, not silently disappear."""
+    with pytest.raises(OpenAIStrictSchemaCompilationError, match="not"):
+        _transform_schema_node(
+            {
+                "type": "object",
+                "properties": {"x": {"not": {"type": "null"}}},
+                "additionalProperties": False,
+                "required": ["x"],
+            }
+        )
+
+    with pytest.raises(OpenAIStrictSchemaCompilationError, match="allOf"):
+        _transform_schema_node(
+            {
+                "allOf": [
+                    {"type": "object", "properties": {"a": {"type": "string"}}},
+                    {"type": "object", "properties": {"b": {"type": "integer"}}},
+                ]
+            }
+        )
+
+    with pytest.raises(OpenAIStrictSchemaCompilationError, match="if"):
+        _transform_schema_node(
+            {
+                "type": "object",
+                "properties": {"n": {"type": "integer"}},
+                "if": {"properties": {"n": {"const": 0}}},
+                "then": {"required": ["n"]},
+            }
+        )
+
+    # Lossless rewrites still succeed.
+    rewritten = _transform_schema_node(
+        {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {"kind": {"const": "a"}},
+                    "required": ["kind"],
+                },
+                {
+                    "type": "object",
+                    "properties": {"kind": {"const": "b"}},
+                    "required": ["kind"],
+                },
+            ]
+        }
+    )
+    assert "anyOf" in rewritten
+    assert "oneOf" not in rewritten
+
+    unwrapped = _transform_schema_node(
+        {"allOf": [{"$ref": "#/$defs/DistanceUnit"}], "default": "feet"}
+    )
+    assert unwrapped == {"$ref": "#/$defs/DistanceUnit"}
 
 
 def test_canonical_and_provider_property_paths_match() -> None:

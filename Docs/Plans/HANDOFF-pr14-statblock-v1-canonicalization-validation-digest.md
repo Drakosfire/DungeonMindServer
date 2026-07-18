@@ -19,10 +19,13 @@
   not duplicated on `ProficiencyProfile`.
 - `Usage.recharge_range` is a `{minimum, maximum}` object (`RechargeRange`),
   not a tuple (OpenAI-strict safe).
-- `SpellRef` includes `level` and `school` in addition to `name` / `rules_text`.
+- `SpellRef` includes `school` (not `level`); spell level is authored only on
+  `SpellGroup.level` so group and member cannot contradict each other.
 - Schema compiler (`statblocks_v1/domain/schema.py`) strips metadata
   context-aware (preserves property names `default` / `description`),
-  rewrites `oneOf` → `anyOf`, and rejects `prefixItems`.
+  losslessly rewrites `oneOf` → `anyOf` and single-branch `allOf` unwrap,
+  and **fails closed** on unsupported constructs (`not`, multi-branch `allOf`,
+  `if`/`then`/`else`, `prefixItems`, etc.).
 - Pydantic canonical and OpenAI strict artifacts are deterministic JSON at
   `statblocks_v1/domain/schema_artifacts/statblock_definition_v1.{canonical,openai-strict}.schema.json`.
 - Fixtures are under `Docs/Design/fixtures/dungeonbuddy-statblock-v1/`.

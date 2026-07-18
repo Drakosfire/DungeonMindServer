@@ -2187,21 +2187,8 @@
     },
     "SpellRef": {
       "additionalProperties": false,
+      "description": "Reference to a spell within a group.\n\nSpell level is authored only on the containing ``SpellGroup.level`` —\nnot duplicated here — so a group cannot contradict its members.",
       "properties": {
-        "level": {
-          "anyOf": [
-            {
-              "maximum": 9,
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Level"
-        },
         "name": {
           "minLength": 1,
           "title": "Name",

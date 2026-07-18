@@ -729,11 +729,7 @@
       "additionalProperties": false,
       "properties": {
         "unit": {
-          "allOf": [
-            {
-              "$ref": "#/$defs/DistanceUnit"
-            }
-          ]
+          "$ref": "#/$defs/DistanceUnit"
         },
         "value": {
           "minimum": 0,
@@ -1908,18 +1904,6 @@
     "SpellRef": {
       "additionalProperties": false,
       "properties": {
-        "level": {
-          "anyOf": [
-            {
-              "maximum": 9,
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "name": {
           "minLength": 1,
           "type": "string"
@@ -1957,7 +1941,6 @@
       },
       "required": [
         "name",
-        "level",
         "school",
         "source_id",
         "rules_text"
