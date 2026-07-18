@@ -216,11 +216,12 @@ def test_attack_target_count_and_area_coherence(load_fixture) -> None:
     assert "ATTACK_TARGET_AREA_UNEXPECTED" in codes
 
 
-def test_prepared_spell_group_requires_slots_and_at_will(load_fixture) -> None:
+def test_prepared_spell_group_requires_slots_and_spell_slots_usage(load_fixture) -> None:
     payload = deepcopy(load_fixture("spellcaster"))
     payload["rule_elements"][0]["mechanic"]["groups"][1]["slots"] = None
-    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["kind"] = "per_day"
-    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["uses"] = 3
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["kind"] = "at_will"
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["uses"] = None
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["refresh_text"] = None
 
     receipt = validate_definition(
         StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
@@ -228,3 +229,53 @@ def test_prepared_spell_group_requires_slots_and_at_will(load_fixture) -> None:
     codes = {issue.code for issue in receipt.issues}
     assert "SPELL_GROUP_SLOTS_INCOHERENT" in codes
     assert "SPELL_GROUP_USAGE_INCOHERENT" in codes
+
+
+def test_spell_group_resource_key_must_resolve(load_fixture) -> None:
+    payload = load_fixture("innate_spellcaster")
+    payload["rule_elements"][0]["mechanic"]["casting_mode"] = "charges"
+    payload["rule_elements"][0]["mechanic"]["caster_level"] = None
+    payload["rule_elements"][0]["mechanic"]["groups"] = [
+        {
+            "usage": {
+                "kind": "resource",
+                "recharge_range": None,
+                "uses": None,
+                "resource_key": "missing_charge_pool",
+                "refresh_text": None,
+            },
+            "level": 1,
+            "slots": None,
+            "spells": [
+                {
+                    "name": "magic missile",
+                    "school": None,
+                    "source_id": None,
+                    "rules_text": None,
+                }
+            ],
+        }
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    issue = next(
+        item for item in receipt.issues if item.code == "UNKNOWN_RESOURCE_REFERENCE"
+    )
+    assert issue.field_path == (
+        "rule_elements[0].mechanic.groups[0].usage.resource_key"
+    )
+
+
+def test_attack_target_range_is_rejected(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["rule_elements"][0]["mechanic"]["target"]["range"] = {
+        "normal": {"value": 5, "unit": "feet"},
+        "long": None,
+    }
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert "ATTACK_TARGET_RANGE_UNEXPECTED" in {issue.code for issue in receipt.issues}

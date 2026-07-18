@@ -531,12 +531,15 @@ Activation
 
 ```text
 Usage
-  kind: at_will | recharge | per_turn | per_round | per_day | once | resource | manual
+  kind: at_will | recharge | per_turn | per_round | per_day | once | resource | spell_slots | manual
   recharge_range: optional
   uses: optional
   resource_key: optional
   refresh_text: optional
 ```
+
+`spell_slots` marks slot-backed prepared/known spell groups. Slot count lives on
+`SpellGroup.slots`; do not overload `at_will` for limited slot casting.
 
 ### 6.5 Costs
 

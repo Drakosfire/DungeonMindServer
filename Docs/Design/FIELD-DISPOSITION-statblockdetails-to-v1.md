@@ -53,7 +53,7 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `SpellcastingBlock.level` | retained but restructured | `SpellcastingMechanic.caster_level` |
 | `SpellcastingBlock.ability`, `.save_dc`, `.attack_bonus` | retained directly | spellcasting mechanic fields |
 | `cantrips`, `known_spells` | retained but restructured | `SpellGroup[]` |
-| level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` |
+| level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` with `usage.kind = spell_slots` (not `at_will`) |
 | `Spell.name` | retained directly | `SpellRef.name` |
 | `Spell.level` | retained but restructured | `SpellGroup.level` (sole level authority; not duplicated on `SpellRef`) |
 | `Spell.school` | retained directly | `SpellRef.school` |

@@ -327,6 +327,16 @@ def _validate_references(definition: StatblockDefinitionV1, issue: IssueEmitter)
                 "UNKNOWN_PHASE_REFERENCE",
                 f"{path}.mechanic.destination_phase_key",
             )
+        if isinstance(mechanic, SpellcastingMechanic):
+            for group_index, group in enumerate(mechanic.groups):
+                if group.usage.resource_key:
+                    _require_reference(
+                        group.usage.resource_key,
+                        resource_keys,
+                        issue,
+                        "UNKNOWN_RESOURCE_REFERENCE",
+                        f"{path}.mechanic.groups[{group_index}].usage.resource_key",
+                    )
         for effect_path, effect in _iter_element_effects(element):
             full_effect_path = f"{path}.{effect_path}"
             if isinstance(effect, (EnableElementsEffect, DisableElementsEffect)):
@@ -525,6 +535,23 @@ def _validate_usage(usage: Usage, path: str, issue: IssueEmitter) -> None:
             )
         return
 
+    if kind is UsageKind.spell_slots:
+        if usage.uses is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                "Spell-slot usage must not set uses; encode slot count on SpellGroup.slots.",
+            )
+        if usage.resource_key is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                "Spell-slot usage must not set resource_key.",
+            )
+        return
+
     if kind in _LIMITED_USE_KINDS:
         if usage.uses is None:
             issue(
@@ -620,6 +647,14 @@ def _validate_attack_mechanic(
 
     target = mechanic.target
     target_path = f"{path}.target"
+    # Attack distance authority lives on AttackMechanic.reach / .range only.
+    if target.range is not None:
+        issue(
+            "ATTACK_TARGET_RANGE_UNEXPECTED",
+            ValidationSeverity.error,
+            f"{target_path}.range",
+            "Attack target must not set range; use mechanic.reach or mechanic.range.",
+        )
     if target.kind is TargetKind.creatures and target.count is None:
         issue(
             "ATTACK_TARGET_COUNT_REQUIRED",
@@ -746,12 +781,12 @@ def _validate_spell_group(
                     f"{path}.slots",
                     "Leveled prepared/known groups require slots.",
                 )
-            if group.usage.kind is not UsageKind.at_will:
+            if group.usage.kind is not UsageKind.spell_slots:
                 issue(
                     "SPELL_GROUP_USAGE_INCOHERENT",
                     ValidationSeverity.error,
                     f"{path}.usage.kind",
-                    "Leveled prepared/known groups must use at_will with slots.",
+                    "Leveled prepared/known groups must use spell_slots usage with slots.",
                 )
         return
 

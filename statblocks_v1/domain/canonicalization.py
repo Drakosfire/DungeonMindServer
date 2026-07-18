@@ -42,10 +42,11 @@ _SET_LIKE_FIELD_NAMES = frozenset(
 
 @final
 class CanonicalDefinitionJSON(str):
-    """Branded canonical JSON produced only by :func:`canonicalize_definition`.
+    """Canonical JSON text returned by :func:`canonicalize_definition`.
 
-    Plain ``str`` / ``bytes`` values are intentionally *not* accepted by the
-    digest API — callers must go through the canonicalizer.
+    This is a convenience brand for persistence/transport callers. Digests must
+    still be computed from :class:`StatblockDefinitionV1` so forged wrappers
+    around noncanonical text cannot bypass canonicalization.
     """
 
     __slots__ = ()

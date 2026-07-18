@@ -112,6 +112,7 @@ class UsageKind(str, Enum):
     per_day = "per_day"
     once = "once"
     resource = "resource"
+    spell_slots = "spell_slots"
     manual = "manual"
 
 

@@ -2604,6 +2604,7 @@
         "per_day",
         "once",
         "resource",
+        "spell_slots",
         "manual"
       ],
       "title": "UsageKind",

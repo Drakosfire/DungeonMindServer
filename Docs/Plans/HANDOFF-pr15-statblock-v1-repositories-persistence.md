@@ -11,10 +11,11 @@
   branded `CanonicalDefinitionJSON` (compact UTF-8 JSON under
   `statblock-canonicalizer-v1`); ordered mechanics lists are preserved, while
   known set-like metadata (including tags) is normalized to NFC + sorted unique.
-- Digest API: `compute_definition_digest(definition | CanonicalDefinitionJSON)`
-  returns `sha256:<lowercase-hex>`. Raw `str` / `bytes` are rejected — only the
-  model or branded canonical payload is accepted. Repositories must persist that
-  exact digest with the exact canonical definition text.
+- Digest API: `compute_definition_digest(definition)` accepts only
+  `StatblockDefinitionV1` and returns `sha256:<lowercase-hex>` over internally
+  canonicalized JSON. Raw `str` / `bytes` and forged `CanonicalDefinitionJSON`
+  wrappers are rejected. Repositories must persist that exact digest with the
+  exact canonical definition text from `canonicalize_definition`.
 - Before every create or append, invoke
   `validate_definition(definition, ValidationMode.persistence)` and reject receipts
   where `is_persistence_ready` is false. Readiness is **mode-safe**: only a
@@ -40,9 +41,10 @@
   `ATTACK_REACH_UNEXPECTED`, `ATTACK_RANGE_UNEXPECTED`,
   `ATTACK_TARGET_COUNT_REQUIRED`, `ATTACK_TARGET_COUNT_INCOHERENT`,
   `ATTACK_TARGET_AREA_REQUIRED`, `ATTACK_TARGET_AREA_UNEXPECTED`,
-  `USAGE_FIELDS_INCOHERENT`, `SPELLCASTING_MODE_INCOHERENT`,
-  `SPELL_GROUP_USAGE_INCOHERENT`, `SPELL_GROUP_SLOTS_INCOHERENT`,
-  `SPELL_GROUP_LEVEL_INCOHERENT`, `HUMAN_ADJUDICATED_AUTOMATION_MISMATCH`,
+  `ATTACK_TARGET_RANGE_UNEXPECTED`, `USAGE_FIELDS_INCOHERENT`,
+  `SPELLCASTING_MODE_INCOHERENT`, `SPELL_GROUP_USAGE_INCOHERENT`,
+  `SPELL_GROUP_SLOTS_INCOHERENT`, `SPELL_GROUP_LEVEL_INCOHERENT`,
+  `HUMAN_ADJUDICATED_AUTOMATION_MISMATCH`,
   `RULES_TEXT_ATTACK_BONUS_MISMATCH`, `RULES_TEXT_DAMAGE_MISMATCH`,
   `RULES_TEXT_SAVE_DC_MISMATCH`, and `RULES_TEXT_SECTION_MISMATCH`.
 - Store immutable revision fields exactly: canonical definition JSON, definition
