@@ -4,18 +4,21 @@ from __future__ import annotations
 
 import ast
 import importlib
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from routers.internal_auth import INTERNAL_KEY_ENV, INTERNAL_KEY_HEADER
 from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
+from statblocks_v1.api.dependencies import INTERNAL_KEY_ENV, INTERNAL_KEY_HEADER
 from statblocks_v1.testing import create_test_app
 
 HEALTH_PATH = "/api/internal/dungeonbuddy/v1/statblocks/health"
 TEST_INTERNAL_KEY = "test-statblocks-v1-internal-key"
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "statblocks_v1"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_domain_package_imports_without_external_env(monkeypatch) -> None:
@@ -50,9 +53,10 @@ def test_health_missing_header_denied(client: TestClient) -> None:
     response = client.get(HEALTH_PATH)
 
     assert response.status_code == 401
-    body = response.json()["detail"]["error"]
-    assert body["code"] == "unauthorized_internal_client"
-    assert "Missing" in body["message"]
+    body = response.json()
+    assert set(body.keys()) == {"error"}
+    assert body["error"]["code"] == "unauthorized_internal_client"
+    assert "Missing" in body["error"]["message"]
 
 
 def test_health_wrong_header_denied(client: TestClient) -> None:
@@ -62,9 +66,10 @@ def test_health_wrong_header_denied(client: TestClient) -> None:
     )
 
     assert response.status_code == 403
-    body = response.json()["detail"]["error"]
-    assert body["code"] == "unauthorized_internal_client"
-    assert "Invalid" in body["message"]
+    body = response.json()
+    assert set(body.keys()) == {"error"}
+    assert body["error"]["code"] == "unauthorized_internal_client"
+    assert "Invalid" in body["error"]["message"]
 
 
 def test_health_missing_server_env_fails_closed(unconfigured_client: TestClient) -> None:
@@ -73,9 +78,10 @@ def test_health_missing_server_env_fails_closed(unconfigured_client: TestClient)
         headers={INTERNAL_KEY_HEADER: TEST_INTERNAL_KEY},
     )
 
-    assert response.status_code == 500
-    body = response.json()["detail"]["error"]
-    assert body["code"] == "internal_service_misconfigured"
+    assert response.status_code == 503
+    body = response.json()
+    assert set(body.keys()) == {"error"}
+    assert body["error"]["code"] == "internal_service_misconfigured"
 
 
 def test_create_test_app_does_not_import_production_app() -> None:
@@ -83,6 +89,105 @@ def test_create_test_app_does_not_import_production_app() -> None:
     create_test_app()
     newly_loaded = set(sys.modules) - before
     assert "app" not in newly_loaded
+
+
+def test_clean_process_never_imports_production_app() -> None:
+    """Prove isolation in a fresh interpreter (parent conftest cannot preload ``app``)."""
+    script = """
+import os
+import sys
+
+for key in (
+    "DUNGEONBUDDY_INTERNAL_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "FIREBASE_CREDENTIALS",
+    "GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET",
+):
+    os.environ.pop(key, None)
+
+assert "app" not in sys.modules
+
+from fastapi.testclient import TestClient
+from statblocks_v1.testing import create_test_app
+
+assert "app" not in sys.modules
+app = create_test_app()
+assert "app" not in sys.modules
+
+os.environ["DUNGEONBUDDY_INTERNAL_API_KEY"] = "isolation-key"
+client = TestClient(app)
+response = client.get(
+    "/api/internal/dungeonbuddy/v1/statblocks/health",
+    headers={"X-DungeonBuddy-Internal-Key": "isolation-key"},
+)
+assert response.status_code == 200, response.text
+assert "app" not in sys.modules
+print("ok")
+"""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "DUNGEONBUDDY_INTERNAL_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "FIREBASE_CREDENTIALS",
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+        }
+    }
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "ok" in completed.stdout
+
+
+def test_focused_lane_skips_parent_conftest() -> None:
+    """Advertised lane must not load ``tests/conftest.py`` (imports production ``app``)."""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "DUNGEONBUDDY_INTERNAL_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "FIREBASE_CREDENTIALS",
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+        }
+    }
+    completed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "pytest",
+            "--confcutdir=tests/statblocks_v1",
+            "--trace-config",
+            "tests/statblocks_v1/test_import_boundaries.py",
+            "--collect-only",
+            "-q",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, output
+    assert "tests/conftest.py" not in output
+    assert "tests/statblocks_v1/conftest.py" in output
 
 
 def test_package_source_does_not_construct_firebase_or_openai() -> None:
@@ -95,7 +200,6 @@ def test_package_source_does_not_construct_firebase_or_openai() -> None:
         "statblockgenerator",
     )
     for path in PACKAGE_ROOT.rglob("*.py"):
-        # api/dependencies may import routers.internal_auth only.
         source = path.read_text()
         tree = ast.parse(source)
         for node in ast.walk(tree):
@@ -105,3 +209,15 @@ def test_package_source_does_not_construct_firebase_or_openai() -> None:
                 assert node.func.attr != "OpenAI", f"{path} constructs OpenAI"
         for token in forbidden_tokens:
             assert token not in source, f"{path} contains forbidden token {token!r}"
+
+
+def test_openapi_declares_typed_auth_error_responses(client: TestClient) -> None:
+    schema = client.app.openapi()
+    health = schema["paths"][HEALTH_PATH]["get"]
+    assert "401" in health["responses"]
+    assert "403" in health["responses"]
+    assert "503" in health["responses"]
+    components = schema["components"]["schemas"]
+    assert "ErrorEnvelopeV1" in components
+    assert "ErrorDetailV1" in components
+    assert "HealthResponseV1" in components

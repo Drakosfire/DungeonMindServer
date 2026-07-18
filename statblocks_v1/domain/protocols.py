@@ -2,6 +2,9 @@
 
 These protocols intentionally declare only the capability shape. Concrete
 infrastructure adapters and repository methods land in later stacked PRs.
+
+Empty placeholder protocols are not ``@runtime_checkable``: an empty structural
+protocol is satisfied by any object, which makes ``isinstance`` checks misleading.
 """
 
 from __future__ import annotations
@@ -22,26 +25,21 @@ class IdAllocator(Protocol):
         """Allocate a server-owned opaque identifier with the given prefix."""
 
 
-@runtime_checkable
 class GenerationProvider(Protocol):
     """Structured Outputs provider seam (implemented in PR16)."""
 
 
-@runtime_checkable
 class CandidateRepository(Protocol):
     """Candidate persistence seam (implemented in PR15)."""
 
 
-@runtime_checkable
 class StatblockRepository(Protocol):
     """Logical statblock persistence seam (implemented in PR15)."""
 
 
-@runtime_checkable
 class RevisionRepository(Protocol):
     """Immutable revision persistence seam (implemented in PR15)."""
 
 
-@runtime_checkable
 class AssetGateway(Protocol):
     """Asset reference gateway seam (implemented in PR19)."""

@@ -144,13 +144,13 @@ Required:
 - test confirms no Firebase/OpenAI provider is constructed;
 - focused test command exits successfully from a clean environment.
 
-Recommended command shape:
+Required focused command (cuts off ancestor `tests/conftest.py`):
 
 ```bash
-pytest tests/statblocks_v1/test_health.py -q
+uv run pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 ```
 
-The exact command must be recorded in the PR.
+The exact command must be recorded in the PR. Do not advertise a lane that loads the production `app` via parent conftest.
 
 ## 6. Acceptance criteria
 

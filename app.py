@@ -55,6 +55,7 @@ from routers.cardgenerator_compatibility_router import router as cardgenerator_c
 from routers.statblockgenerator_router import router as statblockgenerator_router
 
 # Import DungeonBuddy statblock v1 bounded-context router
+from statblocks_v1.api.http_errors import register_error_handlers as register_statblocks_v1_error_handlers
 from statblocks_v1.api.router import router as dungeonbuddy_statblocks_v1_router
 
 # Import PlayerCharacterGenerator router
@@ -214,6 +215,7 @@ app.include_router(
 )
 
 # Include DungeonBuddy statblock v1 router (foundation health only in PR12)
+register_statblocks_v1_error_handlers(app)
 app.include_router(
     dungeonbuddy_statblocks_v1_router,
     tags=["DungeonBuddy Statblocks v1"]
