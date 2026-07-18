@@ -253,8 +253,8 @@ def test_minimal_lane_excludes_full_server_dependencies() -> None:
     assert "ok" in completed.stdout
 
 
-def test_package_source_does_not_construct_firebase_or_openai() -> None:
-    """Static guard: foundation code never constructs Firebase/OpenAI clients."""
+def test_inner_layers_do_not_construct_firebase_or_openai() -> None:
+    """Static guard: only infrastructure adapters may construct external clients."""
     forbidden_tokens = (
         "OpenAI(",
         "firebase_admin",
@@ -262,16 +262,19 @@ def test_package_source_does_not_construct_firebase_or_openai() -> None:
         "StatBlockDetails",
         "statblockgenerator",
     )
-    for path in PACKAGE_ROOT.rglob("*.py"):
-        source = path.read_text()
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                assert node.func.id != "OpenAI", f"{path} constructs OpenAI"
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                assert node.func.attr != "OpenAI", f"{path} constructs OpenAI"
-        for token in forbidden_tokens:
-            assert token not in source, f"{path} contains forbidden token {token!r}"
+    protected_roots = (PACKAGE_ROOT / "domain", PACKAGE_ROOT / "application", PACKAGE_ROOT / "api")
+    for root in protected_roots:
+        for path in root.rglob("*.py"):
+            # Infrastructure owns concrete provider SDK construction.
+            source = path.read_text()
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                    assert node.func.id != "OpenAI", f"{path} constructs OpenAI"
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                    assert node.func.attr != "OpenAI", f"{path} constructs OpenAI"
+            for token in forbidden_tokens:
+                assert token not in source, f"{path} contains forbidden token {token!r}"
 
 
 def test_openapi_declares_typed_auth_error_responses(client: TestClient) -> None:

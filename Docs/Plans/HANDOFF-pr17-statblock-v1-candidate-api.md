@@ -18,6 +18,27 @@
 - Reuse `compute_request_digest(operation, payload)` for request replay: it includes
   operation parameters rather than using only the mechanics definition digest.
 
+## PR16 predecessor completion notes
+
+- Application entry points are `GenerationServiceV1.generate(GenerateStatblockCommandV1)`
+  and `GenerationServiceV1.revise(ReviseStatblockCommandV1)`. Both return either
+  `GeneratedStatblockCandidateV1` or `GenerationFailureV1`; routes must map the latter
+  without exposing provider exceptions.
+- Construct the service through dependency injection with a `DefinitionProvider`,
+  `CandidateRepository`, `GenerationSettingsV1`, clock, candidate-ID factory, and,
+  for revision locators, a definition resolver. Tests use `FakeDefinitionProvider`
+  plus `InMemoryCandidateRepository`.
+- Provider outcomes are `success`, `refusal`, `incomplete`, `timeout`, `rate_limit`,
+  and `failure`; application failures are prefixed `provider_`, with
+  `definition_invalid` reserved for parsing/semantic validation failures.
+- Settings are `STATBLOCKS_V1_OPENAI_MODEL`,
+  `STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS`, `STATBLOCKS_V1_OPENAI_MAX_RETRIES`, and
+  `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS`. The default model resolves
+  `MODEL_POLICY.json` action `structured_generation`, not a raw model ID.
+- `FakeDefinitionProvider` accepts a JSON payload or `ProviderOutcomeV1` and records
+  calls. It supports offline route tests; `candidate_id_factory` and clock make
+  receipts/candidate expiry deterministic.
+
 ## 0. Mission
 
 Expose the generation, revision, validation, and candidate-read operations through the dedicated authenticated DungeonBuddy v1 router.

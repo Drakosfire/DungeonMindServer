@@ -54,6 +54,7 @@ class GeneratedStatblockCandidateV1(StrictModel):
     generation_receipt: GenerationReceiptV1 | None = None
     asset_brief: dict[str, Any] | None = None
     assets: list[dict[str, Any]] = Field(default_factory=list)
+    asset_warnings: list[str] = Field(default_factory=list)
     created_at: datetime
     expires_at: datetime
     source_locator: ResourceLocatorV1 | None = None
