@@ -193,12 +193,11 @@ PR21 is complete when:
 
 ## 13. Completion record
 
-The PR description must include:
+### PR21 completion
 
-- consumer inventory;
-- files moved/removed;
-- compatibility evidence;
-- dependency/build changes;
-- tests actually run;
-- remaining known architecture debt;
-- recommended next modernization slice, if any.
+- **Consumer inventory:** `Docs/Design/AUDIT-statblock-legacy-consumers.md` confirms active LandingPage generation, project, image, validation, and CR consumers; active DungeonBuddy v2 consumers; and session routes with unknown current consumers.
+- **Files moved/removed:** v2 compatibility routes moved to `routers/statblock_v2_compatibility_router.py`; the legacy router retains app-facing paths. Removed tracked `dungeonmind.egg-info` metadata and historical `.VSCodeCounter` reports.
+- **Compatibility evidence:** focused route smoke tests preserve legacy paths and the effective legacy health payload; v2 route and auth tests exercise the unchanged URLs.
+- **Dependency/build review:** pytest remains duplicated across runtime, optional development, and dependency-group declarations. Moving it would rewrite the committed lockfile substantially with the available uv version, so this cleanup is deferred rather than introducing lockfile churn.
+- **Remaining debt:** `Docs/Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md` records startup, global-service, and synchronous Firestore concerns.
+- **Recommended next slice:** application-factory and startup-lifecycle modernization, followed by evidence-based legacy session disposition.

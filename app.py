@@ -51,8 +51,9 @@ from routers.asset_router import router as asset_router
 from routers.cardgenerator_project_router import router as cardgenerator_project_router
 from routers.cardgenerator_compatibility_router import router as cardgenerator_compatibility_router
 
-# Import StatBlockGenerator router
+# Import legacy StatBlockGenerator app routes and historical v2 compatibility routes.
 from routers.statblockgenerator_router import router as statblockgenerator_router
+from routers.statblock_v2_compatibility_router import router as statblock_v2_compatibility_router
 
 # Import DungeonBuddy statblock v1 bounded-context router
 from firestore.firebase_config import db as dungeonbuddy_statblocks_v1_db
@@ -226,10 +227,14 @@ app.include_router(
     tags=["Global Object Management"]
 )
 
-# Include StatBlockGenerator router
+# Include legacy StatBlockGenerator app routes and historical v2 compatibility routes.
 app.include_router(
     statblockgenerator_router,
-    tags=["StatBlock Generator"]
+    tags=["StatBlock Generator (Legacy App)"]
+)
+app.include_router(
+    statblock_v2_compatibility_router,
+    tags=["StatBlock Generator v2 (Historical Compatibility)"]
 )
 
 # Include DungeonBuddy statblock v1 router (candidate workflow).

@@ -34,8 +34,13 @@ replay_pid*
 #folder to ignore
 node_modules/
 __pycache__/
+.pytest_cache/
+*.egg-info/
+.VSCodeCounter/
 saved_data/
 models--BAAI--bge-m3/
+
+# Generated API assets under openapi/ and generated/ are intentionally tracked.
 
 #React build folder
 react-landing/
