@@ -19,6 +19,55 @@ HEALTH_PATH = "/api/internal/dungeonbuddy/v1/statblocks/health"
 TEST_INTERNAL_KEY = "test-statblocks-v1-internal-key"
 PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "statblocks_v1"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+MINIMAL_UV_WITH = (
+    "--with",
+    "pytest>=8.3.5",
+    "--with",
+    "fastapi>=0.115.4",
+    "--with",
+    "pydantic>=2.0",
+    "--with",
+    "httpx>=0.27.0",
+)
+HEAVY_DEPENDENCY_MODULES = (
+    "openai",
+    "firebase_admin",
+    "google",
+    "fal_client",
+    "sentence_transformers",
+    "generationengine",
+)
+
+
+def _credential_scrubbed_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "DUNGEONBUDDY_INTERNAL_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "FIREBASE_CREDENTIALS",
+            "GOOGLE_CLIENT_ID",
+            "GOOGLE_CLIENT_SECRET",
+        }
+    }
+
+
+def _minimal_uv_run_prefix() -> list[str]:
+    """Project-independent uv invocation (ephemeral env, no root dependency sync)."""
+    return [
+        "uv",
+        "run",
+        "--isolated",
+        "--no-project",
+        *MINIMAL_UV_WITH,
+    ]
+
+
+def _minimal_uv_pytest_prefix() -> list[str]:
+    return [*_minimal_uv_run_prefix(), "pytest", "--confcutdir=tests/statblocks_v1"]
 
 
 def test_domain_package_imports_without_external_env(monkeypatch) -> None:
@@ -154,25 +203,11 @@ print("ok")
 
 def test_focused_lane_skips_parent_conftest() -> None:
     """Advertised lane must not load ``tests/conftest.py`` (imports production ``app``)."""
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key
-        not in {
-            "DUNGEONBUDDY_INTERNAL_API_KEY",
-            "OPENAI_API_KEY",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "FIREBASE_CREDENTIALS",
-            "GOOGLE_CLIENT_ID",
-            "GOOGLE_CLIENT_SECRET",
-        }
-    }
+    env = _credential_scrubbed_env()
+    env["PYTHONPATH"] = str(REPO_ROOT)
     completed = subprocess.run(
         [
-            "uv",
-            "run",
-            "pytest",
-            "--confcutdir=tests/statblocks_v1",
+            *_minimal_uv_pytest_prefix(),
             "--trace-config",
             "tests/statblocks_v1/test_import_boundaries.py",
             "--collect-only",
@@ -188,6 +223,34 @@ def test_focused_lane_skips_parent_conftest() -> None:
     assert completed.returncode == 0, output
     assert "tests/conftest.py" not in output
     assert "tests/statblocks_v1/conftest.py" in output
+
+
+def test_minimal_lane_excludes_full_server_dependencies() -> None:
+    """``uv run --isolated --no-project`` must not install the production dependency graph."""
+    probe = (
+        "import importlib.util as u\n"
+        + "\n".join(
+            f"assert u.find_spec({module!r}) is None, {module!r}"
+            for module in HEAVY_DEPENDENCY_MODULES
+        )
+        + "\nprint('ok')\n"
+    )
+    env = _credential_scrubbed_env()
+    completed = subprocess.run(
+        [
+            *_minimal_uv_run_prefix(),
+            "python",
+            "-c",
+            probe,
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "ok" in completed.stdout
 
 
 def test_package_source_does_not_construct_firebase_or_openai() -> None:

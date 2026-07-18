@@ -3,9 +3,18 @@
 Tests must import from this module (or construct an equivalent app) rather than
 importing the production ``app`` module.
 
-Focused lane (does not load ``tests/conftest.py``, which imports production ``app``):
+Focused lane (import-isolated via ``--confcutdir`` and dependency-isolated via
+``uv run --isolated --no-project`` — does not use ``.venv`` or sync the full
+server environment):
 
-    uv run pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
+    ./scripts/run_statblocks_v1_tests.sh
+
+Equivalent:
+
+    PYTHONPATH=. uv run --isolated --no-project \\
+      --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \\
+      --with 'pydantic>=2.0' --with 'httpx>=0.27.0' \\
+      pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 """
 
 from __future__ import annotations

@@ -8,19 +8,21 @@
 
 ## Predecessor completion notes (PR12)
 
-- Package root: `statblocks_v1/` with layers `domain/`, `application/`, `infrastructure/`, `api/`.
-- Import rules (AST-enforced): domain → stdlib+Pydantic; application → domain; infrastructure → domain/application (no api); api → domain/application+FastAPI. Optional narrow exception: `routers.internal_auth` constants only. Legacy `statblockgenerator` / `StatBlockDetails` forbidden. Foundation mirrors auth header/env constants locally to avoid `routers` package side effects.
+- Package root: `statblocks_v1/` with layers `domain/`, `application/`, `infrastructure/`, `api/`. `statblocks_v1/__init__.py` is domain-safe (contract metadata only).
+- Import rules (AST-enforced): domain → stdlib+Pydantic (+ bare package root); application → domain; infrastructure → domain/application + external SDKs, **rejecting other repository-owned packages by default** (adapter exceptions opt in explicitly); api → domain/application+FastAPI. Optional narrow exception: `routers.internal_auth` constants only. Legacy `statblockgenerator` / `StatBlockDetails` forbidden. Foundation mirrors auth header/env constants locally to avoid `routers` package side effects.
 - Isolated test app factory: `statblocks_v1.testing.create_test_app()` registers typed error handlers and mounts only the v1 router — do not import production `app` in focused tests.
 - Router: `statblocks_v1.api.router.router` mounted at `/api/internal/dungeonbuddy/v1` with router-level `require_internal_service_auth`. Auth failures raise `StatblockV1HTTPError` → top-level `ErrorEnvelopeV1` (401/403/503). Misconfigured key env → **503** `internal_service_misconfigured`.
 - Health: `GET /api/internal/dungeonbuddy/v1/statblocks/health` returns foundation payload with empty `capabilities`; OpenAPI declares `HealthResponseV1` + auth error models.
 - Production registration: `register_statblocks_v1_error_handlers(app)` + `app.include_router(...)` in `app.py` (import-time coupling only; tests stay isolated).
-- Focused verification (required `--confcutdir` so `tests/conftest.py` does not preload production `app`):
+- Focused verification (import-isolated via `--confcutdir`; dependency-isolated via `uv run --isolated --no-project`):
 
 ```bash
-uv run pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
+./scripts/run_statblocks_v1_tests.sh
 ```
 
-Run with external credentials unset; a clean-process test proves `app` is never imported.
+Equivalent: `PYTHONPATH=. uv run --isolated --no-project --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' --with 'pydantic>=2.0' --with 'httpx>=0.27.0' pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q`
+
+Run with external credentials unset; clean-process tests prove `app` is never imported and heavy server deps are absent from the isolated env.
 
 ## 0. Mission
 

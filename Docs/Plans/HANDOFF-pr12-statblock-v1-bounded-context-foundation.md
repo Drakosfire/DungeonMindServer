@@ -144,13 +144,28 @@ Required:
 - test confirms no Firebase/OpenAI provider is constructed;
 - focused test command exits successfully from a clean environment.
 
-Required focused command (cuts off ancestor `tests/conftest.py`):
+Required focused command (import-isolated and dependency-isolated):
 
 ```bash
-uv run pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
+./scripts/run_statblocks_v1_tests.sh
 ```
 
-The exact command must be recorded in the PR. Do not advertise a lane that loads the production `app` via parent conftest.
+Equivalent expanded form:
+
+```bash
+PYTHONPATH=. uv run --isolated --no-project \
+  --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \
+  --with 'pydantic>=2.0' --with 'httpx>=0.27.0' \
+  pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
+```
+
+`--confcutdir` cuts off ancestor `tests/conftest.py` (which imports production `app`).
+`--isolated --no-project` skips the project `.venv` and the root server dependency
+graph (OpenAI, Firebase, sentence-transformers, generationengine, …), installing
+only pytest/FastAPI/Pydantic/HTTPX via `--with`.
+
+The exact command must be recorded in the PR. Do not advertise `uv run pytest`
+against the project environment as the focused lane.
 
 ## 6. Acceptance criteria
 

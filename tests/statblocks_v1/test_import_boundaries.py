@@ -3,14 +3,16 @@
 Declared graph:
 
 - domain → standard library and Pydantic only
-- application → domain
-- infrastructure → domain / application (plus external SDKs later)
+- application → domain (and bare ``statblocks_v1`` package root)
+- infrastructure → domain / application plus external SDKs
 - api → domain / application and FastAPI
 
-Narrow exception: ``api`` may import ``routers.internal_auth`` for shared
-internal-key constant names only (not legacy generator packages). The
-foundation prefers local mirrors of those constants so focused tests avoid
-``routers`` package side effects.
+Repository-owned packages (``app``, ``routers``, ``firestore``, …) are rejected
+by default. Infrastructure may reuse them only through explicit
+adapter-specific exceptions.
+
+``statblocks_v1/__init__.py`` must stay domain-safe: domain and application may
+import the bare package root for contract metadata.
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-PACKAGE_ROOT = Path(__file__).resolve().parents[2] / "statblocks_v1"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_ROOT = REPO_ROOT / "statblocks_v1"
 
 STDLIB_AND_TYPING_ROOTS = {
     "__future__",
@@ -49,6 +52,39 @@ FORBIDDEN_LEGACY = (
     "statblockgenerator",
     "StatBlockDetails",
 )
+
+# Relative path under infrastructure/ → allowed repo-owned import roots.
+# Empty in PR12; later adapters opt in explicitly (e.g. firestore client wrap).
+INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {}
+
+
+def _repo_owned_package_roots() -> frozenset[str]:
+    """Top-level Python packages/modules owned by this repository (not third-party)."""
+    roots: set[str] = set()
+    skip_dirs = {
+        "statblocks_v1",
+        "tests",
+        "scripts",
+        "Docs",
+        "static",
+        "build",
+        "dungeonmind.egg-info",
+        "__pycache__",
+    }
+    for path in REPO_ROOT.iterdir():
+        if path.name.startswith("."):
+            continue
+        if path.is_dir():
+            if path.name in skip_dirs:
+                continue
+            if (path / "__init__.py").exists() or any(path.glob("*.py")):
+                roots.add(path.name)
+        elif path.is_file() and path.suffix == ".py" and path.name != "__init__.py":
+            roots.add(path.stem)
+    return frozenset(roots)
+
+
+REPO_OWNED_PACKAGE_ROOTS = _repo_owned_package_roots()
 
 
 def _import_names(path: Path) -> set[str]:
@@ -82,21 +118,55 @@ def _layer_of(module: str) -> str | None:
         return "package_root"
     if parts[1] in {"domain", "application", "infrastructure", "api"}:
         return parts[1]
-    return "package_root"
+    # Sibling modules under the package (e.g. testing) are not the domain-safe root.
+    return "package_other"
+
+
+def _assert_domain_safe_imports(path: Path) -> None:
+    allowed_roots = STDLIB_AND_TYPING_ROOTS | {"pydantic", "statblocks_v1"}
+    for name in _import_names(path):
+        root = name.split(".")[0]
+        assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
+        assert root not in REPO_OWNED_PACKAGE_ROOTS, (
+            f"{path} must not import repository package {root!r}"
+        )
+        if not name.startswith("statblocks_v1"):
+            continue
+        if name == "statblocks_v1":
+            continue
+        layer = _layer_of(name)
+        assert layer == "domain", (
+            f"{path} may only import bare statblocks_v1 or statblocks_v1.domain.* "
+            f"(got {name!r})"
+        )
+
+
+def test_repo_owned_roots_include_known_legacy_surfaces() -> None:
+    for expected in (
+        "app",
+        "routers",
+        "firestore",
+        "cloudflare",
+        "ruleslawyer",
+        "cardgenerator",
+        "statblockgenerator",
+    ):
+        assert expected in REPO_OWNED_PACKAGE_ROOTS, (
+            f"expected repository-owned root {expected!r} in {sorted(REPO_OWNED_PACKAGE_ROOTS)}"
+        )
+    assert "statblocks_v1" not in REPO_OWNED_PACKAGE_ROOTS
+
+
+def test_package_root_init_is_domain_safe() -> None:
+    path = PACKAGE_ROOT / "__init__.py"
+    _assert_no_legacy(path)
+    _assert_domain_safe_imports(path)
 
 
 def test_domain_imports_only_stdlib_and_pydantic() -> None:
-    allowed_roots = STDLIB_AND_TYPING_ROOTS | {"pydantic", "statblocks_v1"}
     for path in _python_files("domain"):
         _assert_no_legacy(path)
-        for name in _import_names(path):
-            root = name.split(".")[0]
-            assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
-            layer = _layer_of(name)
-            if layer is not None:
-                assert layer in {"domain", "package_root"}, (
-                    f"{path} must not import layer {layer!r} ({name})"
-                )
+        _assert_domain_safe_imports(path)
 
 
 def test_application_depends_only_on_domain() -> None:
@@ -106,29 +176,44 @@ def test_application_depends_only_on_domain() -> None:
         for name in _import_names(path):
             root = name.split(".")[0]
             assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
+            assert root not in REPO_OWNED_PACKAGE_ROOTS, (
+                f"application must not import repository package {root!r} ({path})"
+            )
+            if name == "statblocks_v1":
+                continue
             layer = _layer_of(name)
-            if layer is not None:
-                assert layer in {"domain", "application", "package_root"}, (
-                    f"application must not import layer {layer!r} ({path} → {name})"
-                )
+            assert layer in {"domain", "application"}, (
+                f"application must not import {name!r} ({path})"
+            )
 
 
 def test_infrastructure_depends_only_on_domain_and_application() -> None:
-    # SDKs are allowed later; forbid upward imports into api and legacy packages.
-    forbidden_roots = {"fastapi", "statblockgenerator"}
+    allowed_layer = {"domain", "application", "infrastructure"}
     for path in _python_files("infrastructure"):
         _assert_no_legacy(path)
+        relative = str(path.relative_to(PACKAGE_ROOT / "infrastructure"))
+        allowed_repo = INFRASTRUCTURE_ADAPTER_EXCEPTIONS.get(relative, frozenset())
         for name in _import_names(path):
             root = name.split(".")[0]
-            assert root not in forbidden_roots, f"{path} imports forbidden root {root!r}"
+            if root in REPO_OWNED_PACKAGE_ROOTS:
+                assert root in allowed_repo, (
+                    f"infrastructure must not import repository package {root!r} "
+                    f"unless listed in INFRASTRUCTURE_ADAPTER_EXCEPTIONS "
+                    f"({path} → {name}; allowed for this file: {sorted(allowed_repo)})"
+                )
+                continue
+            if name == "statblocks_v1":
+                continue
             layer = _layer_of(name)
             if layer is not None:
-                assert layer in {"domain", "application", "infrastructure", "package_root"}, (
+                assert layer in allowed_layer, (
                     f"infrastructure must not import layer {layer!r} ({path} → {name})"
                 )
             assert not name.startswith("statblocks_v1.api"), (
                 f"infrastructure must not import api ({path} → {name})"
             )
+            # FastAPI belongs to the api layer, not infrastructure adapters.
+            assert root != "fastapi", f"{path} must not import fastapi"
 
 
 def test_api_depends_on_domain_application_fastapi_and_auth_constants() -> None:
@@ -143,15 +228,18 @@ def test_api_depends_on_domain_application_fastapi_and_auth_constants() -> None:
         for name in _import_names(path):
             root = name.split(".")[0]
             assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
-            layer = _layer_of(name)
-            if layer is not None:
-                assert layer in {"domain", "application", "api", "package_root"}, (
-                    f"api must not import layer {layer!r} ({path} → {name})"
-                )
-            if root == "routers":
+            if root in REPO_OWNED_PACKAGE_ROOTS:
                 assert name == "routers.internal_auth", (
                     f"api may only import routers.internal_auth for shared key constants "
                     f"({path} → {name})"
+                )
+                continue
+            if name == "statblocks_v1":
+                continue
+            layer = _layer_of(name)
+            if layer is not None:
+                assert layer in {"domain", "application", "api"}, (
+                    f"api must not import layer {layer!r} ({path} → {name})"
                 )
 
 
@@ -162,19 +250,15 @@ def test_api_does_not_import_legacy_statblockgenerator() -> None:
 
 def test_internal_auth_constants_match_shared_module() -> None:
     """Wire-contract drift guard without importing the routers package at runtime."""
-    from pathlib import Path as _Path
-
-    import ast as _ast
-
     from statblocks_v1.api.dependencies import INTERNAL_KEY_ENV, INTERNAL_KEY_HEADER
 
-    shared = _Path(__file__).resolve().parents[2] / "routers" / "internal_auth.py"
-    tree = _ast.parse(shared.read_text(encoding="utf-8"))
+    shared = REPO_ROOT / "routers" / "internal_auth.py"
+    tree = ast.parse(shared.read_text(encoding="utf-8"))
     values: dict[str, str] = {}
     for node in tree.body:
-        if isinstance(node, _ast.Assign) and len(node.targets) == 1:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
             target = node.targets[0]
-            if isinstance(target, _ast.Name) and isinstance(node.value, _ast.Constant):
+            if isinstance(target, ast.Name) and isinstance(node.value, ast.Constant):
                 if isinstance(node.value.value, str):
                     values[target.id] = node.value.value
     assert values.get("INTERNAL_KEY_HEADER") == INTERNAL_KEY_HEADER
