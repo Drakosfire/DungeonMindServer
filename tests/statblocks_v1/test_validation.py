@@ -311,6 +311,41 @@ def test_spell_slots_usage_forbidden_outside_leveled_prepared_known(load_fixture
     assert "SPELL_GROUP_SLOTS_INCOHERENT" in {issue.code for issue in innate_receipt.issues}
 
 
+def test_resource_cost_amount_cannot_exceed_pool_maximum(load_fixture) -> None:
+    payload = load_fixture("legendary_creature")
+    payload["rule_elements"][0]["costs"] = [
+        {"resource_key": "legendary_actions", "amount": 4}
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    issue = next(
+        item for item in receipt.issues if item.code == "RESOURCE_COST_EXCEEDS_POOL"
+    )
+    assert issue.field_path == "rule_elements[0].costs[0].amount"
+    assert receipt.is_persistence_ready is False
+
+
+def test_duplicate_same_pool_costs_rejected_and_aggregate_checked(load_fixture) -> None:
+    payload = load_fixture("legendary_creature")
+    payload["rule_elements"][0]["costs"] = [
+        {"resource_key": "legendary_actions", "amount": 2},
+        {"resource_key": "legendary_actions", "amount": 2},
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    codes = {issue.code: issue.field_path for issue in receipt.issues}
+    assert codes.get("RESOURCE_COST_DUPLICATE_POOL") == (
+        "rule_elements[0].costs[1].resource_key"
+    )
+    assert codes.get("RESOURCE_COST_EXCEEDS_POOL") == (
+        "rule_elements[0].costs[1].amount"
+    )
+
+
 def test_legendary_usage_and_costs_must_name_same_pool(load_fixture) -> None:
     payload = load_fixture("legendary_creature")
     payload["resources"].append(

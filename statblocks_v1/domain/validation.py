@@ -126,6 +126,7 @@ def validate_definition(
     _validate_local_keys(definition, issue)
     _validate_references(definition, issue)
     _validate_action_economy(definition, issue)
+    _validate_resource_costs(definition, issue)
     _validate_mechanics(definition, issue)
     _validate_rules_text(definition, validation_mode, issue)
 
@@ -477,6 +478,56 @@ def _validate_action_economy(
                     ValidationSeverity.error,
                     f"{path}.activation",
                     "A lair action requires an initiative timing expression.",
+                )
+
+
+def _validate_resource_costs(
+    definition: StatblockDefinitionV1, issue: IssueEmitter
+) -> None:
+    """Ensure each element's costs are affordable against typed pool maxima."""
+
+    pools = {pool.key: pool for pool in definition.resources}
+    for index, element in enumerate(definition.rule_elements):
+        path = f"rule_elements[{index}]"
+        seen_keys: dict[str, int] = {}
+        running_totals: dict[str, int] = {}
+        for cost_index, cost in enumerate(element.costs):
+            pool = pools.get(cost.resource_key)
+            if pool is None:
+                continue
+            cost_path = f"{path}.costs[{cost_index}]"
+            if cost.resource_key in seen_keys:
+                issue(
+                    "RESOURCE_COST_DUPLICATE_POOL",
+                    ValidationSeverity.error,
+                    f"{cost_path}.resource_key",
+                    f"Resource pool '{cost.resource_key}' appears more than once in costs; "
+                    "use a single cost entry.",
+                )
+            else:
+                seen_keys[cost.resource_key] = cost_index
+
+            if cost.amount > pool.maximum:
+                issue(
+                    "RESOURCE_COST_EXCEEDS_POOL",
+                    ValidationSeverity.error,
+                    f"{cost_path}.amount",
+                    f"Cost amount {cost.amount} exceeds pool '{cost.resource_key}' "
+                    f"maximum of {pool.maximum}.",
+                )
+
+            running_totals[cost.resource_key] = (
+                running_totals.get(cost.resource_key, 0) + cost.amount
+            )
+            total = running_totals[cost.resource_key]
+            # Aggregate overflow when no single entry alone exceeds the maximum.
+            if total > pool.maximum and cost.amount <= pool.maximum:
+                issue(
+                    "RESOURCE_COST_EXCEEDS_POOL",
+                    ValidationSeverity.error,
+                    f"{cost_path}.amount",
+                    f"Combined costs for pool '{cost.resource_key}' ({total}) exceed "
+                    f"maximum of {pool.maximum}.",
                 )
 
 
