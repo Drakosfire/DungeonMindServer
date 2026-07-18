@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, final
 
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
@@ -40,18 +40,30 @@ _SET_LIKE_FIELD_NAMES = frozenset(
 )
 
 
-def canonicalize_definition(definition: StatblockDefinitionV1) -> str:
+@final
+class CanonicalDefinitionJSON(str):
+    """Branded canonical JSON produced only by :func:`canonicalize_definition`.
+
+    Plain ``str`` / ``bytes`` values are intentionally *not* accepted by the
+    digest API — callers must go through the canonicalizer.
+    """
+
+    __slots__ = ()
+
+
+def canonicalize_definition(definition: StatblockDefinitionV1) -> CanonicalDefinitionJSON:
     """Return the version-1 canonical JSON representation of ``definition``."""
 
     payload = definition.model_dump(mode="json", exclude_none=False)
     normalized = _normalize_value(payload)
-    return json.dumps(
+    text = json.dumps(
         normalized,
         ensure_ascii=False,
         allow_nan=False,
         separators=(",", ":"),
         sort_keys=True,
     )
+    return CanonicalDefinitionJSON(text)
 
 
 def canonical_definition_bytes(definition: StatblockDefinitionV1) -> bytes:

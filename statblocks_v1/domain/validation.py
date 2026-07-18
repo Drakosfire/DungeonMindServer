@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime
 
 from statblocks_v1.domain.canonicalization import CANONICALIZER_VERSION
@@ -17,6 +17,8 @@ from statblocks_v1.domain.primitives import (
     EnterPhaseEffect,
     MovementEffect,
     ResourceChangeEffect,
+    TargetKind,
+    Usage,
     UsageKind,
 )
 from statblocks_v1.domain.receipts import (
@@ -29,6 +31,8 @@ from statblocks_v1.domain.receipts import (
 )
 from statblocks_v1.domain.rule_elements import (
     AttackMechanic,
+    AttackType,
+    CastingMode,
     HumanAdjudicatedMechanic,
     MultiattackMechanic,
     PhaseTransitionMechanic,
@@ -36,8 +40,11 @@ from statblocks_v1.domain.rule_elements import (
     RuleSection,
     SaveEffectMechanic,
     SpellcastingMechanic,
+    SpellGroup,
     StatblockDefinitionV1,
 )
+
+IssueEmitter = Callable[[str, ValidationSeverity, str, str, str | None], None]
 
 _CR_PROFICIENCY_BONUS = {
     "0": 2,
@@ -75,6 +82,9 @@ _SAVE_DC = re.compile(r"\bDC\s*(\d+)\b", re.IGNORECASE)
 _DAMAGE_CLAUSE = re.compile(
     r"\b(\d+)d(\d+)(?:\s*([+-])\s*(\d+))?\)\s+([a-z]+)\s+damage\b",
     re.IGNORECASE,
+)
+_LIMITED_USE_KINDS = frozenset(
+    {UsageKind.per_turn, UsageKind.per_round, UsageKind.per_day}
 )
 
 
@@ -137,7 +147,7 @@ def validate_definition(
     )
 
 
-def _validate_profiles(definition: StatblockDefinitionV1, issue) -> None:
+def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -> None:
     defaults = sum(profile.default for profile in definition.defenses.armor_classes)
     if defaults != 1:
         issue(
@@ -188,27 +198,38 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue) -> None:
             "challenge.proficiency_bonus",
             "Challenge proficiency bonus does not match the selected CR.",
         )
-    if challenge.proficiency_bonus != definition.proficiencies.proficiency_bonus:
-        issue(
-            "PROFILE_CHALLENGE_PROFICIENCY_MISMATCH",
-            ValidationSeverity.error,
-            "proficiencies.proficiency_bonus",
-            "Profile and challenge proficiency bonuses must agree.",
-        )
 
-    expected_passive = 10 + (definition.abilities.wisdom - 10) // 2
-    has_perception = any(skill.skill.casefold() == "perception" for skill in definition.proficiencies.skills)
-    if not has_perception and definition.senses.passive_perception != expected_passive:
-        issue(
-            "PASSIVE_PERCEPTION_UNVERIFIED",
-            ValidationSeverity.warning,
-            "senses.passive_perception",
-            "Passive Perception differs from Wisdom without a typed Perception skill.",
-            "Add a Perception skill or confirm the value during review.",
-        )
+    wisdom_mod = (definition.abilities.wisdom - 10) // 2
+    perception = next(
+        (
+            skill
+            for skill in definition.proficiencies.skills
+            if skill.skill.casefold() == "perception"
+        ),
+        None,
+    )
+    if perception is not None:
+        expected_passive = 10 + perception.value
+        if definition.senses.passive_perception != expected_passive:
+            issue(
+                "PASSIVE_PERCEPTION_MISMATCH",
+                ValidationSeverity.error,
+                "senses.passive_perception",
+                "Passive Perception must equal 10 + Perception skill value.",
+            )
+    else:
+        expected_passive = 10 + wisdom_mod
+        if definition.senses.passive_perception != expected_passive:
+            issue(
+                "PASSIVE_PERCEPTION_UNVERIFIED",
+                ValidationSeverity.warning,
+                "senses.passive_perception",
+                "Passive Perception differs from Wisdom without a typed Perception skill.",
+                "Add a Perception skill or confirm the value during review.",
+            )
 
 
-def _validate_local_keys(definition: StatblockDefinitionV1, issue) -> None:
+def _validate_local_keys(definition: StatblockDefinitionV1, issue: IssueEmitter) -> None:
     groups = (
         ("defenses.armor_classes", [item.key for item in definition.defenses.armor_classes]),
         ("defenses.damage_interactions", [item.key for item in definition.defenses.damage_interactions]),
@@ -236,7 +257,7 @@ def _validate_local_keys(definition: StatblockDefinitionV1, issue) -> None:
         )
 
 
-def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
+def _validate_references(definition: StatblockDefinitionV1, issue: IssueEmitter) -> None:
     element_keys = {item.key for item in definition.rule_elements}
     resource_keys = {item.key for item in definition.resources}
     phase_keys = {phase.key for phase in definition.phases}
@@ -306,8 +327,8 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
                 "UNKNOWN_PHASE_REFERENCE",
                 f"{path}.mechanic.destination_phase_key",
             )
-        for effect_index, effect in enumerate(_element_effects(element)):
-            effect_path = f"{path}.mechanic.effects[{effect_index}]"
+        for effect_path, effect in _iter_element_effects(element):
+            full_effect_path = f"{path}.{effect_path}"
             if isinstance(effect, (EnableElementsEffect, DisableElementsEffect)):
                 for key_index, key in enumerate(effect.element_keys):
                     _require_reference(
@@ -315,7 +336,7 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
                         element_keys,
                         issue,
                         "UNKNOWN_ELEMENT_REFERENCE",
-                        f"{effect_path}.element_keys[{key_index}]",
+                        f"{full_effect_path}.element_keys[{key_index}]",
                     )
             elif isinstance(effect, EnterPhaseEffect):
                 _require_reference(
@@ -323,7 +344,7 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
                     phase_keys,
                     issue,
                     "UNKNOWN_PHASE_REFERENCE",
-                    f"{effect_path}.phase_key",
+                    f"{full_effect_path}.phase_key",
                 )
             elif isinstance(effect, ResourceChangeEffect):
                 _require_reference(
@@ -331,7 +352,7 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
                     resource_keys,
                     issue,
                     "UNKNOWN_RESOURCE_REFERENCE",
-                    f"{effect_path}.resource_key",
+                    f"{full_effect_path}.resource_key",
                 )
             elif isinstance(effect, MovementEffect) and effect.movement_mode_key:
                 _require_reference(
@@ -339,7 +360,7 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
                     movement_keys,
                     issue,
                     "UNKNOWN_MOVEMENT_REFERENCE",
-                    f"{effect_path}.movement_mode_key",
+                    f"{full_effect_path}.movement_mode_key",
                 )
 
     for phase_index, phase in enumerate(definition.phases):
@@ -370,7 +391,9 @@ def _validate_references(definition: StatblockDefinitionV1, issue) -> None:
             )
 
 
-def _validate_action_economy(definition: StatblockDefinitionV1, issue) -> None:
+def _validate_action_economy(
+    definition: StatblockDefinitionV1, issue: IssueEmitter
+) -> None:
     resource_keys = {resource.key for resource in definition.resources}
     for index, element in enumerate(definition.rule_elements):
         path = f"rule_elements[{index}]"
@@ -424,60 +447,15 @@ def _validate_action_economy(definition: StatblockDefinitionV1, issue) -> None:
                 )
 
 
-def _validate_mechanics(definition: StatblockDefinitionV1, issue) -> None:
+def _validate_mechanics(definition: StatblockDefinitionV1, issue: IssueEmitter) -> None:
     for index, element in enumerate(definition.rule_elements):
         path = f"rule_elements[{index}]"
         mechanic = element.mechanic
+        _validate_usage(element.usage, f"{path}.usage", issue)
         if isinstance(mechanic, AttackMechanic):
-            is_melee = mechanic.attack_type.value.startswith("melee")
-            is_ranged = mechanic.attack_type.value.startswith("ranged")
-            if is_melee and mechanic.reach is None:
-                issue(
-                    "ATTACK_REACH_REQUIRED",
-                    ValidationSeverity.error,
-                    f"{path}.mechanic.reach",
-                    "A melee attack requires typed reach.",
-                )
-            if is_ranged and mechanic.range is None:
-                issue(
-                    "ATTACK_RANGE_REQUIRED",
-                    ValidationSeverity.error,
-                    f"{path}.mechanic.range",
-                    "A ranged attack requires typed range.",
-                )
-        if element.usage.kind is UsageKind.recharge:
-            recharge = element.usage.recharge_range
-            if recharge is None or not (1 <= recharge[0] <= recharge[1] <= 6):
-                issue(
-                    "RECHARGE_USAGE_INCOHERENT",
-                    ValidationSeverity.error,
-                    f"{path}.usage.recharge_range",
-                    "Recharge usage requires an ordered d6 range.",
-                )
-        elif element.usage.recharge_range is not None:
-            issue(
-                "RECHARGE_USAGE_INCOHERENT",
-                ValidationSeverity.error,
-                f"{path}.usage.recharge_range",
-                "Only recharge usage may include recharge_range.",
-            )
+            _validate_attack_mechanic(mechanic, f"{path}.mechanic", issue)
         if isinstance(mechanic, SpellcastingMechanic):
-            for group_index, group in enumerate(mechanic.groups):
-                group_path = f"{path}.mechanic.groups[{group_index}]"
-                if group.usage.kind is UsageKind.recharge and group.usage.recharge_range is None:
-                    issue(
-                        "SPELL_GROUP_USAGE_INCOHERENT",
-                        ValidationSeverity.error,
-                        f"{group_path}.usage.recharge_range",
-                        "A recharge spell group requires recharge_range.",
-                    )
-                if group.usage.kind is not UsageKind.recharge and group.usage.recharge_range is not None:
-                    issue(
-                        "SPELL_GROUP_USAGE_INCOHERENT",
-                        ValidationSeverity.error,
-                        f"{group_path}.usage.recharge_range",
-                        "Only recharge spell groups may include recharge_range.",
-                    )
+            _validate_spellcasting_mechanic(mechanic, f"{path}.mechanic", issue)
         if isinstance(mechanic, HumanAdjudicatedMechanic) and (
             element.automation_support is not AutomationSupport.manual
         ):
@@ -489,9 +467,318 @@ def _validate_mechanics(definition: StatblockDefinitionV1, issue) -> None:
             )
 
 
-def _validate_rules_text(definition: StatblockDefinitionV1, mode: ValidationMode, issue) -> None:
+def _validate_usage(usage: Usage, path: str, issue: IssueEmitter) -> None:
+    kind = usage.kind
+    if kind is UsageKind.recharge:
+        if usage.recharge_range is None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.recharge_range",
+                "Recharge usage requires an ordered d6 recharge_range.",
+            )
+        elif usage.recharge_range.minimum > usage.recharge_range.maximum:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.recharge_range",
+                "Recharge minimum must be less than or equal to maximum.",
+            )
+        if usage.uses is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                "Recharge usage must not set uses.",
+            )
+        if usage.resource_key is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                "Recharge usage must not set resource_key.",
+            )
+        return
+
+    if usage.recharge_range is not None:
+        issue(
+            "USAGE_FIELDS_INCOHERENT",
+            ValidationSeverity.error,
+            f"{path}.recharge_range",
+            "Only recharge usage may include recharge_range.",
+        )
+
+    if kind is UsageKind.at_will:
+        if usage.uses is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                "At-will usage must not set uses.",
+            )
+        if usage.resource_key is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                "At-will usage must not set resource_key.",
+            )
+        return
+
+    if kind in _LIMITED_USE_KINDS:
+        if usage.uses is None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                f"{kind.value} usage requires uses.",
+            )
+        if usage.resource_key is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                f"{kind.value} usage must not set resource_key.",
+            )
+        return
+
+    if kind is UsageKind.once:
+        if usage.uses is not None and usage.uses != 1:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                "Once usage may omit uses or set uses to 1.",
+            )
+        if usage.resource_key is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                "Once usage must not set resource_key.",
+            )
+        return
+
+    if kind is UsageKind.resource:
+        if usage.resource_key is None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.resource_key",
+                "Resource usage requires resource_key.",
+            )
+        if usage.uses is not None:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.uses",
+                "Resource usage must not set uses.",
+            )
+        return
+
+    # manual: recharge already rejected; uses/resource_key optional for GM text.
+
+
+def _validate_attack_mechanic(
+    mechanic: AttackMechanic, path: str, issue: IssueEmitter
+) -> None:
+    is_melee = mechanic.attack_type in {AttackType.melee_weapon, AttackType.melee_spell}
+    is_ranged = mechanic.attack_type in {
+        AttackType.ranged_weapon,
+        AttackType.ranged_spell,
+    }
+    if is_melee:
+        if mechanic.reach is None:
+            issue(
+                "ATTACK_REACH_REQUIRED",
+                ValidationSeverity.error,
+                f"{path}.reach",
+                "A melee attack requires typed reach.",
+            )
+        if mechanic.range is not None:
+            issue(
+                "ATTACK_RANGE_UNEXPECTED",
+                ValidationSeverity.error,
+                f"{path}.range",
+                "A melee attack must not include typed range.",
+            )
+    if is_ranged:
+        if mechanic.range is None:
+            issue(
+                "ATTACK_RANGE_REQUIRED",
+                ValidationSeverity.error,
+                f"{path}.range",
+                "A ranged attack requires typed range.",
+            )
+        if mechanic.reach is not None:
+            issue(
+                "ATTACK_REACH_UNEXPECTED",
+                ValidationSeverity.error,
+                f"{path}.reach",
+                "A ranged attack must not include typed reach.",
+            )
+
+    target = mechanic.target
+    target_path = f"{path}.target"
+    if target.kind is TargetKind.creatures and target.count is None:
+        issue(
+            "ATTACK_TARGET_COUNT_REQUIRED",
+            ValidationSeverity.error,
+            f"{target_path}.count",
+            "A creatures target requires count.",
+        )
+    if target.kind is TargetKind.creature and target.count not in (None, 1):
+        issue(
+            "ATTACK_TARGET_COUNT_INCOHERENT",
+            ValidationSeverity.error,
+            f"{target_path}.count",
+            "A single creature target must omit count or set it to 1.",
+        )
+    if target.kind is TargetKind.self and target.count is not None:
+        issue(
+            "ATTACK_TARGET_COUNT_INCOHERENT",
+            ValidationSeverity.error,
+            f"{target_path}.count",
+            "A self target must not set count.",
+        )
+    if target.kind is TargetKind.area:
+        if not target.area:
+            issue(
+                "ATTACK_TARGET_AREA_REQUIRED",
+                ValidationSeverity.error,
+                f"{target_path}.area",
+                "An area target requires area.",
+            )
+    elif target.area is not None:
+        issue(
+            "ATTACK_TARGET_AREA_UNEXPECTED",
+            ValidationSeverity.error,
+            f"{target_path}.area",
+            "Only an area target may set area.",
+        )
+
+
+def _validate_spellcasting_mechanic(
+    mechanic: SpellcastingMechanic, path: str, issue: IssueEmitter
+) -> None:
+    mode = mechanic.casting_mode
+    if mode in {CastingMode.prepared, CastingMode.known}:
+        if mechanic.caster_level is None:
+            issue(
+                "SPELLCASTING_MODE_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.caster_level",
+                f"{mode.value} spellcasting requires caster_level.",
+            )
+        if mechanic.ability is None:
+            issue(
+                "SPELLCASTING_MODE_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.ability",
+                f"{mode.value} spellcasting requires ability.",
+            )
+    if mode is CastingMode.charges and mechanic.ability is None:
+        issue(
+            "SPELLCASTING_MODE_INCOHERENT",
+            ValidationSeverity.error,
+            f"{path}.ability",
+            "Charges spellcasting requires ability.",
+        )
+
+    for group_index, group in enumerate(mechanic.groups):
+        group_path = f"{path}.groups[{group_index}]"
+        _validate_usage(group.usage, f"{group_path}.usage", issue)
+        _validate_spell_group(group, mode, group_path, issue)
+
+
+def _validate_spell_group(
+    group: SpellGroup,
+    mode: CastingMode,
+    path: str,
+    issue: IssueEmitter,
+) -> None:
+    if mode is CastingMode.innate:
+        if group.slots is not None:
+            issue(
+                "SPELL_GROUP_SLOTS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.slots",
+                "Innate spell groups must not use slots; encode limited uses on usage.",
+            )
+        if group.level is not None and not (0 <= group.level <= 9):
+            issue(
+                "SPELL_GROUP_LEVEL_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.level",
+                "Spell group level must be between 0 and 9.",
+            )
+        return
+
+    if mode in {CastingMode.prepared, CastingMode.known}:
+        if group.level is None:
+            issue(
+                "SPELL_GROUP_LEVEL_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.level",
+                f"{mode.value} spell groups require level.",
+            )
+            return
+        if group.level == 0:
+            if group.slots is not None:
+                issue(
+                    "SPELL_GROUP_SLOTS_INCOHERENT",
+                    ValidationSeverity.error,
+                    f"{path}.slots",
+                    "Cantrip groups must not set slots.",
+                )
+            if group.usage.kind is not UsageKind.at_will:
+                issue(
+                    "SPELL_GROUP_USAGE_INCOHERENT",
+                    ValidationSeverity.error,
+                    f"{path}.usage.kind",
+                    "Cantrip groups must use at_will usage.",
+                )
+        else:
+            if group.slots is None:
+                issue(
+                    "SPELL_GROUP_SLOTS_INCOHERENT",
+                    ValidationSeverity.error,
+                    f"{path}.slots",
+                    "Leveled prepared/known groups require slots.",
+                )
+            if group.usage.kind is not UsageKind.at_will:
+                issue(
+                    "SPELL_GROUP_USAGE_INCOHERENT",
+                    ValidationSeverity.error,
+                    f"{path}.usage.kind",
+                    "Leveled prepared/known groups must use at_will with slots.",
+                )
+        return
+
+    if mode is CastingMode.charges:
+        if group.usage.kind is not UsageKind.resource:
+            issue(
+                "SPELL_GROUP_USAGE_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.usage.kind",
+                "Charges spell groups require resource usage.",
+            )
+        if group.slots is not None:
+            issue(
+                "SPELL_GROUP_SLOTS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.slots",
+                "Charges spell groups must not use slots.",
+            )
+
+
+def _validate_rules_text(
+    definition: StatblockDefinitionV1, mode: ValidationMode, issue: IssueEmitter
+) -> None:
     severity = (
-        ValidationSeverity.error if mode is ValidationMode.persistence else ValidationSeverity.warning
+        ValidationSeverity.error
+        if mode is ValidationMode.persistence
+        else ValidationSeverity.warning
     )
     for index, element in enumerate(definition.rule_elements):
         path = f"rule_elements[{index}]"
@@ -520,7 +807,10 @@ def _validate_rules_text(definition: StatblockDefinitionV1, mode: ValidationMode
                     typed_damage.damage.die,
                     typed_damage.damage.modifier,
                 )
-                if text_dice != typed_dice or parsed_damage.group(5).casefold() != typed_damage.damage_type.casefold():
+                if (
+                    text_dice != typed_dice
+                    or parsed_damage.group(5).casefold() != typed_damage.damage_type.casefold()
+                ):
                     issue(
                         "RULES_TEXT_DAMAGE_MISMATCH",
                         severity,
@@ -547,19 +837,34 @@ def _validate_rules_text(definition: StatblockDefinitionV1, mode: ValidationMode
             )
 
 
-def _require_reference(key: str, keys: set[str], issue, code: str, field_path: str) -> None:
+def _require_reference(
+    key: str, keys: set[str], issue: IssueEmitter, code: str, field_path: str
+) -> None:
     if key not in keys:
         issue(code, ValidationSeverity.error, field_path, f"Unknown local reference '{key}'.")
 
 
-def _element_effects(element: RuleElement) -> Iterable[object]:
+def _iter_element_effects(element: RuleElement) -> Iterable[tuple[str, object]]:
+    """Yield ``(relative_field_path, effect)`` preserving collection identity."""
+
     mechanic = element.mechanic
     if isinstance(mechanic, AttackMechanic):
-        return [*mechanic.hit_effects, *mechanic.miss_effects]
+        for index, effect in enumerate(mechanic.hit_effects):
+            yield f"mechanic.hit_effects[{index}]", effect
+        for index, effect in enumerate(mechanic.miss_effects):
+            yield f"mechanic.miss_effects[{index}]", effect
+        return
     if isinstance(mechanic, SaveEffectMechanic):
-        return [*mechanic.failure_effects, *mechanic.success_effects]
+        for index, effect in enumerate(mechanic.failure_effects):
+            yield f"mechanic.failure_effects[{index}]", effect
+        for index, effect in enumerate(mechanic.success_effects):
+            yield f"mechanic.success_effects[{index}]", effect
+        return
     if isinstance(mechanic, PhaseTransitionMechanic):
-        return mechanic.effects
-    if hasattr(mechanic, "effects"):
-        return mechanic.effects
-    return ()
+        for index, effect in enumerate(mechanic.effects):
+            yield f"mechanic.effects[{index}]", effect
+        return
+    effects = getattr(mechanic, "effects", None)
+    if isinstance(effects, list):
+        for index, effect in enumerate(effects):
+            yield f"mechanic.effects[{index}]", effect

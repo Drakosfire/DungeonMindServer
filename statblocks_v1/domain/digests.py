@@ -4,26 +4,34 @@ from __future__ import annotations
 
 import hashlib
 
-from statblocks_v1.domain.canonicalization import canonical_definition_bytes
+from statblocks_v1.domain.canonicalization import (
+    CanonicalDefinitionJSON,
+    canonicalize_definition,
+)
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 DIGEST_ALGORITHM = "sha256"
 
 
 def compute_definition_digest(
-    definition: StatblockDefinitionV1 | str | bytes,
+    definition: StatblockDefinitionV1 | CanonicalDefinitionJSON,
 ) -> str:
     """Return ``sha256:<hex>`` over canonical UTF-8 definition JSON.
 
-    A ``str`` or ``bytes`` input is accepted for persistence code that already
-    holds canonical JSON. Callers remain responsible for only passing output
-    from :func:`canonicalize_definition` in that case.
+    Accepts only a parsed definition model or a branded
+    :class:`CanonicalDefinitionJSON` from :func:`canonicalize_definition`.
+    Raw ``str`` / ``bytes`` are rejected so noncanonical JSON cannot receive a
+    normal-looking digest.
     """
 
     if isinstance(definition, StatblockDefinitionV1):
-        payload = canonical_definition_bytes(definition)
-    elif isinstance(definition, str):
+        payload = canonicalize_definition(definition).encode("utf-8")
+    elif isinstance(definition, CanonicalDefinitionJSON):
         payload = definition.encode("utf-8")
     else:
-        payload = definition
+        raise TypeError(
+            "compute_definition_digest accepts StatblockDefinitionV1 or "
+            "CanonicalDefinitionJSON from canonicalize_definition; "
+            f"got {type(definition).__name__}"
+        )
     return f"{DIGEST_ALGORITHM}:{hashlib.sha256(payload).hexdigest()}"

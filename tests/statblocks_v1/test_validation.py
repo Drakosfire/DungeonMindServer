@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from datetime import datetime, timezone
+
 import pytest
 
 from statblocks_v1.domain import (
@@ -29,6 +32,7 @@ def test_valid_fixtures_are_persistence_ready(load_fixture, name: str) -> None:
     receipt = validate_definition(definition, ValidationMode.persistence)
 
     assert receipt.is_persistence_ready
+    assert receipt.mode is ValidationMode.persistence
 
 
 @pytest.mark.parametrize(
@@ -52,6 +56,7 @@ def test_cross_reference_fixtures_emit_stable_codes(
 
     assert expected_code in {issue.code for issue in receipt.issues}
     assert receipt.status.value == "invalid"
+    assert receipt.is_persistence_ready is False
 
 
 def test_human_adjudicated_requires_manual_automation(load_fixture) -> None:
@@ -85,3 +90,141 @@ def test_high_confidence_rules_text_conflict_blocks_only_persistence(load_fixtur
     )
     assert candidate_issue.severity is ValidationSeverity.warning
     assert persistence_issue.severity is ValidationSeverity.error
+    assert candidate.is_persistence_ready is False
+    assert persistence.is_persistence_ready is False
+
+
+def test_candidate_receipt_never_claims_persistence_readiness(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+
+    candidate = validate_definition(definition, ValidationMode.generation_candidate)
+    preview = validate_definition(definition, ValidationMode.editor_preview)
+
+    assert candidate.status.value == "valid"
+    assert candidate.is_persistence_ready is False
+    assert preview.is_persistence_ready is False
+
+
+def test_repeated_validation_matches_except_supplied_time(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    first_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    second_time = datetime(2026, 1, 2, tzinfo=timezone.utc)
+
+    first = validate_definition(
+        definition, ValidationMode.persistence, validated_at=first_time
+    )
+    second = validate_definition(
+        definition, ValidationMode.persistence, validated_at=second_time
+    )
+
+    assert first.model_dump(exclude={"validated_at"}) == second.model_dump(
+        exclude={"validated_at"}
+    )
+    assert first.validated_at == first_time
+    assert second.validated_at == second_time
+
+
+def test_passive_perception_checks_perception_skill_value(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Perception",
+            "value": 5,
+            "derivation": "standard",
+            "note": None,
+        }
+    ]
+    payload["senses"]["passive_perception"] = 10  # should be 15
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    issue = next(item for item in receipt.issues if item.code == "PASSIVE_PERCEPTION_MISMATCH")
+    assert issue.field_path == "senses.passive_perception"
+    assert issue.severity is ValidationSeverity.error
+
+
+def test_recharge_usage_requires_typed_range_object(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["rule_elements"][0]["usage"] = {
+        "kind": "recharge",
+        "recharge_range": None,
+        "uses": None,
+        "resource_key": None,
+        "refresh_text": None,
+    }
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    assert "USAGE_FIELDS_INCOHERENT" in {issue.code for issue in receipt.issues}
+
+
+def test_innate_spell_group_rejects_slots(load_fixture) -> None:
+    payload = load_fixture("innate_spellcaster")
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["slots"] = 3
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["uses"] = 3
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    assert "SPELL_GROUP_SLOTS_INCOHERENT" in {issue.code for issue in receipt.issues}
+
+
+def test_nested_effect_reference_uses_real_collection_path(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    existing_hits = len(payload["rule_elements"][0]["mechanic"]["hit_effects"])
+    payload["rule_elements"][0]["mechanic"]["hit_effects"].append(
+        {
+            "kind": "enable_elements",
+            "element_keys": ["missing_element"],
+        }
+    )
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    paths = {
+        issue.field_path
+        for issue in receipt.issues
+        if issue.code == "UNKNOWN_ELEMENT_REFERENCE"
+    }
+    expected = f"rule_elements[0].mechanic.hit_effects[{existing_hits}].element_keys[0]"
+    assert expected in paths
+    assert not any(".mechanic.effects[" in path for path in paths)
+
+
+def test_attack_target_count_and_area_coherence(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["rule_elements"][0]["mechanic"]["target"] = {
+        "kind": "creatures",
+        "count": None,
+        "range": None,
+        "area": "10-foot radius",
+        "qualifiers": [],
+    }
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    codes = {issue.code for issue in receipt.issues}
+    assert "ATTACK_TARGET_COUNT_REQUIRED" in codes
+    assert "ATTACK_TARGET_AREA_UNEXPECTED" in codes
+
+
+def test_prepared_spell_group_requires_slots_and_at_will(load_fixture) -> None:
+    payload = deepcopy(load_fixture("spellcaster"))
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["slots"] = None
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["kind"] = "per_day"
+    payload["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["uses"] = 3
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    codes = {issue.code for issue in receipt.issues}
+    assert "SPELL_GROUP_SLOTS_INCOHERENT" in codes
+    assert "SPELL_GROUP_USAGE_INCOHERENT" in codes

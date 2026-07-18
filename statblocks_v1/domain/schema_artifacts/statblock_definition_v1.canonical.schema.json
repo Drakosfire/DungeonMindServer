@@ -2187,7 +2187,7 @@
     },
     "SpellRef": {
       "additionalProperties": false,
-      "description": "Reference to a spell within a group.\n\nSpell level is authored only on the containing ``SpellGroup.level`` —\nnot duplicated here — so a group cannot contradict its members.",
+      "description": "Spell identity within a group; level lives only on ``SpellGroup.level``.",
       "properties": {
         "name": {
           "minLength": 1,

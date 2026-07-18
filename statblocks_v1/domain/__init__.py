@@ -2,6 +2,7 @@
 
 from statblocks_v1.domain.canonicalization import (
     CANONICALIZER_VERSION,
+    CanonicalDefinitionJSON,
     canonical_definition_bytes,
     canonicalize_definition,
 )
@@ -49,6 +50,7 @@ __all__ = [
     "Activation",
     "AutomationSupport",
     "CANONICALIZER_VERSION",
+    "CanonicalDefinitionJSON",
     "ChallengeProfile",
     "CommunicationProfile",
     "CreatureIdentity",

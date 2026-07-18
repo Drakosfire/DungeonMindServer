@@ -53,6 +53,14 @@ class ValidationReceiptV1(StrictModel):
 
     @property
     def is_persistence_ready(self) -> bool:
-        """Whether the definition has no errors under persistence policy."""
+        """Whether this receipt proves persistence readiness.
 
+        Only a receipt produced under :attr:`ValidationMode.persistence` may
+        claim readiness. Candidate/preview modes downgrade some contradictions
+        to warnings, so a warning-only candidate receipt must not be treated as
+        persistence-ready.
+        """
+
+        if self.mode is not ValidationMode.persistence:
+            return False
         return not any(issue.severity is ValidationSeverity.error for issue in self.issues)
