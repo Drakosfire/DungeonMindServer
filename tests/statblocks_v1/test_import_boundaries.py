@@ -20,6 +20,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE_ROOT = REPO_ROOT / "statblocks_v1"
 
@@ -169,22 +171,52 @@ def test_domain_imports_only_stdlib_and_pydantic() -> None:
         _assert_domain_safe_imports(path)
 
 
-def test_application_depends_only_on_domain() -> None:
+def _assert_application_import(name: str, *, path: Path | str = "<synthetic>") -> None:
+    """Enforce application → domain (stdlib/Pydantic allowed; outer layers rejected)."""
     allowed_roots = STDLIB_AND_TYPING_ROOTS | {"pydantic", "statblocks_v1"}
+    root = name.split(".")[0]
+    assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
+    assert root not in REPO_OWNED_PACKAGE_ROOTS, (
+        f"application must not import repository package {root!r} ({path})"
+    )
+    if name == "statblocks_v1":
+        return
+    layer = _layer_of(name)
+    if layer is not None:
+        assert layer in {"domain", "application"}, (
+            f"application must not import {name!r} ({path})"
+        )
+
+
+def test_application_depends_only_on_domain() -> None:
     for path in _python_files("application"):
         _assert_no_legacy(path)
         for name in _import_names(path):
-            root = name.split(".")[0]
-            assert root in allowed_roots, f"{path} imports unexpected root {root!r} ({name})"
-            assert root not in REPO_OWNED_PACKAGE_ROOTS, (
-                f"application must not import repository package {root!r} ({path})"
-            )
-            if name == "statblocks_v1":
-                continue
-            layer = _layer_of(name)
-            assert layer in {"domain", "application"}, (
-                f"application must not import {name!r} ({path})"
-            )
+            _assert_application_import(name, path=path)
+
+
+def test_application_import_policy_allows_stdlib_pydantic_rejects_outer_layers() -> None:
+    """Stdlib/Pydantic must pass; application → infrastructure/api must fail."""
+    for allowed in (
+        "typing",
+        "datetime",
+        "pydantic",
+        "statblocks_v1",
+        "statblocks_v1.domain",
+        "statblocks_v1.domain.errors",
+        "statblocks_v1.application",
+    ):
+        _assert_application_import(allowed)
+
+    for forbidden in (
+        "statblocks_v1.infrastructure",
+        "statblocks_v1.infrastructure.runtime",
+        "statblocks_v1.api",
+        "statblocks_v1.api.router",
+        "statblocks_v1.testing",
+    ):
+        with pytest.raises(AssertionError):
+            _assert_application_import(forbidden)
 
 
 def test_infrastructure_depends_only_on_domain_and_application() -> None:
