@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from statblocks_v1.domain import (
     StatblockDefinitionV1,
@@ -11,6 +12,14 @@ from statblocks_v1.domain import (
     ValidationSeverity,
     validate_definition,
 )
+from statblocks_v1.domain.primitives import (
+    Distance,
+    DistanceUnit,
+    RangeProfile,
+    TargetKind,
+    TargetProfile,
+)
+from statblocks_v1.domain.rule_elements import AttackMechanic, AttackType
 
 
 VALID_FIXTURES = (
@@ -279,3 +288,84 @@ def test_attack_target_range_is_rejected(load_fixture) -> None:
         StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
     )
     assert "ATTACK_TARGET_RANGE_UNEXPECTED" in {issue.code for issue in receipt.issues}
+
+
+def test_spell_slots_usage_forbidden_outside_leveled_prepared_known(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["rule_elements"][0]["usage"]["kind"] = "spell_slots"
+
+    element_receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert "USAGE_FIELDS_INCOHERENT" in {issue.code for issue in element_receipt.issues}
+
+    innate = load_fixture("innate_spellcaster")
+    innate["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["kind"] = "spell_slots"
+    innate["rule_elements"][0]["mechanic"]["groups"][1]["usage"]["uses"] = None
+    innate["rule_elements"][0]["mechanic"]["groups"][1]["slots"] = 3
+
+    innate_receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(innate), ValidationMode.persistence
+    )
+    assert "USAGE_FIELDS_INCOHERENT" in {issue.code for issue in innate_receipt.issues}
+    assert "SPELL_GROUP_SLOTS_INCOHERENT" in {issue.code for issue in innate_receipt.issues}
+
+
+def test_legendary_usage_and_costs_must_name_same_pool(load_fixture) -> None:
+    payload = load_fixture("legendary_creature")
+    payload["resources"].append(
+        {
+            "key": "mythic_actions",
+            "name": "Mythic Actions",
+            "maximum": 3,
+            "refresh": "at the start of its turn",
+            "rules_text": None,
+        }
+    )
+    payload["rule_elements"][0]["usage"]["resource_key"] = "legendary_actions"
+    payload["rule_elements"][0]["costs"] = [
+        {"resource_key": "mythic_actions", "amount": 1}
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert "LEGENDARY_RESOURCE_MISMATCH" in {issue.code for issue in receipt.issues}
+
+
+def test_range_profile_rejects_long_shorter_than_normal() -> None:
+    with pytest.raises(ValidationError, match="long range"):
+        RangeProfile(
+            normal=Distance(value=80, unit=DistanceUnit.feet),
+            long=Distance(value=30, unit=DistanceUnit.feet),
+        )
+
+
+def test_attack_validation_detects_inverted_range_window(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    inverted = RangeProfile.model_construct(
+        normal=Distance(value=80, unit=DistanceUnit.feet),
+        long=Distance(value=30, unit=DistanceUnit.feet),
+    )
+    element = definition.rule_elements[0]
+    attack = AttackMechanic.model_construct(
+        kind="attack",
+        attack_type=AttackType.ranged_weapon,
+        attack_bonus=5,
+        reach=None,
+        range=inverted,
+        target=TargetProfile(kind=TargetKind.creature, count=1),
+        hit_effects=[],
+        miss_effects=[],
+    )
+    mutated = definition.model_copy(
+        update={
+            "rule_elements": [
+                element.model_copy(update={"mechanic": attack}),
+                *definition.rule_elements[1:],
+            ]
+        }
+    )
+
+    receipt = validate_definition(mutated, ValidationMode.persistence)
+    assert "ATTACK_RANGE_ORDER_INCOHERENT" in {issue.code for issue in receipt.issues}

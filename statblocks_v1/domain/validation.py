@@ -431,6 +431,29 @@ def _validate_action_economy(
                     path,
                     "Legendary actions require resource usage and at least one cost.",
                 )
+            elif element.usage.resource_key is None:
+                issue(
+                    "LEGENDARY_RESOURCE_REQUIRED",
+                    ValidationSeverity.error,
+                    f"{path}.usage.resource_key",
+                    "Legendary actions require usage.resource_key.",
+                )
+            elif element.usage.resource_key not in resource_keys:
+                issue(
+                    "LEGENDARY_RESOURCE_REQUIRED",
+                    ValidationSeverity.error,
+                    f"{path}.usage.resource_key",
+                    "Legendary usage.resource_key must point to an existing resource pool.",
+                )
+            elif any(
+                cost.resource_key != element.usage.resource_key for cost in element.costs
+            ):
+                issue(
+                    "LEGENDARY_RESOURCE_MISMATCH",
+                    ValidationSeverity.error,
+                    f"{path}.costs",
+                    "Legendary usage.resource_key must match every cost.resource_key.",
+                )
             elif not any(cost.resource_key in resource_keys for cost in element.costs):
                 issue(
                     "LEGENDARY_RESOURCE_REQUIRED",
@@ -461,7 +484,9 @@ def _validate_mechanics(definition: StatblockDefinitionV1, issue: IssueEmitter) 
     for index, element in enumerate(definition.rule_elements):
         path = f"rule_elements[{index}]"
         mechanic = element.mechanic
-        _validate_usage(element.usage, f"{path}.usage", issue)
+        _validate_usage(
+            element.usage, f"{path}.usage", issue, allow_spell_slots=False
+        )
         if isinstance(mechanic, AttackMechanic):
             _validate_attack_mechanic(mechanic, f"{path}.mechanic", issue)
         if isinstance(mechanic, SpellcastingMechanic):
@@ -477,7 +502,13 @@ def _validate_mechanics(definition: StatblockDefinitionV1, issue: IssueEmitter) 
             )
 
 
-def _validate_usage(usage: Usage, path: str, issue: IssueEmitter) -> None:
+def _validate_usage(
+    usage: Usage,
+    path: str,
+    issue: IssueEmitter,
+    *,
+    allow_spell_slots: bool = False,
+) -> None:
     kind = usage.kind
     if kind is UsageKind.recharge:
         if usage.recharge_range is None:
@@ -536,6 +567,14 @@ def _validate_usage(usage: Usage, path: str, issue: IssueEmitter) -> None:
         return
 
     if kind is UsageKind.spell_slots:
+        if not allow_spell_slots:
+            issue(
+                "USAGE_FIELDS_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.kind",
+                "spell_slots usage is reserved for leveled prepared/known spell groups.",
+            )
+            return
         if usage.uses is not None:
             issue(
                 "USAGE_FIELDS_INCOHERENT",
@@ -644,6 +683,17 @@ def _validate_attack_mechanic(
                 f"{path}.reach",
                 "A ranged attack must not include typed reach.",
             )
+    if mechanic.range is not None and mechanic.range.long is not None:
+        if (
+            mechanic.range.long.unit != mechanic.range.normal.unit
+            or mechanic.range.long.value < mechanic.range.normal.value
+        ):
+            issue(
+                "ATTACK_RANGE_ORDER_INCOHERENT",
+                ValidationSeverity.error,
+                f"{path}.range",
+                "Attack long range must use the same unit and be >= normal range.",
+            )
 
     target = mechanic.target
     target_path = f"{path}.target"
@@ -722,7 +772,17 @@ def _validate_spellcasting_mechanic(
 
     for group_index, group in enumerate(mechanic.groups):
         group_path = f"{path}.groups[{group_index}]"
-        _validate_usage(group.usage, f"{group_path}.usage", issue)
+        allow_spell_slots = (
+            mode in {CastingMode.prepared, CastingMode.known}
+            and group.level is not None
+            and group.level > 0
+        )
+        _validate_usage(
+            group.usage,
+            f"{group_path}.usage",
+            issue,
+            allow_spell_slots=allow_spell_slots,
+        )
         _validate_spell_group(group, mode, group_path, issue)
 
 
