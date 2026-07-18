@@ -1,0 +1,2633 @@
+{
+  "$defs": {
+    "AbilityName": {
+      "enum": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "title": "AbilityName",
+      "type": "string"
+    },
+    "AbilityScores": {
+      "additionalProperties": false,
+      "properties": {
+        "charisma": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Charisma",
+          "type": "integer"
+        },
+        "constitution": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Constitution",
+          "type": "integer"
+        },
+        "dexterity": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Dexterity",
+          "type": "integer"
+        },
+        "intelligence": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Intelligence",
+          "type": "integer"
+        },
+        "strength": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Strength",
+          "type": "integer"
+        },
+        "wisdom": {
+          "maximum": 30,
+          "minimum": 1,
+          "title": "Wisdom",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "strength",
+        "dexterity",
+        "constitution",
+        "intelligence",
+        "wisdom",
+        "charisma"
+      ],
+      "title": "AbilityScores",
+      "type": "object"
+    },
+    "Activation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ActivationKind"
+        },
+        "timing_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timing Text"
+        },
+        "trigger": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Trigger"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Activation",
+      "type": "object"
+    },
+    "ActivationKind": {
+      "enum": [
+        "passive",
+        "action",
+        "bonus_action",
+        "reaction",
+        "triggered",
+        "legendary",
+        "lair_initiative",
+        "special"
+      ],
+      "title": "ActivationKind",
+      "type": "string"
+    },
+    "ArmorClassProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Condition"
+        },
+        "default": {
+          "title": "Default",
+          "type": "boolean"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "value": {
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "default"
+      ],
+      "title": "ArmorClassProfile",
+      "type": "object"
+    },
+    "AttackMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "attack_bonus": {
+          "title": "Attack Bonus",
+          "type": "integer"
+        },
+        "attack_type": {
+          "$ref": "#/$defs/AttackType"
+        },
+        "hit_effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Hit Effects",
+          "type": "array"
+        },
+        "kind": {
+          "const": "attack",
+          "default": "attack",
+          "title": "Kind",
+          "type": "string"
+        },
+        "miss_effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Miss Effects",
+          "type": "array"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reach": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target": {
+          "$ref": "#/$defs/TargetProfile"
+        }
+      },
+      "required": [
+        "attack_type",
+        "attack_bonus",
+        "target"
+      ],
+      "title": "AttackMechanic",
+      "type": "object"
+    },
+    "AttackType": {
+      "enum": [
+        "melee_weapon",
+        "ranged_weapon",
+        "melee_spell",
+        "ranged_spell",
+        "special"
+      ],
+      "title": "AttackType",
+      "type": "string"
+    },
+    "AutomationSupport": {
+      "enum": [
+        "full",
+        "partial",
+        "manual"
+      ],
+      "title": "AutomationSupport",
+      "type": "string"
+    },
+    "CastingMode": {
+      "enum": [
+        "prepared",
+        "known",
+        "innate",
+        "charges",
+        "special"
+      ],
+      "title": "CastingMode",
+      "type": "string"
+    },
+    "ChallengeProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "proficiency_bonus": {
+          "minimum": 0,
+          "title": "Proficiency Bonus",
+          "type": "integer"
+        },
+        "rating": {
+          "minLength": 1,
+          "title": "Rating",
+          "type": "string"
+        },
+        "xp_override": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Xp Override"
+        }
+      },
+      "required": [
+        "rating",
+        "proficiency_bonus"
+      ],
+      "title": "ChallengeProfile",
+      "type": "object"
+    },
+    "CommunicationProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "languages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Languages",
+          "type": "array"
+        },
+        "special_modes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Special Modes",
+          "type": "array"
+        },
+        "telepathy_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CommunicationProfile",
+      "type": "object"
+    },
+    "CompositeMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Effects",
+          "type": "array"
+        },
+        "kind": {
+          "const": "composite",
+          "default": "composite",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TargetProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "CompositeMechanic",
+      "type": "object"
+    },
+    "ConditionEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "minLength": 1,
+          "title": "Condition",
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "condition",
+          "default": "condition",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition"
+      ],
+      "title": "ConditionEffect",
+      "type": "object"
+    },
+    "CreatureIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alignment"
+        },
+        "creature_type": {
+          "minLength": 1,
+          "title": "Creature Type",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "size": {
+          "minLength": 1,
+          "title": "Size",
+          "type": "string"
+        },
+        "subtypes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Subtypes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "creature_type"
+      ],
+      "title": "CreatureIdentity",
+      "type": "object"
+    },
+    "CreaturePhase": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "title": "Default",
+          "type": "boolean"
+        },
+        "disabled_element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Disabled Element Keys",
+          "type": "array"
+        },
+        "enabled_element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Enabled Element Keys",
+          "type": "array"
+        },
+        "entry_rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entry Rules Text"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "default"
+      ],
+      "title": "CreaturePhase",
+      "type": "object"
+    },
+    "DamageEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "damage": {
+          "$ref": "#/$defs/DiceExpression"
+        },
+        "damage_type": {
+          "minLength": 1,
+          "title": "Damage Type",
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "damage",
+          "default": "damage",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "damage",
+        "damage_type"
+      ],
+      "title": "DamageEffect",
+      "type": "object"
+    },
+    "DamageInteraction": {
+      "additionalProperties": false,
+      "properties": {
+        "bypasses": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Bypasses",
+          "type": "array"
+        },
+        "damage_types": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Damage Types",
+          "type": "array"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DamageInteractionKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualifiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "damage_types"
+      ],
+      "title": "DamageInteraction",
+      "type": "object"
+    },
+    "DamageInteractionKind": {
+      "enum": [
+        "vulnerability",
+        "resistance",
+        "immunity"
+      ],
+      "title": "DamageInteractionKind",
+      "type": "string"
+    },
+    "DefenseProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "armor_classes": {
+          "items": {
+            "$ref": "#/$defs/ArmorClassProfile"
+          },
+          "minItems": 1,
+          "title": "Armor Classes",
+          "type": "array"
+        },
+        "condition_immunities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Condition Immunities",
+          "type": "array"
+        },
+        "damage_interactions": {
+          "items": {
+            "$ref": "#/$defs/DamageInteraction"
+          },
+          "title": "Damage Interactions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "armor_classes"
+      ],
+      "title": "DefenseProfile",
+      "type": "object"
+    },
+    "DiceExpression": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "die": {
+          "minimum": 2,
+          "title": "Die",
+          "type": "integer"
+        },
+        "modifier": {
+          "default": 0,
+          "title": "Modifier",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "count",
+        "die"
+      ],
+      "title": "DiceExpression",
+      "type": "object"
+    },
+    "DisableElementsEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Element Keys",
+          "type": "array"
+        },
+        "kind": {
+          "const": "disable_elements",
+          "default": "disable_elements",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_keys"
+      ],
+      "title": "DisableElementsEffect",
+      "type": "object"
+    },
+    "Distance": {
+      "additionalProperties": false,
+      "properties": {
+        "unit": {
+          "$ref": "#/$defs/DistanceUnit",
+          "default": "feet"
+        },
+        "value": {
+          "minimum": 0,
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "Distance",
+      "type": "object"
+    },
+    "DistanceUnit": {
+      "enum": [
+        "feet"
+      ],
+      "title": "DistanceUnit",
+      "type": "string"
+    },
+    "Duration": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DurationKind"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Duration",
+      "type": "object"
+    },
+    "DurationKind": {
+      "enum": [
+        "instantaneous",
+        "until_start_turn",
+        "until_end_turn",
+        "rounds",
+        "minutes",
+        "hours",
+        "until_save",
+        "permanent",
+        "special"
+      ],
+      "title": "DurationKind",
+      "type": "string"
+    },
+    "ElementUse": {
+      "additionalProperties": false,
+      "properties": {
+        "choice_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Choice Group"
+        },
+        "count": {
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "element_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Element Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_key",
+        "count"
+      ],
+      "title": "ElementUse",
+      "type": "object"
+    },
+    "EnableElementsEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "element_keys": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Element Keys",
+          "type": "array"
+        },
+        "kind": {
+          "const": "enable_elements",
+          "default": "enable_elements",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "element_keys"
+      ],
+      "title": "EnableElementsEffect",
+      "type": "object"
+    },
+    "EnterPhaseEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "enter_phase",
+          "default": "enter_phase",
+          "title": "Kind",
+          "type": "string"
+        },
+        "phase_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Phase Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase_key"
+      ],
+      "title": "EnterPhaseEffect",
+      "type": "object"
+    },
+    "ForcedMovementEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "minLength": 1,
+          "title": "Direction",
+          "type": "string"
+        },
+        "distance": {
+          "$ref": "#/$defs/Distance"
+        },
+        "kind": {
+          "const": "forced_movement",
+          "default": "forced_movement",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "distance",
+        "direction"
+      ],
+      "title": "ForcedMovementEffect",
+      "type": "object"
+    },
+    "HealingEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "healing": {
+          "$ref": "#/$defs/DiceExpression"
+        },
+        "kind": {
+          "const": "healing",
+          "default": "healing",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "healing"
+      ],
+      "title": "HealingEffect",
+      "type": "object"
+    },
+    "HitPointProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "displayed_average": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayed Average"
+        },
+        "fixed_value": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Value"
+        },
+        "formula": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DiceExpression"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "method": {
+          "enum": [
+            "formula",
+            "fixed"
+          ],
+          "title": "Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method"
+      ],
+      "title": "HitPointProfile",
+      "type": "object"
+    },
+    "HumanAdjudicatedEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudication_text": {
+          "minLength": 1,
+          "title": "Adjudication Text",
+          "type": "string"
+        },
+        "kind": {
+          "const": "human_adjudicated",
+          "default": "human_adjudicated",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adjudication_text"
+      ],
+      "title": "HumanAdjudicatedEffect",
+      "type": "object"
+    },
+    "HumanAdjudicatedMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "adjudication_tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Adjudication Tags",
+          "type": "array"
+        },
+        "kind": {
+          "const": "human_adjudicated",
+          "default": "human_adjudicated",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "HumanAdjudicatedMechanic",
+      "type": "object"
+    },
+    "LairProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "initiative_count": {
+          "anyOf": [
+            {
+              "maximum": 30,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Initiative Count"
+        },
+        "initiative_tiebreak": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Initiative Tiebreak"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "regional_rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Regional Rules Text"
+        }
+      },
+      "title": "LairProfile",
+      "type": "object"
+    },
+    "MovementEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "movement",
+          "default": "movement",
+          "title": "Kind",
+          "type": "string"
+        },
+        "movement_mode_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movement Mode Key"
+        }
+      },
+      "title": "MovementEffect",
+      "type": "object"
+    },
+    "MovementMode": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "$ref": "#/$defs/Distance"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/MovementModeKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualifiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "key",
+        "mode",
+        "distance"
+      ],
+      "title": "MovementMode",
+      "type": "object"
+    },
+    "MovementModeKind": {
+      "enum": [
+        "walk",
+        "fly",
+        "swim",
+        "climb",
+        "burrow",
+        "hover",
+        "special"
+      ],
+      "title": "MovementModeKind",
+      "type": "string"
+    },
+    "MovementProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "modes": {
+          "items": {
+            "$ref": "#/$defs/MovementMode"
+          },
+          "minItems": 1,
+          "title": "Modes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "modes"
+      ],
+      "title": "MovementProfile",
+      "type": "object"
+    },
+    "MultiattackMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "multiattack",
+          "default": "multiattack",
+          "title": "Kind",
+          "type": "string"
+        },
+        "sequences": {
+          "items": {
+            "$ref": "#/$defs/ElementUse"
+          },
+          "minItems": 1,
+          "title": "Sequences",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sequences"
+      ],
+      "title": "MultiattackMechanic",
+      "type": "object"
+    },
+    "PassiveMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Effects",
+          "type": "array"
+        },
+        "kind": {
+          "const": "passive",
+          "default": "passive",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "PassiveMechanic",
+      "type": "object"
+    },
+    "PhaseTransitionMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "destination_phase_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Destination Phase Key",
+          "type": "string"
+        },
+        "effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Effects",
+          "type": "array"
+        },
+        "kind": {
+          "const": "phase_transition",
+          "default": "phase_transition",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination_phase_key"
+      ],
+      "title": "PhaseTransitionMechanic",
+      "type": "object"
+    },
+    "ProficiencyDerivation": {
+      "enum": [
+        "standard",
+        "expertise",
+        "explicit_override"
+      ],
+      "title": "ProficiencyDerivation",
+      "type": "string"
+    },
+    "ProficiencyProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "proficiency_bonus": {
+          "minimum": 0,
+          "title": "Proficiency Bonus",
+          "type": "integer"
+        },
+        "saving_throws": {
+          "items": {
+            "$ref": "#/$defs/SavingThrowBonus"
+          },
+          "title": "Saving Throws",
+          "type": "array"
+        },
+        "skills": {
+          "items": {
+            "$ref": "#/$defs/SkillBonus"
+          },
+          "title": "Skills",
+          "type": "array"
+        }
+      },
+      "required": [
+        "proficiency_bonus"
+      ],
+      "title": "ProficiencyProfile",
+      "type": "object"
+    },
+    "RangeProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "long": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Distance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "normal": {
+          "$ref": "#/$defs/Distance"
+        }
+      },
+      "required": [
+        "normal"
+      ],
+      "title": "RangeProfile",
+      "type": "object"
+    },
+    "ResourceChangeEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "title": "Amount",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "resource_change",
+          "default": "resource_change",
+          "title": "Kind",
+          "type": "string"
+        },
+        "resource_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Resource Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_key",
+        "amount"
+      ],
+      "title": "ResourceChangeEffect",
+      "type": "object"
+    },
+    "ResourceCost": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "minimum": 1,
+          "title": "Amount",
+          "type": "integer"
+        },
+        "resource_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Resource Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_key",
+        "amount"
+      ],
+      "title": "ResourceCost",
+      "type": "object"
+    },
+    "ResourcePool": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "maximum": {
+          "minimum": 1,
+          "title": "Maximum",
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "refresh": {
+          "minLength": 1,
+          "title": "Refresh",
+          "type": "string"
+        },
+        "rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Text"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "maximum",
+        "refresh"
+      ],
+      "title": "ResourcePool",
+      "type": "object"
+    },
+    "RuleElement": {
+      "additionalProperties": false,
+      "properties": {
+        "activation": {
+          "$ref": "#/$defs/Activation"
+        },
+        "automation_support": {
+          "$ref": "#/$defs/AutomationSupport"
+        },
+        "costs": {
+          "items": {
+            "$ref": "#/$defs/ResourceCost"
+          },
+          "title": "Costs",
+          "type": "array"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "mechanic": {
+          "discriminator": {
+            "mapping": {
+              "attack": "#/$defs/AttackMechanic",
+              "composite": "#/$defs/CompositeMechanic",
+              "human_adjudicated": "#/$defs/HumanAdjudicatedMechanic",
+              "multiattack": "#/$defs/MultiattackMechanic",
+              "passive": "#/$defs/PassiveMechanic",
+              "phase_transition": "#/$defs/PhaseTransitionMechanic",
+              "save_effect": "#/$defs/SaveEffectMechanic",
+              "spellcasting": "#/$defs/SpellcastingMechanic"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AttackMechanic"
+            },
+            {
+              "$ref": "#/$defs/SaveEffectMechanic"
+            },
+            {
+              "$ref": "#/$defs/MultiattackMechanic"
+            },
+            {
+              "$ref": "#/$defs/SpellcastingMechanic"
+            },
+            {
+              "$ref": "#/$defs/PassiveMechanic"
+            },
+            {
+              "$ref": "#/$defs/CompositeMechanic"
+            },
+            {
+              "$ref": "#/$defs/PhaseTransitionMechanic"
+            },
+            {
+              "$ref": "#/$defs/HumanAdjudicatedMechanic"
+            }
+          ],
+          "title": "Mechanic"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "rules_text": {
+          "minLength": 1,
+          "title": "Rules Text",
+          "type": "string"
+        },
+        "section": {
+          "$ref": "#/$defs/RuleSection"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "section",
+        "rules_text",
+        "activation",
+        "usage",
+        "mechanic",
+        "automation_support"
+      ],
+      "title": "RuleElement",
+      "type": "object"
+    },
+    "RuleSection": {
+      "enum": [
+        "trait",
+        "action",
+        "bonus_action",
+        "reaction",
+        "legendary_action",
+        "lair_action",
+        "regional_effect"
+      ],
+      "title": "RuleSection",
+      "type": "string"
+    },
+    "RulesetEdition": {
+      "enum": [
+        "2014",
+        "2024"
+      ],
+      "title": "RulesetEdition",
+      "type": "string"
+    },
+    "RulesetRef": {
+      "additionalProperties": false,
+      "properties": {
+        "edition": {
+          "$ref": "#/$defs/RulesetEdition"
+        },
+        "house_ruleset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "House Ruleset Id"
+        },
+        "system": {
+          "$ref": "#/$defs/RulesetSystem"
+        }
+      },
+      "required": [
+        "system",
+        "edition"
+      ],
+      "title": "RulesetRef",
+      "type": "object"
+    },
+    "RulesetSystem": {
+      "enum": [
+        "dnd5e"
+      ],
+      "title": "RulesetSystem",
+      "type": "string"
+    },
+    "SaveEffectMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "failure_effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Failure Effects",
+          "type": "array"
+        },
+        "kind": {
+          "const": "save_effect",
+          "default": "save_effect",
+          "title": "Kind",
+          "type": "string"
+        },
+        "save": {
+          "$ref": "#/$defs/SavingThrow"
+        },
+        "success_effects": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "condition": "#/$defs/ConditionEffect",
+                "damage": "#/$defs/DamageEffect",
+                "disable_elements": "#/$defs/DisableElementsEffect",
+                "enable_elements": "#/$defs/EnableElementsEffect",
+                "enter_phase": "#/$defs/EnterPhaseEffect",
+                "forced_movement": "#/$defs/ForcedMovementEffect",
+                "healing": "#/$defs/HealingEffect",
+                "human_adjudicated": "#/$defs/HumanAdjudicatedEffect",
+                "movement": "#/$defs/MovementEffect",
+                "resource_change": "#/$defs/ResourceChangeEffect",
+                "stat_modifier": "#/$defs/StatModifierEffect",
+                "summon": "#/$defs/SummonEffect"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DamageEffect"
+              },
+              {
+                "$ref": "#/$defs/HealingEffect"
+              },
+              {
+                "$ref": "#/$defs/ConditionEffect"
+              },
+              {
+                "$ref": "#/$defs/MovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ForcedMovementEffect"
+              },
+              {
+                "$ref": "#/$defs/ResourceChangeEffect"
+              },
+              {
+                "$ref": "#/$defs/SummonEffect"
+              },
+              {
+                "$ref": "#/$defs/StatModifierEffect"
+              },
+              {
+                "$ref": "#/$defs/EnableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/DisableElementsEffect"
+              },
+              {
+                "$ref": "#/$defs/EnterPhaseEffect"
+              },
+              {
+                "$ref": "#/$defs/HumanAdjudicatedEffect"
+              }
+            ]
+          },
+          "title": "Success Effects",
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/TargetProfile"
+        }
+      },
+      "required": [
+        "save",
+        "target"
+      ],
+      "title": "SaveEffectMechanic",
+      "type": "object"
+    },
+    "SavingThrow": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
+        "dc": {
+          "minimum": 1,
+          "title": "Dc",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ability",
+        "dc"
+      ],
+      "title": "SavingThrow",
+      "type": "object"
+    },
+    "SavingThrowBonus": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
+        "derivation": {
+          "$ref": "#/$defs/ProficiencyDerivation"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ability",
+        "value",
+        "derivation"
+      ],
+      "title": "SavingThrowBonus",
+      "type": "object"
+    },
+    "Sense": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SenseKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualifiers",
+          "type": "array"
+        },
+        "range": {
+          "$ref": "#/$defs/Distance"
+        }
+      },
+      "required": [
+        "kind",
+        "range"
+      ],
+      "title": "Sense",
+      "type": "object"
+    },
+    "SenseKind": {
+      "enum": [
+        "darkvision",
+        "blindsight",
+        "tremorsense",
+        "truesight",
+        "special"
+      ],
+      "title": "SenseKind",
+      "type": "string"
+    },
+    "SenseProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "passive_perception": {
+          "minimum": 1,
+          "title": "Passive Perception",
+          "type": "integer"
+        },
+        "senses": {
+          "items": {
+            "$ref": "#/$defs/Sense"
+          },
+          "title": "Senses",
+          "type": "array"
+        }
+      },
+      "required": [
+        "passive_perception"
+      ],
+      "title": "SenseProfile",
+      "type": "object"
+    },
+    "SkillBonus": {
+      "additionalProperties": false,
+      "properties": {
+        "derivation": {
+          "$ref": "#/$defs/ProficiencyDerivation"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Note"
+        },
+        "skill": {
+          "minLength": 1,
+          "title": "Skill",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill",
+        "value",
+        "derivation"
+      ],
+      "title": "SkillBonus",
+      "type": "object"
+    },
+    "SpellGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "anyOf": [
+            {
+              "maximum": 9,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Level"
+        },
+        "slots": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slots"
+        },
+        "spells": {
+          "items": {
+            "$ref": "#/$defs/SpellRef"
+          },
+          "minItems": 1,
+          "title": "Spells",
+          "type": "array"
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "usage",
+        "spells"
+      ],
+      "title": "SpellGroup",
+      "type": "object"
+    },
+    "SpellRef": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rules Text"
+        },
+        "source_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Id"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SpellRef",
+      "type": "object"
+    },
+    "SpellcastingMechanic": {
+      "additionalProperties": false,
+      "properties": {
+        "ability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AbilityName"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "attack_bonus": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attack Bonus"
+        },
+        "caster_level": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Caster Level"
+        },
+        "casting_mode": {
+          "$ref": "#/$defs/CastingMode"
+        },
+        "groups": {
+          "items": {
+            "$ref": "#/$defs/SpellGroup"
+          },
+          "minItems": 1,
+          "title": "Groups",
+          "type": "array"
+        },
+        "kind": {
+          "const": "spellcasting",
+          "default": "spellcasting",
+          "title": "Kind",
+          "type": "string"
+        },
+        "save_dc": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Save Dc"
+        }
+      },
+      "required": [
+        "casting_mode",
+        "groups"
+      ],
+      "title": "SpellcastingMechanic",
+      "type": "object"
+    },
+    "StatModifierEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "stat_modifier",
+          "default": "stat_modifier",
+          "title": "Kind",
+          "type": "string"
+        },
+        "modifier": {
+          "title": "Modifier",
+          "type": "integer"
+        },
+        "stat": {
+          "minLength": 1,
+          "title": "Stat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stat",
+        "modifier"
+      ],
+      "title": "StatModifierEffect",
+      "type": "object"
+    },
+    "StatblockFlavorText": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        }
+      },
+      "title": "StatblockFlavorText",
+      "type": "object"
+    },
+    "SummonEffect": {
+      "additionalProperties": false,
+      "properties": {
+        "creature_description": {
+          "minLength": 1,
+          "title": "Creature Description",
+          "type": "string"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Duration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "const": "summon",
+          "default": "summon",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "creature_description"
+      ],
+      "title": "SummonEffect",
+      "type": "object"
+    },
+    "TargetKind": {
+      "enum": [
+        "creature",
+        "creatures",
+        "self",
+        "point",
+        "area",
+        "object",
+        "structure",
+        "special"
+      ],
+      "title": "TargetKind",
+      "type": "string"
+    },
+    "TargetProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Area"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "kind": {
+          "$ref": "#/$defs/TargetKind"
+        },
+        "qualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Qualifiers",
+          "type": "array"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "TargetProfile",
+      "type": "object"
+    },
+    "Trigger": {
+      "additionalProperties": false,
+      "properties": {
+        "condition_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Condition Text"
+        },
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_element_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Element Key"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Trigger",
+      "type": "object"
+    },
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/UsageKind"
+        },
+        "recharge_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recharge Range"
+        },
+        "refresh_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh Text"
+        },
+        "resource_key": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resource Key"
+        },
+        "uses": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uses"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Usage",
+      "type": "object"
+    },
+    "UsageKind": {
+      "enum": [
+        "at_will",
+        "recharge",
+        "per_turn",
+        "per_round",
+        "per_day",
+        "once",
+        "resource",
+        "manual"
+      ],
+      "title": "UsageKind",
+      "type": "string"
+    },
+    "VitalityProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "hit_points": {
+          "$ref": "#/$defs/HitPointProfile"
+        }
+      },
+      "required": [
+        "hit_points"
+      ],
+      "title": "VitalityProfile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abilities": {
+      "$ref": "#/$defs/AbilityScores"
+    },
+    "challenge": {
+      "$ref": "#/$defs/ChallengeProfile"
+    },
+    "communication": {
+      "$ref": "#/$defs/CommunicationProfile"
+    },
+    "defenses": {
+      "$ref": "#/$defs/DefenseProfile"
+    },
+    "flavor_text": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StatblockFlavorText"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "identity": {
+      "$ref": "#/$defs/CreatureIdentity"
+    },
+    "lair": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LairProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "movement": {
+      "$ref": "#/$defs/MovementProfile"
+    },
+    "phases": {
+      "items": {
+        "$ref": "#/$defs/CreaturePhase"
+      },
+      "title": "Phases",
+      "type": "array"
+    },
+    "proficiencies": {
+      "$ref": "#/$defs/ProficiencyProfile"
+    },
+    "resources": {
+      "items": {
+        "$ref": "#/$defs/ResourcePool"
+      },
+      "title": "Resources",
+      "type": "array"
+    },
+    "rule_elements": {
+      "items": {
+        "$ref": "#/$defs/RuleElement"
+      },
+      "minItems": 1,
+      "title": "Rule Elements",
+      "type": "array"
+    },
+    "ruleset": {
+      "$ref": "#/$defs/RulesetRef"
+    },
+    "senses": {
+      "$ref": "#/$defs/SenseProfile"
+    },
+    "vitality": {
+      "$ref": "#/$defs/VitalityProfile"
+    }
+  },
+  "required": [
+    "ruleset",
+    "identity",
+    "defenses",
+    "vitality",
+    "movement",
+    "abilities",
+    "proficiencies",
+    "senses",
+    "communication",
+    "challenge",
+    "rule_elements"
+  ],
+  "title": "StatblockDefinitionV1",
+  "type": "object"
+}
