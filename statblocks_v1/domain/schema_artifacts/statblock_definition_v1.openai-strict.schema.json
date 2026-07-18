@@ -115,6 +115,9 @@
             }
           ]
         },
+        "default": {
+          "type": "boolean"
+        },
         "key": {
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"
@@ -138,7 +141,8 @@
         "key",
         "value",
         "label",
-        "condition"
+        "condition",
+        "default"
       ],
       "type": "object"
     },
@@ -153,7 +157,7 @@
         },
         "hit_effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -196,11 +200,14 @@
         },
         "kind": {
           "const": "attack",
+          "enum": [
+            "attack"
+          ],
           "type": "string"
         },
         "miss_effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -373,7 +380,7 @@
       "properties": {
         "effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -416,6 +423,9 @@
         },
         "kind": {
           "const": "composite",
+          "enum": [
+            "composite"
+          ],
           "type": "string"
         },
         "target": {
@@ -455,6 +465,9 @@
         },
         "kind": {
           "const": "condition",
+          "enum": [
+            "condition"
+          ],
           "type": "string"
         }
       },
@@ -509,6 +522,9 @@
     "CreaturePhase": {
       "additionalProperties": false,
       "properties": {
+        "default": {
+          "type": "boolean"
+        },
         "disabled_element_keys": {
           "items": {
             "type": "string"
@@ -543,6 +559,7 @@
       "required": [
         "key",
         "name",
+        "default",
         "enabled_element_keys",
         "disabled_element_keys",
         "entry_rules_text"
@@ -571,6 +588,9 @@
         },
         "kind": {
           "const": "damage",
+          "enum": [
+            "damage"
+          ],
           "type": "string"
         }
       },
@@ -693,6 +713,9 @@
         },
         "kind": {
           "const": "disable_elements",
+          "enum": [
+            "disable_elements"
+          ],
           "type": "string"
         }
       },
@@ -706,7 +729,11 @@
       "additionalProperties": false,
       "properties": {
         "unit": {
-          "$ref": "#/$defs/DistanceUnit"
+          "allOf": [
+            {
+              "$ref": "#/$defs/DistanceUnit"
+            }
+          ]
         },
         "value": {
           "minimum": 0,
@@ -720,6 +747,7 @@
       "type": "object"
     },
     "DistanceUnit": {
+      "const": "feet",
       "enum": [
         "feet"
       ],
@@ -804,6 +832,9 @@
         },
         "kind": {
           "const": "enable_elements",
+          "enum": [
+            "enable_elements"
+          ],
           "type": "string"
         }
       },
@@ -818,6 +849,9 @@
       "properties": {
         "kind": {
           "const": "enter_phase",
+          "enum": [
+            "enter_phase"
+          ],
           "type": "string"
         },
         "phase_key": {
@@ -843,6 +877,9 @@
         },
         "kind": {
           "const": "forced_movement",
+          "enum": [
+            "forced_movement"
+          ],
           "type": "string"
         }
       },
@@ -861,6 +898,9 @@
         },
         "kind": {
           "const": "healing",
+          "enum": [
+            "healing"
+          ],
           "type": "string"
         }
       },
@@ -930,6 +970,9 @@
         },
         "kind": {
           "const": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
           "type": "string"
         }
       },
@@ -950,6 +993,9 @@
         },
         "kind": {
           "const": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
           "type": "string"
         }
       },
@@ -962,6 +1008,16 @@
     "LairProfile": {
       "additionalProperties": false,
       "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "initiative_count": {
           "anyOf": [
             {
@@ -1007,6 +1063,7 @@
       },
       "required": [
         "name",
+        "description",
         "initiative_count",
         "initiative_tiebreak",
         "regional_rules_text"
@@ -1028,6 +1085,9 @@
         },
         "kind": {
           "const": "movement",
+          "enum": [
+            "movement"
+          ],
           "type": "string"
         },
         "movement_mode_key": {
@@ -1110,6 +1170,9 @@
       "properties": {
         "kind": {
           "const": "multiattack",
+          "enum": [
+            "multiattack"
+          ],
           "type": "string"
         },
         "sequences": {
@@ -1131,7 +1194,7 @@
       "properties": {
         "effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -1174,6 +1237,9 @@
         },
         "kind": {
           "const": "passive",
+          "enum": [
+            "passive"
+          ],
           "type": "string"
         }
       },
@@ -1192,7 +1258,7 @@
         },
         "effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -1235,6 +1301,9 @@
         },
         "kind": {
           "const": "phase_transition",
+          "enum": [
+            "phase_transition"
+          ],
           "type": "string"
         }
       },
@@ -1256,10 +1325,6 @@
     "ProficiencyProfile": {
       "additionalProperties": false,
       "properties": {
-        "proficiency_bonus": {
-          "minimum": 0,
-          "type": "integer"
-        },
         "saving_throws": {
           "items": {
             "$ref": "#/$defs/SavingThrowBonus"
@@ -1274,7 +1339,6 @@
         }
       },
       "required": [
-        "proficiency_bonus",
         "saving_throws",
         "skills"
       ],
@@ -1303,6 +1367,26 @@
       ],
       "type": "object"
     },
+    "RechargeRange": {
+      "additionalProperties": false,
+      "properties": {
+        "maximum": {
+          "maximum": 6,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "minimum": {
+          "maximum": 6,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "minimum",
+        "maximum"
+      ],
+      "type": "object"
+    },
     "ResourceChangeEffect": {
       "additionalProperties": false,
       "properties": {
@@ -1311,6 +1395,9 @@
         },
         "kind": {
           "const": "resource_change",
+          "enum": [
+            "resource_change"
+          ],
           "type": "string"
         },
         "resource_key": {
@@ -1402,7 +1489,7 @@
           "type": "string"
         },
         "mechanic": {
-          "oneOf": [
+          "anyOf": [
             {
               "$ref": "#/$defs/AttackMechanic"
             },
@@ -1522,6 +1609,7 @@
       "type": "object"
     },
     "RulesetSystem": {
+      "const": "dnd5e",
       "enum": [
         "dnd5e"
       ],
@@ -1532,7 +1620,7 @@
       "properties": {
         "failure_effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -1575,6 +1663,9 @@
         },
         "kind": {
           "const": "save_effect",
+          "enum": [
+            "save_effect"
+          ],
           "type": "string"
         },
         "save": {
@@ -1582,7 +1673,7 @@
         },
         "success_effects": {
           "items": {
-            "oneOf": [
+            "anyOf": [
               {
                 "$ref": "#/$defs/DamageEffect"
               },
@@ -1817,11 +1908,33 @@
     "SpellRef": {
       "additionalProperties": false,
       "properties": {
+        "level": {
+          "anyOf": [
+            {
+              "maximum": 9,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "minLength": 1,
           "type": "string"
         },
         "rules_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "school": {
           "anyOf": [
             {
               "type": "string"
@@ -1844,6 +1957,8 @@
       },
       "required": [
         "name",
+        "level",
+        "school",
         "source_id",
         "rules_text"
       ],
@@ -1895,6 +2010,9 @@
         },
         "kind": {
           "const": "spellcasting",
+          "enum": [
+            "spellcasting"
+          ],
           "type": "string"
         },
         "save_dc": {
@@ -1935,6 +2053,9 @@
         },
         "kind": {
           "const": "stat_modifier",
+          "enum": [
+            "stat_modifier"
+          ],
           "type": "string"
         },
         "modifier": {
@@ -1956,6 +2077,16 @@
     "StatblockFlavorText": {
       "additionalProperties": false,
       "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "summary": {
           "anyOf": [
             {
@@ -1968,7 +2099,8 @@
         }
       },
       "required": [
-        "summary"
+        "summary",
+        "description"
       ],
       "type": "object"
     },
@@ -1991,6 +2123,9 @@
         },
         "kind": {
           "const": "summon",
+          "enum": [
+            "summon"
+          ],
           "type": "string"
         }
       },
@@ -2112,17 +2247,7 @@
         "recharge_range": {
           "anyOf": [
             {
-              "maxItems": 2,
-              "minItems": 2,
-              "prefixItems": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "integer"
-                }
-              ],
-              "type": "array"
+              "$ref": "#/$defs/RechargeRange"
             },
             {
               "type": "null"

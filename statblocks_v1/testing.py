@@ -13,7 +13,7 @@ Equivalent:
 
     PYTHONPATH=. uv run --isolated --no-project \\
       --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \\
-      --with 'pydantic>=2.0' --with 'httpx>=0.27.0' \\
+      --with 'pydantic==2.7.4' --with 'httpx>=0.27.0' \\
       pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 """
 

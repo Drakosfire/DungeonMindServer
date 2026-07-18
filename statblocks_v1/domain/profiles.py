@@ -131,7 +131,8 @@ class SkillBonus(StrictModel):
 
 
 class ProficiencyProfile(StrictModel):
-    proficiency_bonus: int = Field(ge=0)
+    """Authored save/skill bonuses. Proficiency bonus is authored only on challenge."""
+
     saving_throws: list[SavingThrowBonus] = Field(default_factory=list)
     skills: list[SkillBonus] = Field(default_factory=list)
 

@@ -15,11 +15,20 @@
   `CompositeMechanic`, `PhaseTransitionMechanic`, and
   `HumanAdjudicatedMechanic`. The implementation follows the design names,
   intentionally superseding the earlier handoff's movement/utility names.
+- **Proficiency bonus is authored only on `challenge.proficiency_bonus`** —
+  not duplicated on `ProficiencyProfile`.
+- `Usage.recharge_range` is a `{minimum, maximum}` object (`RechargeRange`),
+  not a tuple (OpenAI-strict safe).
+- `SpellRef` includes `level` and `school` in addition to `name` / `rules_text`.
+- Schema compiler (`statblocks_v1/domain/schema.py`) strips metadata
+  context-aware (preserves property names `default` / `description`),
+  rewrites `oneOf` → `anyOf`, and rejects `prefixItems`.
 - Pydantic canonical and OpenAI strict artifacts are deterministic JSON at
   `statblocks_v1/domain/schema_artifacts/statblock_definition_v1.{canonical,openai-strict}.schema.json`.
 - Fixtures are under `Docs/Design/fixtures/dungeonbuddy-statblock-v1/`.
   Cross-reference and action-economy invalid examples intentionally remain
   structurally parseable for this PR and are validation work for PR14.
+- Focused tests: `./scripts/run_statblocks_v1_tests.sh` (isolated runner).
 - PR14 must enforce local-key uniqueness, default armor-class cardinality,
   multiattack/phase/resource references, section/activation coherence,
   ruleset policy, and all cross-field rules listed below.

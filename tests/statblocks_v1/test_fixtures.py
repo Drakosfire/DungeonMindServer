@@ -42,12 +42,12 @@ def _payload(name: str) -> dict:
 
 @pytest.mark.parametrize("name", VALID_FIXTURES)
 def test_valid_fixture_parses_and_round_trips(name: str) -> None:
-    definition = StatblockDefinitionV1.model_validate(_payload(name))
+    original = _payload(name)
+    definition = StatblockDefinitionV1.model_validate(original)
+    dumped = definition.model_dump(mode="json")
 
-    assert (
-        StatblockDefinitionV1.model_validate(definition.model_dump(mode="json"))
-        == definition
-    )
+    assert StatblockDefinitionV1.model_validate(dumped) == definition
+    assert dumped == original
 
 
 @pytest.mark.parametrize("name", STRUCTURALLY_INVALID_FIXTURES)
@@ -59,4 +59,6 @@ def test_structural_invalid_fixtures_fail_immediately(name: str) -> None:
 @pytest.mark.parametrize("name", CROSS_REFERENCE_FIXTURES)
 def test_cross_reference_fixtures_are_reserved_for_pr14(name: str) -> None:
     """PR13 stores examples; semantic validation intentionally arrives in PR14."""
-    assert StatblockDefinitionV1.model_validate(_payload(name))
+    original = _payload(name)
+    definition = StatblockDefinitionV1.model_validate(original)
+    assert definition.model_dump(mode="json") == original

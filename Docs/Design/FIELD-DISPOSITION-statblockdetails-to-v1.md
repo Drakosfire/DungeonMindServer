@@ -17,12 +17,17 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `languages` | retained but restructured | `communication.languages[]`, `.special_modes` |
 | `challenge_rating` | retained but restructured | `challenge.rating` |
 | `xp` | derived by server | selected ruleset, unless `challenge.xp_override` |
-| `proficiency_bonus` | retained directly | `challenge.proficiency_bonus` and `proficiencies.proficiency_bonus` |
+| `proficiency_bonus` | retained directly | **`challenge.proficiency_bonus` only** (single authored authority; not duplicated on `proficiencies`) |
 | `actions`, `bonus_actions`, `reactions`, `special_abilities` | retained but restructured | `rule_elements[]` selected by `section` |
 | `spells` | retained but restructured | spellcasting `rule_elements[]` |
-| `legendary_actions.actions_per_turn` | retained but restructured | named `resources[]` pool |
+| `legendary_actions.actions_per_turn` | retained but restructured | named `resources[]` pool (`maximum`) |
+| `legendary_actions.description` | retained but restructured | `resources[key=legendary_actions].rules_text` (introductory legendary prose) |
 | `legendary_actions.actions` | retained but restructured | `rule_elements[]` with costs |
-| `lair_actions.initiative`, `lair_actions.actions` | retained but restructured | `lair.initiative_count`, lair rule elements |
+| `lair_actions.initiative` | retained but restructured | `lair.initiative_count` |
+| `lair_actions.lair_name` | retained directly | `lair.name` |
+| `lair_actions.lair_description` | retained directly | `lair.description` (sensory / environmental) |
+| `lair_actions.description` | retained but restructured | introductory lair-action mechanics prose carried on `lair_action` `rule_elements[].summary` / `.rules_text` (not a second authored copy on `lair`) |
+| `lair_actions.actions` | retained but restructured | `rule_elements[]` with `section: lair_action` |
 | `description` | retained but restructured | `flavor_text`; campaign description moves to DungeonBuddy |
 | `sd_prompt` | moved to candidate envelope | `asset_brief` |
 | `project_id` | removed | no v1 definition equivalent |
@@ -38,15 +43,18 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `attack_bonus` | retained but restructured | `AttackMechanic.attack_bonus` |
 | `damage`, `damage_type` | retained but restructured | `DamageEffect.damage`, `.damage_type` |
 | `range` | retained but restructured | attack reach/range/target |
-| `recharge` | retained but restructured | `Usage` |
+| `recharge` | retained but restructured | `Usage.recharge_range` as `{minimum, maximum}` object |
 
 ## Legacy spell fields
 
 | Legacy field | Disposition | V1 destination |
 |---|---|---|
-| `SpellcastingBlock` | retained but restructured | multiple spellcasting rule elements |
-| `level` | retained but restructured | `SpellcastingMechanic.caster_level` |
-| `ability`, `save_dc`, `attack_bonus` | retained directly | spellcasting mechanic fields |
+| `SpellcastingBlock` | retained but restructured | one or more spellcasting `rule_elements[]` |
+| `SpellcastingBlock.level` | retained but restructured | `SpellcastingMechanic.caster_level` |
+| `SpellcastingBlock.ability`, `.save_dc`, `.attack_bonus` | retained directly | spellcasting mechanic fields |
 | `cantrips`, `known_spells` | retained but restructured | `SpellGroup[]` |
 | level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` |
-| inline spell description | retained but restructured | `SpellRef.rules_text` |
+| `Spell.name` | retained directly | `SpellRef.name` |
+| `Spell.level` | retained directly | `SpellRef.level` |
+| `Spell.school` | retained directly | `SpellRef.school` |
+| `Spell.description` | retained but restructured | `SpellRef.rules_text` |

@@ -25,7 +25,7 @@ MINIMAL_UV_WITH = (
     "--with",
     "fastapi>=0.115.4",
     "--with",
-    "pydantic>=2.0",
+    "pydantic==2.7.4",
     "--with",
     "httpx>=0.27.0",
 )

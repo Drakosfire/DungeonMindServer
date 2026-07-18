@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -115,9 +115,22 @@ class UsageKind(str, Enum):
     manual = "manual"
 
 
+class RechargeRange(StrictModel):
+    """Inclusive d6 recharge window (provider-safe object; not a tuple/array)."""
+
+    minimum: int = Field(ge=1, le=6)
+    maximum: int = Field(ge=1, le=6)
+
+    @model_validator(mode="after")
+    def ordered_window(self) -> "RechargeRange":
+        if self.minimum > self.maximum:
+            raise ValueError("recharge minimum must be <= maximum")
+        return self
+
+
 class Usage(StrictModel):
     kind: UsageKind
-    recharge_range: tuple[int, int] | None = None
+    recharge_range: RechargeRange | None = None
     uses: int | None = Field(default=None, ge=1)
     resource_key: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
     refresh_text: str | None = None
