@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "definition_invalid",
+    "message": "The proposed statblock definition failed validation."
+  }
+}

@@ -13,8 +13,8 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
+from statblocks_v1.application.assets import AssetGateway
 from statblocks_v1.application.commands import (
-    AssetBriefV1,
     CallerProvenanceV1,
     GenerateStatblockCommandV1,
     ReviseStatblockCommandV1,
@@ -29,6 +29,7 @@ from statblocks_v1.application.provider import (
 from statblocks_v1.application.repositories import CandidateRepository
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
+from statblocks_v1.domain.assets import AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import StatblockV1Error
 from statblocks_v1.domain.profiles import RulesetRef
@@ -57,10 +58,6 @@ KEY_PRESERVATION_PASS_VERSION = "statblock-key-preservation-v1"
 
 class DefinitionResolver(Protocol):
     def resolve(self, locator: ExactRevisionLocatorV1) -> StatblockDefinitionV1: ...
-
-
-class AssetGenerator(Protocol):
-    def generate(self, brief: AssetBriefV1) -> list[dict[str, object]]: ...
 
 
 @dataclass(frozen=True)
@@ -119,7 +116,7 @@ class GenerationServiceV1:
         clock: Clock | None = None,
         candidate_id_factory: CandidateIdFactory | None = None,
         definition_resolver: DefinitionResolver | None = None,
-        asset_generator: AssetGenerator | None = None,
+        asset_gateway: AssetGateway | None = None,
     ) -> None:
         self._provider = provider
         self._candidates = candidates
@@ -127,7 +124,7 @@ class GenerationServiceV1:
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._candidate_id_factory = candidate_id_factory or _new_candidate_id
         self._definition_resolver = definition_resolver
-        self._asset_generator = asset_generator
+        self._asset_gateway = asset_gateway
 
     def generate(self, command: GenerateStatblockCommandV1) -> GenerationResultV1:
         pinned = _pin_generate_intent(command)
@@ -193,14 +190,14 @@ class GenerationServiceV1:
             )
 
         asset_warnings: list[AssetWarningV1] = []
-        assets: list[dict[str, object]] = []
+        assets: list[AssetRefV1] = []
         asset_brief_model: AssetBriefV1 | None = None
         if intent.generate_assets:
             # When images are requested, always persist the exact brief used.
             # Without an authored description brief, fall back to the creature name.
             effective_prompt = intent.asset_prompt or definition.identity.name
             asset_brief_model = AssetBriefV1(prompt=effective_prompt)
-            if self._asset_generator is None:
+            if self._asset_gateway is None:
                 asset_warnings.append(
                     AssetWarningV1(
                         code=AssetWarningCode.asset_generator_unconfigured,
@@ -211,7 +208,7 @@ class GenerationServiceV1:
                 )
             else:
                 try:
-                    assets = self._asset_generator.generate(asset_brief_model)
+                    assets = self._asset_gateway.generate(asset_brief_model)
                 except Exception:
                     asset_warnings.append(
                         AssetWarningV1(
@@ -250,9 +247,7 @@ class GenerationServiceV1:
                 input_tokens=outcome.input_tokens,
                 output_tokens=outcome.output_tokens,
             ),
-            asset_brief=(
-                asset_brief_model.model_dump(mode="json") if asset_brief_model is not None else None
-            ),
+            asset_brief=asset_brief_model,
             assets=assets,
             asset_warnings=asset_warnings,
             created_at=now,

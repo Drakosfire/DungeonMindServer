@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import Field
 
+from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.primitives import StrictModel
 from statblocks_v1.domain.receipts import ValidationReceiptV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
@@ -79,8 +80,8 @@ class GeneratedStatblockCandidateV1(StrictModel):
     definition: StatblockDefinitionV1
     validation_receipt: ValidationReceiptV1
     generation_receipt: GenerationReceiptV1 | None = None
-    asset_brief: dict[str, Any] | None = None
-    assets: list[dict[str, Any]] = Field(default_factory=list)
+    asset_brief: AssetBriefV1 | None = None
+    assets: list[AssetRefV1] = Field(default_factory=list)
     asset_warnings: list[AssetWarningV1] = Field(default_factory=list)
     created_at: datetime
     expires_at: datetime
@@ -105,7 +106,7 @@ class StatblockRevisionResourceV1(StrictModel):
     definition_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     validation_receipt: ValidationReceiptV1
     provenance: dict[str, Any] = Field(default_factory=dict)
-    asset_bindings: list[dict[str, Any]] = Field(default_factory=list)
+    asset_bindings: list[AssetBindingV1] = Field(default_factory=list)
     created_at: datetime
 
 

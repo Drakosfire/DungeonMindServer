@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pydantic import Field, model_validator
 
+from statblocks_v1.domain.assets import AssetBriefV1
 from statblocks_v1.domain.primitives import StrictModel
 from statblocks_v1.domain.profiles import RulesetRef
 from statblocks_v1.domain.resources import ExactRevisionLocatorV1
@@ -67,8 +68,3 @@ class ReviseStatblockCommandV1(StrictModel):
         if (self.source_definition is None) == (self.source_locator is None):
             raise ValueError("provide exactly one of source_definition or source_locator")
         return self
-
-
-class AssetBriefV1(StrictModel):
-    prompt: str = Field(min_length=1)
-    recommended_roles: list[str] = Field(default_factory=lambda: ["portrait", "token"])

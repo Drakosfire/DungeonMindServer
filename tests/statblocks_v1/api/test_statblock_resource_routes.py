@@ -54,7 +54,16 @@ def _create_payload(definition: dict, key: str = "create-1", **extra) -> dict:
         "change_summary": "Accepted after DungeonBuddy review.",
         "actor": "user_123",
         "accepted_through": {"surface": "review_panel"},
-        "asset_bindings": [{"asset_id": "asset_123", "role": "portrait"}],
+        "asset_bindings": [{
+            "asset": {
+                "asset_id": "asset_123",
+                "provider_kind": "cloudflare_images",
+                "url": "https://imagedelivery.net/account/asset_123/public",
+                "mime_type": "image/png",
+                "created_at": "2026-01-01T00:00:00Z",
+            },
+            "role": "portrait",
+        }],
     }
     payload.update(extra)
     return payload

@@ -6,6 +6,29 @@
 **Predecessor:** PR19 assets/OpenAPI/consumer contract  
 **Successor:** `HANDOFF-pr21-statblock-legacy-quarantine-repo-hygiene.md`
 
+## PR19 predecessor completion notes
+
+- The authoritative isolated artifact is
+  `openapi/dungeonbuddy-statblocks-v1.json` (schema fingerprint
+  `sha256:5dea5f9d72aca2fee1d93585066c3592ab661f095d7d1699f1863bde36b1cf43`).
+  Regenerate it, its fixtures, and the checked-in consumer client with
+  `uv run python scripts/export_dungeonbuddy_statblock_openapi.py`.
+- The generated TypeScript contract/client is
+  `generated/dungeonbuddy-statblocks-v1/client.ts`. Consumer projects must
+  import these generated transport types rather than maintaining copies.
+- The final v1 resource operation IDs are `create_statblock_v1`,
+  `append_statblock_revision_v1`, `get_statblock_v1`,
+  `list_statblock_revisions_v1`, and `get_statblock_revision_v1`; candidate
+  operation IDs remain published in the same artifact.
+- Asset references are typed CDN-backed `AssetRefV1` values. The optional
+  `CloudflareAssetGateway` receives an injected pipeline callable and requires
+  it to return durable IDs and canonical URLs; PR20 owns environment wiring,
+  timeouts, and production failure telemetry. Asset failures only warn and do
+  not invalidate otherwise valid candidate mechanics.
+- A DungeonBuddy smoke should regenerate/import the checked-in client, parse
+  `Docs/Design/fixtures/dungeonbuddy-statblock-v1-api/`, and retain exact
+  `statblock_id + revision_id` locators before launch.
+
 ## 0. Mission
 
 Make the complete DungeonBuddy statblock v1 route safe and observable in the deployed DungeonMindServer environment, then prove the end-to-end authoring, acceptance, and exact-replay workflow from DungeonBuddy.

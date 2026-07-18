@@ -25,9 +25,18 @@ from statblocks_v1.api.http_errors import register_error_handlers
 from statblocks_v1.api.router import router
 
 
-def create_test_app() -> FastAPI:
-    """Return a FastAPI app that mounts only the statblock v1 router."""
-    app = FastAPI(title="statblocks_v1-test")
+def create_contract_app() -> FastAPI:
+    """Return the authoritative, isolated v1 contract application."""
+    app = FastAPI(
+        title="DungeonBuddy Statblocks v1",
+        version="1.0.0",
+        description="DungeonMindServer-owned DungeonBuddy statblock contract.",
+    )
     register_error_handlers(app)
     app.include_router(router)
     return app
+
+
+def create_test_app() -> FastAPI:
+    """Return an isolated v1 app for focused tests."""
+    return create_contract_app()

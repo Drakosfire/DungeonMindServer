@@ -12,6 +12,7 @@ from statblocks_v1.application.commands import (
     GenerationIntentV1,
     SourceSnapshotV1,
 )
+from statblocks_v1.domain.assets import AssetBindingV1
 from statblocks_v1.domain.profiles import RulesetRef
 from statblocks_v1.domain.receipts import ValidationReceiptV1
 from statblocks_v1.domain.resources import (
@@ -101,7 +102,7 @@ class CreateStatblockRequestV1(StrictModel):
     change_summary: str = Field(min_length=1)
     actor: str | None = None
     accepted_through: dict[str, Any] = Field(default_factory=dict)
-    asset_bindings: list[dict[str, Any]] = Field(default_factory=list)
+    asset_bindings: list[AssetBindingV1] = Field(default_factory=list)
 
 
 class AppendRevisionRequestV1(StrictModel):
@@ -114,7 +115,7 @@ class AppendRevisionRequestV1(StrictModel):
     change_summary: str = Field(min_length=1)
     actor: str | None = None
     accepted_through: dict[str, Any] = Field(default_factory=dict)
-    asset_bindings: list[dict[str, Any]] = Field(default_factory=list)
+    asset_bindings: list[AssetBindingV1] = Field(default_factory=list)
 
 
 class CreateStatblockResponseV1(StrictModel):

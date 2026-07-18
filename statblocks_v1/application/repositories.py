@@ -13,6 +13,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Protocol
 
+from statblocks_v1.domain.assets import AssetBindingV1
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.errors import AmbiguousRequestPayloadError
 from statblocks_v1.domain.resources import (
@@ -69,6 +70,10 @@ def _idempotency_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
     """
 
     return {key: value for key, value in provenance.items() if key != "candidate"}
+
+
+def _dump_asset_bindings(bindings: list[AssetBindingV1]) -> list[dict[str, Any]]:
+    return [binding.model_dump(mode="json") for binding in bindings]
 
 
 class CandidateRepository(Protocol):
@@ -131,7 +136,7 @@ class CreateStatblockCommand:
         definition: StatblockDefinitionV1,
         created_by: str,
         provenance: dict[str, Any] | None = None,
-        asset_bindings: list[dict[str, Any]] | None = None,
+        asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
     ) -> None:
         object.__setattr__(self, "caller_scope", caller_scope)
@@ -152,7 +157,7 @@ class CreateStatblockCommand:
                     ),
                     "created_by": created_by,
                     "provenance": _idempotency_provenance(self._provenance),
-                    "asset_bindings": self._asset_bindings,
+                    "asset_bindings": _dump_asset_bindings(self._asset_bindings),
                     "candidate_id": candidate_id,
                 },
             ),
@@ -170,7 +175,7 @@ class CreateStatblockCommand:
         return deepcopy(self._provenance)
 
     @property
-    def asset_bindings(self) -> list[dict[str, Any]]:
+    def asset_bindings(self) -> list[AssetBindingV1]:
         return deepcopy(self._asset_bindings)
 
     @property
@@ -202,7 +207,7 @@ class AppendRevisionCommand:
         parent_revision_id: str,
         definition: StatblockDefinitionV1,
         provenance: dict[str, Any] | None = None,
-        asset_bindings: list[dict[str, Any]] | None = None,
+        asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
     ) -> None:
         object.__setattr__(self, "caller_scope", caller_scope)
@@ -225,7 +230,7 @@ class AppendRevisionCommand:
                         canonicalize_definition(self._definition)
                     ),
                     "provenance": _idempotency_provenance(self._provenance),
-                    "asset_bindings": self._asset_bindings,
+                    "asset_bindings": _dump_asset_bindings(self._asset_bindings),
                     "candidate_id": candidate_id,
                 },
             ),
@@ -243,7 +248,7 @@ class AppendRevisionCommand:
         return deepcopy(self._provenance)
 
     @property
-    def asset_bindings(self) -> list[dict[str, Any]]:
+    def asset_bindings(self) -> list[AssetBindingV1]:
         return deepcopy(self._asset_bindings)
 
     @property

@@ -19,6 +19,7 @@ from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     GenerationReceiptV1,
 )
+from statblocks_v1.domain.assets import AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.firestore_repositories import (
@@ -171,11 +172,19 @@ def test_firestore_candidate_typed_contract_round_trip(firestore_client, bruiser
             source_locator=locator,
             latency_ms=0,
         ),
-        asset_brief={
-            "prompt": "Emulator round-trip creature",
-            "recommended_roles": ["portrait", "token"],
-        },
-        assets=[{"role": "portrait", "url": "https://example.test/portrait.png"}],
+        asset_brief=AssetBriefV1(
+            prompt="Emulator round-trip creature",
+            recommended_roles=["portrait", "token"],
+        ),
+        assets=[
+            AssetRefV1(
+                asset_id="asset_emulator_portrait",
+                provider_kind="cloudflare_images",
+                url="https://example.test/portrait.png",
+                mime_type="image/png",
+                created_at=created,
+            )
+        ],
         asset_warnings=[
             AssetWarningV1(
                 code=AssetWarningCode.asset_generator_unconfigured,

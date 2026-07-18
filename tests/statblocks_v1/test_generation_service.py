@@ -56,7 +56,7 @@ def _service(
     payload,
     *,
     candidate_id="cand_1",
-    asset_generator=None,
+    asset_gateway=None,
     definition_resolver=None,
     candidates=None,
 ) -> GenerationServiceV1:
@@ -67,7 +67,7 @@ def _service(
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: candidate_id,
-        asset_generator=asset_generator,
+        asset_gateway=asset_gateway,
         definition_resolver=definition_resolver,
     )
 
@@ -202,7 +202,7 @@ def test_asset_failure_preserves_valid_candidate(load_fixture) -> None:
             raise RuntimeError("image unavailable")
 
     command = _command(asset_options=AssetOptionsV1(generate_images=True))
-    result = _service(load_fixture("simple_bruiser"), asset_generator=FailingAssets()).generate(command)
+    result = _service(load_fixture("simple_bruiser"), asset_gateway=FailingAssets()).generate(command)
 
     assert not isinstance(result, GenerationFailureV1)
     assert result.assets == []
@@ -210,7 +210,7 @@ def test_asset_failure_preserves_valid_candidate(load_fixture) -> None:
         AssetWarningCode.asset_generation_failed
     ]
     assert result.asset_brief is not None
-    assert result.asset_brief["prompt"] == "A reliable test creature."
+    assert result.asset_brief.prompt == "A reliable test creature."
 
 
 def test_requested_assets_without_generator_warn(load_fixture) -> None:
@@ -232,18 +232,18 @@ def test_generate_images_persists_effective_brief_without_description_brief(load
 
         def generate(self, brief):
             self.brief = brief
-            return [{"role": "portrait", "url": "https://example.test/p.png"}]
+            return []
 
     assets = CapturingAssets()
     command = _command(
         asset_options=AssetOptionsV1(generate_images=True, include_generation_brief=False)
     )
-    result = _service(load_fixture("simple_bruiser"), asset_generator=assets).generate(command)
+    result = _service(load_fixture("simple_bruiser"), asset_gateway=assets).generate(command)
 
     assert not isinstance(result, GenerationFailureV1)
     assert assets.brief is not None
-    assert result.asset_brief == assets.brief.model_dump(mode="json")
-    assert result.asset_brief["prompt"] == result.definition.identity.name
+    assert result.asset_brief == assets.brief
+    assert result.asset_brief.prompt == result.definition.identity.name
     assert result.asset_warnings == []
 
 
@@ -490,7 +490,7 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
     assert result.generation_receipt.source_locator == locator
     assert result.source_locator == locator
     assert result.asset_brief is not None
-    assert result.asset_brief["prompt"] == "Pinned revision description."
+    assert result.asset_brief.prompt == "Pinned revision description."
     assert [warning.code for warning in result.asset_warnings] == [
         AssetWarningCode.asset_generator_unconfigured
     ]
