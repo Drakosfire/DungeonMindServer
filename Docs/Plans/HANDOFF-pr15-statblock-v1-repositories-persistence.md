@@ -5,6 +5,42 @@
 **Predecessor:** PR14 trust core  
 **Successor:** `HANDOFF-pr16-statblock-v1-structured-generation-service.md`
 
+## PR14 predecessor completion notes
+
+- Canonical API: `statblocks_v1.domain.canonicalize_definition(definition)` returns
+  compact, UTF-8 JSON under `statblock-canonicalizer-v1`; ordered mechanics lists
+  are preserved, while known set-like metadata (including tags) is normalized.
+- Digest API: `compute_definition_digest(definition)` returns
+  `sha256:<lowercase-hex>` over canonical UTF-8 definition JSON. Repositories must
+  persist that exact digest with the exact canonical definition.
+- Before every create or append, invoke
+  `validate_definition(definition, ValidationMode.persistence)` and reject receipts
+  where `is_persistence_ready` is false. Persist the resulting receipt at
+  `statblocks_v1.domain.receipts.ValidationReceiptV1` unchanged.
+- Stable PR14 issue codes: `DEFAULT_ARMOR_CLASS_CARDINALITY`,
+  `HP_METHOD_FIELDS_INCOHERENT`, `HP_DISPLAYED_AVERAGE_MISMATCH`,
+  `RULESET_CR_INVALID`, `RULESET_CR_PROFICIENCY_MISMATCH`,
+  `PROFILE_CHALLENGE_PROFICIENCY_MISMATCH`, `PASSIVE_PERCEPTION_UNVERIFIED`,
+  `DUPLICATE_LOCAL_KEY`, `DEFAULT_PHASE_CARDINALITY`,
+  `UNKNOWN_ELEMENT_REFERENCE`, `UNKNOWN_MULTIATTACK_ELEMENT`,
+  `UNKNOWN_RESOURCE_REFERENCE`, `UNKNOWN_PHASE_REFERENCE`,
+  `UNKNOWN_MOVEMENT_REFERENCE`, `UNKNOWN_PHASE_ELEMENT`,
+  `PHASE_ELEMENT_SET_CONFLICT`, `FORBIDDEN_REFERENCE_CYCLE`,
+  `SECTION_ACTIVATION_INCOHERENT`, `REACTION_TRIGGER_REQUIRED`,
+  `LEGENDARY_RESOURCE_REQUIRED`, `LAIR_CONTEXT_REQUIRED`,
+  `LAIR_TIMING_REQUIRED`, `ATTACK_REACH_REQUIRED`, `ATTACK_RANGE_REQUIRED`,
+  `RECHARGE_USAGE_INCOHERENT`, `SPELL_GROUP_USAGE_INCOHERENT`,
+  `HUMAN_ADJUDICATED_AUTOMATION_MISMATCH`, `RULES_TEXT_ATTACK_BONUS_MISMATCH`,
+  `RULES_TEXT_DAMAGE_MISMATCH`, `RULES_TEXT_SAVE_DC_MISMATCH`, and
+  `RULES_TEXT_SECTION_MISMATCH`.
+- Store immutable revision fields exactly: canonical definition JSON, definition
+  digest, validation receipt (including validator/canonicalizer versions and
+  issues), contract/version, and the envelope's IDs, parent locator, provenance,
+  asset bindings, and creation time. Candidate IDs, timestamps, graph fields, and
+  image preferences are not digest inputs. Existing legend and mythic fixtures
+  intentionally retain `PASSIVE_PERCEPTION_UNVERIFIED` warnings; warnings remain
+  persistence-ready after DungeonBuddy review.
+
 ## 0. Mission
 
 Implement repository protocols, deterministic in-memory repositories, and Firestore adapters for generated candidates, logical statblocks, immutable revisions, and idempotency outcomes.

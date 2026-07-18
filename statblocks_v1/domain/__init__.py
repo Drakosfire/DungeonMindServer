@@ -1,5 +1,11 @@
 """Pure Pydantic domain layer for statblock v1."""
 
+from statblocks_v1.domain.canonicalization import (
+    CANONICALIZER_VERSION,
+    canonical_definition_bytes,
+    canonicalize_definition,
+)
+from statblocks_v1.domain.digests import DIGEST_ALGORITHM, compute_definition_digest
 from statblocks_v1.domain.primitives import (
     Activation,
     AutomationSupport,
@@ -28,17 +34,27 @@ from statblocks_v1.domain.profiles import (
     StatblockFlavorText,
     VitalityProfile,
 )
+from statblocks_v1.domain.receipts import (
+    ValidationIssueV1,
+    ValidationMode,
+    ValidationReceiptV1,
+    ValidationSeverity,
+    ValidationStatus,
+)
 from statblocks_v1.domain.rule_elements import Mechanic, RuleElement, StatblockDefinitionV1
+from statblocks_v1.domain.validation import validate_definition
 
 __all__ = [
     "AbilityScores",
     "Activation",
     "AutomationSupport",
+    "CANONICALIZER_VERSION",
     "ChallengeProfile",
     "CommunicationProfile",
     "CreatureIdentity",
     "DefenseProfile",
     "DiceExpression",
+    "DIGEST_ALGORITHM",
     "Distance",
     "Duration",
     "Effect",
@@ -57,5 +73,14 @@ __all__ = [
     "TargetProfile",
     "Trigger",
     "Usage",
+    "ValidationIssueV1",
+    "ValidationMode",
+    "ValidationReceiptV1",
+    "ValidationSeverity",
+    "ValidationStatus",
     "VitalityProfile",
+    "canonical_definition_bytes",
+    "canonicalize_definition",
+    "compute_definition_digest",
+    "validate_definition",
 ]
