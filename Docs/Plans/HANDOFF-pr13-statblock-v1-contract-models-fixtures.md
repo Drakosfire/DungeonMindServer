@@ -6,6 +6,16 @@
 **Successor:** `HANDOFF-pr14-statblock-v1-canonicalization-validation-digest.md`  
 **Authority:** `Docs/Design/DESIGN-dungeonbuddy-statblock-contract-v1.md`
 
+## Predecessor completion notes (PR12)
+
+- Package root: `statblocks_v1/` with layers `domain/`, `application/`, `infrastructure/`, `api/`.
+- Import rules: domain is stdlib+Pydantic only; api may use FastAPI + `routers.internal_auth`; legacy `statblockgenerator` is forbidden in domain/api sources.
+- Isolated test app factory: `statblocks_v1.testing.create_test_app()` — do not import production `app` in focused tests.
+- Router: `statblocks_v1.api.router.router` mounted at `/api/internal/dungeonbuddy/v1` with router-level `require_internal_service_auth`.
+- Health: `GET /api/internal/dungeonbuddy/v1/statblocks/health` returns foundation payload with empty `capabilities`.
+- Production registration: narrow `app.include_router(dungeonbuddy_statblocks_v1_router)` in `app.py` (import-time coupling only; tests stay isolated).
+- Focused verification: `uv run pytest tests/statblocks_v1/ -q`
+
 ## 0. Mission
 
 Translate the approved contract design into executable Pydantic models and representative fixtures without adding provider, persistence, or production write behavior.
