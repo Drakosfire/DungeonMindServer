@@ -5,6 +5,7 @@ import hashlib
 import secrets
 import time
 import unicodedata
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,7 @@ from statblocks_v1.application.provider import (
 from statblocks_v1.application.repositories import CandidateRepository
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
+from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import StatblockV1Error
 from statblocks_v1.domain.profiles import RulesetRef
 from statblocks_v1.domain.receipts import (
@@ -38,15 +40,19 @@ from statblocks_v1.domain.receipts import (
     ValidationStatus,
 )
 from statblocks_v1.domain.resources import (
+    AssetWarningCode,
+    AssetWarningV1,
     ExactRevisionLocatorV1,
     GeneratedStatblockCandidateV1,
     GenerationReceiptV1,
 )
-from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+from statblocks_v1.domain.rule_elements import RuleElement, StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 
 Clock = Callable[[], datetime]
 CandidateIdFactory = Callable[[], str]
+
+KEY_PRESERVATION_PASS_VERSION = "statblock-key-preservation-v1"
 
 
 class DefinitionResolver(Protocol):
@@ -99,6 +105,7 @@ class GenerationServiceV1:
             caller=command.caller,
             prompt=build_generation_prompt(command),
             source_digest=source_digest,
+            source_definition_digest=None,
             source_locator=None,
             source_definition=None,
             preserve_element_keys=False,
@@ -106,6 +113,7 @@ class GenerationServiceV1:
                 command.source.description if command.asset_options.include_generation_brief else None
             ),
             generate_assets=command.asset_options.generate_images,
+            include_generation_brief=command.asset_options.include_generation_brief,
         )
 
     def revise(self, command: ReviseStatblockCommandV1) -> GenerationResultV1:
@@ -140,6 +148,7 @@ class GenerationServiceV1:
             caller=command.caller,
             prompt=build_revision_prompt(command, source),
             source_digest=source_digest,
+            source_definition_digest=compute_definition_digest(source),
             source_locator=source_locator,
             source_definition=source,
             preserve_element_keys=command.preserve_element_keys,
@@ -149,6 +158,7 @@ class GenerationServiceV1:
                 else None
             ),
             generate_assets=command.asset_options.generate_images,
+            include_generation_brief=command.asset_options.include_generation_brief,
         )
 
     def _run(
@@ -159,11 +169,13 @@ class GenerationServiceV1:
         caller: CallerProvenanceV1,
         prompt: str,
         source_digest: str | None,
+        source_definition_digest: str | None,
         source_locator: ExactRevisionLocatorV1 | None,
         source_definition: StatblockDefinitionV1 | None,
         preserve_element_keys: bool,
         asset_prompt: str | None,
         generate_assets: bool,
+        include_generation_brief: bool,
     ) -> GenerationResultV1:
         compiled = compile_openai_definition_schema()
         started = time.monotonic()
@@ -213,20 +225,40 @@ class GenerationServiceV1:
         if source_definition is not None and preserve_element_keys:
             receipt = _with_key_preservation_warnings(receipt, source_definition, definition)
 
-        asset_warnings: list[str] = []
+        asset_warnings: list[AssetWarningV1] = []
         assets: list[dict[str, object]] = []
+        asset_brief_model: AssetBriefV1 | None = None
         if generate_assets:
+            # When images are requested, always persist the exact brief used.
+            # Without an authored description brief, fall back to the creature name.
+            effective_prompt = asset_prompt or definition.identity.name
+            asset_brief_model = AssetBriefV1(prompt=effective_prompt)
             if self._asset_generator is None:
                 asset_warnings.append(
-                    "Asset generation was requested but no asset generator is configured."
+                    AssetWarningV1(
+                        code=AssetWarningCode.asset_generator_unconfigured,
+                        message=(
+                            "Asset generation was requested but no asset generator is configured."
+                        ),
+                    )
                 )
             else:
                 try:
-                    assets = self._asset_generator.generate(AssetBriefV1(prompt=asset_prompt or definition.identity.name))
+                    assets = self._asset_generator.generate(asset_brief_model)
                 except Exception:
                     asset_warnings.append(
-                        "Asset generation failed; review the candidate without assets."
+                        AssetWarningV1(
+                            code=AssetWarningCode.asset_generation_failed,
+                            message="Asset generation failed; review the candidate without assets.",
+                        )
                     )
+        elif include_generation_brief and asset_prompt is not None:
+            asset_brief_model = AssetBriefV1(prompt=asset_prompt)
+
+        measured_latency_ms = int((time.monotonic() - started) * 1000)
+        latency_ms = (
+            outcome.latency_ms if outcome.latency_ms is not None else measured_latency_ms
+        )
 
         candidate = GeneratedStatblockCandidateV1(
             candidate_id=self._candidate_id_factory(),
@@ -243,14 +275,17 @@ class GenerationServiceV1:
                 caller_scope=caller.caller_scope,
                 actor=caller.actor,
                 source_description_digest=source_digest,
+                source_definition_digest=source_definition_digest,
                 source_locator=source_locator,
                 provider_request_id=outcome.request_id,
                 provider_response_id=outcome.response_id,
-                latency_ms=outcome.latency_ms or int((time.monotonic() - started) * 1000),
+                latency_ms=latency_ms,
                 input_tokens=outcome.input_tokens,
                 output_tokens=outcome.output_tokens,
             ),
-            asset_brief=AssetBriefV1(prompt=asset_prompt).model_dump(mode="json") if asset_prompt else None,
+            asset_brief=(
+                asset_brief_model.model_dump(mode="json") if asset_brief_model is not None else None
+            ),
             assets=assets,
             asset_warnings=asset_warnings,
             created_at=now,
@@ -284,43 +319,88 @@ def _with_key_preservation_warnings(
     revised: StatblockDefinitionV1,
 ) -> ValidationReceiptV1:
     issues = list(receipt.issues)
-    revised_by_identity = {
-        (_element_identity(element.section.value, element.name)): element
-        for element in revised.rule_elements
+    source_by_identity = _group_by_identity(source.rule_elements)
+    revised_by_identity = _group_by_identity(revised.rule_elements)
+    revised_by_key = {
+        element.key: (index, element)
+        for index, element in enumerate(revised.rule_elements)
     }
-    revised_keys = {element.key for element in revised.rule_elements}
+    ambiguous_identities = {
+        identity
+        for identity, items in source_by_identity.items()
+        if len(items) > 1
+    } | {
+        identity
+        for identity, items in revised_by_identity.items()
+        if len(items) > 1
+    }
+
     for index, element in enumerate(source.rule_elements):
         identity = _element_identity(element.section.value, element.name)
-        match = revised_by_identity.get(identity)
-        if match is None:
-            if element.key not in revised_keys:
+        if identity in ambiguous_identities:
+            issues.append(
+                ValidationIssueV1(
+                    code="ELEMENT_KEY_IDENTITY_AMBIGUOUS",
+                    severity=ValidationSeverity.warning,
+                    field_path=f"rule_elements[{index}].name",
+                    message=(
+                        f"Element '{element.name}' in section '{element.section.value}' "
+                        "is not uniquely identifiable for key-preservation matching."
+                    ),
+                )
+            )
+            continue
+
+        revised_matches = revised_by_identity.get(identity, [])
+        if revised_matches:
+            revised_index, match = revised_matches[0]
+            if match.key != element.key:
                 issues.append(
                     ValidationIssueV1(
-                        code="ELEMENT_KEY_DROPPED",
+                        code="ELEMENT_KEY_CHANGED",
                         severity=ValidationSeverity.warning,
-                        field_path=f"rule_elements[{index}].key",
+                        field_path=f"rule_elements[{revised_index}].key",
                         message=(
-                            f"Source element key '{element.key}' was not preserved; "
-                            "confirm the conceptual rule was intentionally replaced."
+                            f"Element '{element.name}' changed key from '{element.key}' "
+                            f"to '{match.key}' despite preserve_element_keys."
                         ),
                     )
                 )
             continue
-        if match.key != element.key:
-            revised_index = next(
-                i for i, item in enumerate(revised.rule_elements) if item.key == match.key
-            )
+
+        if element.key not in revised_by_key:
             issues.append(
                 ValidationIssueV1(
-                    code="ELEMENT_KEY_CHANGED",
+                    code="ELEMENT_KEY_DROPPED",
                     severity=ValidationSeverity.warning,
-                    field_path=f"rule_elements[{revised_index}].key",
+                    field_path=f"rule_elements[{index}].key",
                     message=(
-                        f"Element '{element.name}' changed key from '{element.key}' "
-                        f"to '{match.key}' despite preserve_element_keys."
+                        f"Source element key '{element.key}' was not preserved; "
+                        "confirm the conceptual rule was intentionally replaced."
                     ),
                 )
             )
+
+    for index, element in enumerate(source.rule_elements):
+        holder = revised_by_key.get(element.key)
+        if holder is None:
+            continue
+        revised_index, revised_element = holder
+        if _element_identity(
+            revised_element.section.value, revised_element.name
+        ) != _element_identity(element.section.value, element.name):
+            issues.append(
+                ValidationIssueV1(
+                    code="ELEMENT_KEY_REPURPOSED",
+                    severity=ValidationSeverity.warning,
+                    field_path=f"rule_elements[{revised_index}].key",
+                    message=(
+                        f"Key '{element.key}' was reassigned from '{element.name}' "
+                        f"to '{revised_element.name}' despite preserve_element_keys."
+                    ),
+                )
+            )
+
     status = (
         ValidationStatus.invalid
         if any(issue.severity is ValidationSeverity.error for issue in issues)
@@ -328,7 +408,24 @@ def _with_key_preservation_warnings(
         if issues
         else ValidationStatus.valid
     )
-    return receipt.model_copy(update={"issues": issues, "status": status})
+    return receipt.model_copy(
+        update={
+            "issues": issues,
+            "status": status,
+            "validator_version": f"{receipt.validator_version}+{KEY_PRESERVATION_PASS_VERSION}",
+        }
+    )
+
+
+def _group_by_identity(
+    elements: list[RuleElement],
+) -> dict[tuple[str, str], list[tuple[int, RuleElement]]]:
+    groups: dict[tuple[str, str], list[tuple[int, RuleElement]]] = defaultdict(list)
+    for index, element in enumerate(elements):
+        groups[_element_identity(element.section.value, element.name)].append(
+            (index, element)
+        )
+    return groups
 
 
 def _element_identity(section: str, name: str) -> tuple[str, str]:

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import Field
@@ -33,6 +34,20 @@ class IdempotencyOutcomeV1(StrictModel):
     revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
 
 
+class AssetWarningCode(str, Enum):
+    """Stable machine-readable codes for candidate asset partial outcomes."""
+
+    asset_generator_unconfigured = "asset_generator_unconfigured"
+    asset_generation_failed = "asset_generation_failed"
+
+
+class AssetWarningV1(StrictModel):
+    """Typed partial-outcome warning for optional asset generation."""
+
+    code: AssetWarningCode
+    message: str = Field(min_length=1)
+
+
 class GenerationReceiptV1(StrictModel):
     """Extensible, server-owned audit data populated by the generation service."""
 
@@ -46,6 +61,9 @@ class GenerationReceiptV1(StrictModel):
     caller_scope: str = Field(min_length=1)
     actor: str | None = None
     source_description_digest: str | None = None
+    source_definition_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
     source_locator: ExactRevisionLocatorV1 | None = None
     provider_request_id: str | None = None
     provider_response_id: str | None = None
@@ -63,7 +81,7 @@ class GeneratedStatblockCandidateV1(StrictModel):
     generation_receipt: GenerationReceiptV1 | None = None
     asset_brief: dict[str, Any] | None = None
     assets: list[dict[str, Any]] = Field(default_factory=list)
-    asset_warnings: list[str] = Field(default_factory=list)
+    asset_warnings: list[AssetWarningV1] = Field(default_factory=list)
     created_at: datetime
     expires_at: datetime
     source_locator: ExactRevisionLocatorV1 | None = None

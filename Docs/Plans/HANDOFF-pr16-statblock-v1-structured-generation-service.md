@@ -1,6 +1,6 @@
 # HANDOFF — PR16 Statblock v1 Structured Outputs generation service
 
-**Status:** IN REVIEW — rebased onto merged PR15; trust boundaries sealed  
+**Status:** IN REVIEW — four remaining trust-boundary blockers closed (digest provenance, key repurposing, fail-closed settings, typed assets) 
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Predecessors:** PR13 contract, PR14 trust core, PR15 repository protocols  
 **Successor:** `HANDOFF-pr17-statblock-v1-candidate-api.md`
