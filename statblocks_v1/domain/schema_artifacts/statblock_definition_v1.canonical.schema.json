@@ -2102,7 +2102,11 @@
     },
     "SkillBonus": {
       "additionalProperties": false,
+      "description": "Authored skill bonus with explicit ability authority for derivation checks.",
       "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
         "derivation": {
           "$ref": "#/$defs/ProficiencyDerivation"
         },
@@ -2130,6 +2134,7 @@
       },
       "required": [
         "skill",
+        "ability",
         "value",
         "derivation"
       ],
@@ -2187,7 +2192,7 @@
     },
     "SpellRef": {
       "additionalProperties": false,
-      "description": "Reference to a spell within a group.\n\nSpell level is authored only on the containing ``SpellGroup.level`` —\nnot duplicated here — so a group cannot contradict its members.",
+      "description": "Spell identity within a group; level lives only on ``SpellGroup.level``.",
       "properties": {
         "name": {
           "minLength": 1,
@@ -2604,6 +2609,7 @@
         "per_day",
         "once",
         "resource",
+        "spell_slots",
         "manual"
       ],
       "title": "UsageKind",

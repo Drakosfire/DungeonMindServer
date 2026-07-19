@@ -5,6 +5,64 @@
 **Predecessor:** PR14 trust core  
 **Successor:** `HANDOFF-pr16-statblock-v1-structured-generation-service.md`
 
+## PR14 predecessor completion notes
+
+- Canonical API: `statblocks_v1.domain.canonicalize_definition(definition)` returns
+  branded `CanonicalDefinitionJSON` (compact UTF-8 JSON under
+  `statblock-canonicalizer-v1`); ordered mechanics lists are preserved, while
+  known set-like metadata (including tags) is normalized to NFC + sorted unique.
+- Digest API: `compute_definition_digest(definition)` accepts only
+  `StatblockDefinitionV1` and returns `sha256:<lowercase-hex>` over internally
+  canonicalized JSON. Raw `str` / `bytes` and forged `CanonicalDefinitionJSON`
+  wrappers are rejected. Repositories must persist that exact digest with the
+  exact canonical definition text from `canonicalize_definition`.
+- Before every create or append, invoke
+  `validate_definition(definition, ValidationMode.persistence)` and reject receipts
+  where `is_persistence_ready` is false. Readiness is **mode-safe**: only a
+  persistence-mode receipt with no errors may claim it. Candidate/preview receipts
+  never report `is_persistence_ready` even when they have no errors.
+- Proficiency bonus authority is `challenge.proficiency_bonus` only.
+  `SkillBonus.ability` is required typed authority for skill derivation checks.
+  Persistence validation enforces `standard` / `expertise` arithmetic for saves and
+  skills, preserves `explicit_override`, and rejects duplicate save abilities plus
+  NFC + casefold-normalized duplicate skill names (matching canonicalization).
+  `Usage.recharge_range` is a `{minimum, maximum}` object.
+- Nested effect references report real collection paths
+  (e.g. `mechanic.hit_effects[i]`, `mechanic.failure_effects[i]`), never a
+  flattened `.mechanic.effects[i]` alias.
+- Stable PR14 issue codes: `DEFAULT_ARMOR_CLASS_CARDINALITY`,
+  `HP_METHOD_FIELDS_INCOHERENT`, `HP_DISPLAYED_AVERAGE_MISMATCH`,
+  `RULESET_CR_INVALID`, `RULESET_CR_PROFICIENCY_MISMATCH`,
+  `PASSIVE_PERCEPTION_MISMATCH`, `PASSIVE_PERCEPTION_UNVERIFIED`,
+  `DUPLICATE_SAVING_THROW_ABILITY`, `DUPLICATE_SKILL_NAME`,
+  `SAVING_THROW_DERIVATION_MISMATCH`, `SKILL_DERIVATION_MISMATCH`,
+  `DUPLICATE_LOCAL_KEY`, `DEFAULT_PHASE_CARDINALITY`,
+  `UNKNOWN_ELEMENT_REFERENCE`, `UNKNOWN_MULTIATTACK_ELEMENT`,
+  `UNKNOWN_RESOURCE_REFERENCE`, `UNKNOWN_PHASE_REFERENCE`,
+  `UNKNOWN_MOVEMENT_REFERENCE`, `UNKNOWN_PHASE_ELEMENT`,
+  `PHASE_ELEMENT_SET_CONFLICT`, `FORBIDDEN_REFERENCE_CYCLE`,
+  `SECTION_ACTIVATION_INCOHERENT`, `REACTION_TRIGGER_REQUIRED`,
+  `LEGENDARY_RESOURCE_REQUIRED`, `LEGENDARY_RESOURCE_MISMATCH`,
+  `RESOURCE_COST_EXCEEDS_POOL`, `RESOURCE_COST_DUPLICATE_POOL`,
+  `LAIR_CONTEXT_REQUIRED`, `LAIR_TIMING_REQUIRED`, `ATTACK_REACH_REQUIRED`,
+  `ATTACK_RANGE_REQUIRED`, `ATTACK_REACH_UNEXPECTED`, `ATTACK_RANGE_UNEXPECTED`,
+  `ATTACK_RANGE_ORDER_INCOHERENT`, `ATTACK_TARGET_COUNT_REQUIRED`,
+  `ATTACK_TARGET_COUNT_INCOHERENT`, `ATTACK_TARGET_AREA_REQUIRED`,
+  `ATTACK_TARGET_AREA_UNEXPECTED`, `ATTACK_TARGET_RANGE_UNEXPECTED`,
+  `USAGE_FIELDS_INCOHERENT`,
+  `SPELLCASTING_MODE_INCOHERENT`, `SPELL_GROUP_USAGE_INCOHERENT`,
+  `SPELL_GROUP_SLOTS_INCOHERENT`, `SPELL_GROUP_LEVEL_INCOHERENT`,
+  `HUMAN_ADJUDICATED_AUTOMATION_MISMATCH`,
+  `RULES_TEXT_ATTACK_BONUS_MISMATCH`, `RULES_TEXT_DAMAGE_MISMATCH`,
+  `RULES_TEXT_SAVE_DC_MISMATCH`, and `RULES_TEXT_SECTION_MISMATCH`.
+- Store immutable revision fields exactly: canonical definition JSON, definition
+  digest, validation receipt (including validator/canonicalizer versions and
+  issues), contract/version, and the envelope's IDs, parent locator, provenance,
+  asset bindings, and creation time. Candidate IDs, timestamps, graph fields, and
+  image preferences are not digest inputs. Existing legend and mythic fixtures
+  intentionally retain `PASSIVE_PERCEPTION_UNVERIFIED` warnings; warnings remain
+  persistence-ready under persistence mode.
+
 ## 0. Mission
 
 Implement repository protocols, deterministic in-memory repositories, and Firestore adapters for generated candidates, logical statblocks, immutable revisions, and idempotency outcomes.

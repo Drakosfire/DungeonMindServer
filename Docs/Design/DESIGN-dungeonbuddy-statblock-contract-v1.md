@@ -389,10 +389,11 @@ Ability modifiers are derived and are not independently authored.
 
 ```text
 ProficiencyProfile
-  proficiency_bonus
   saving_throws[]
   skills[]
 ```
+
+Proficiency bonus is authored only on `challenge.proficiency_bonus`.
 
 ```text
 SavingThrowBonus
@@ -403,12 +404,15 @@ SavingThrowBonus
 
 SkillBonus
   skill
+  ability
   value
   derivation: standard | expertise | explicit_override
   note: optional
 ```
 
-DungeonMindServer verifies standard derivations and preserves intentional overrides.
+DungeonMindServer verifies `standard` and `expertise` derivations against ability
+modifiers and `challenge.proficiency_bonus`, rejects duplicate save abilities and
+normalized skill names, and preserves intentional `explicit_override` values.
 
 ### 5.7 Senses and communication
 
@@ -531,12 +535,15 @@ Activation
 
 ```text
 Usage
-  kind: at_will | recharge | per_turn | per_round | per_day | once | resource | manual
+  kind: at_will | recharge | per_turn | per_round | per_day | once | resource | spell_slots | manual
   recharge_range: optional
   uses: optional
   resource_key: optional
   refresh_text: optional
 ```
+
+`spell_slots` marks slot-backed prepared/known spell groups. Slot count lives on
+`SpellGroup.slots`; do not overload `at_will` for limited slot casting.
 
 ### 6.5 Costs
 

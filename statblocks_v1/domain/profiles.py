@@ -124,7 +124,10 @@ class SavingThrowBonus(StrictModel):
 
 
 class SkillBonus(StrictModel):
+    """Authored skill bonus with explicit ability authority for derivation checks."""
+
     skill: str = Field(min_length=1)
+    ability: AbilityName
     value: int
     derivation: ProficiencyDerivation
     note: str | None = None

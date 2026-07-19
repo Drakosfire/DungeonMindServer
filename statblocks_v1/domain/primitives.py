@@ -42,6 +42,16 @@ class RangeProfile(StrictModel):
     normal: Distance
     long: Distance | None = None
 
+    @model_validator(mode="after")
+    def ordered_window(self) -> "RangeProfile":
+        if self.long is None:
+            return self
+        if self.long.unit != self.normal.unit:
+            raise ValueError("long and normal range units must match")
+        if self.long.value < self.normal.value:
+            raise ValueError("long range must be greater than or equal to normal range")
+        return self
+
 
 class TargetKind(str, Enum):
     creature = "creature"
@@ -112,6 +122,7 @@ class UsageKind(str, Enum):
     per_day = "per_day"
     once = "once"
     resource = "resource"
+    spell_slots = "spell_slots"
     manual = "manual"
 
 

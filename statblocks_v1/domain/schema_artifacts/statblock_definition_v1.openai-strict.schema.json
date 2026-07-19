@@ -1827,6 +1827,9 @@
     "SkillBonus": {
       "additionalProperties": false,
       "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
         "derivation": {
           "$ref": "#/$defs/ProficiencyDerivation"
         },
@@ -1850,6 +1853,7 @@
       },
       "required": [
         "skill",
+        "ability",
         "value",
         "derivation",
         "note"
@@ -2288,6 +2292,7 @@
         "per_day",
         "once",
         "resource",
+        "spell_slots",
         "manual"
       ],
       "type": "string"

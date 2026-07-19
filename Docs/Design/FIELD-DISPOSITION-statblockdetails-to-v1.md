@@ -10,7 +10,7 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `hit_points`, `hit_dice` | retained but restructured | `vitality.hit_points` (`formula` or `fixed_value`) |
 | `speed` | retained but restructured | `movement.modes[]` |
 | `abilities` | retained directly | `abilities` using full ability names |
-| `saving_throws`, `skills` | retained but restructured | `proficiencies.saving_throws[]`, `.skills[]` |
+| `saving_throws`, `skills` | retained but restructured | `proficiencies.saving_throws[]`, `.skills[]` (`SkillBonus.ability` is required typed authority for derivation checks) |
 | `damage_resistance`, `damage_immunity`, `damage_vulnerability` | retained but restructured | `defenses.damage_interactions[]` |
 | `condition_immunity` | retained but restructured | `defenses.condition_immunities[]` |
 | `senses` | retained but restructured | `senses.senses[]`, `.passive_perception` |
@@ -53,7 +53,7 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `SpellcastingBlock.level` | retained but restructured | `SpellcastingMechanic.caster_level` |
 | `SpellcastingBlock.ability`, `.save_dc`, `.attack_bonus` | retained directly | spellcasting mechanic fields |
 | `cantrips`, `known_spells` | retained but restructured | `SpellGroup[]` |
-| level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` |
+| level 1–9 slots | retained but restructured | slot-bearing `SpellGroup[]` with `usage.kind = spell_slots` (not `at_will`) |
 | `Spell.name` | retained directly | `SpellRef.name` |
 | `Spell.level` | retained but restructured | `SpellGroup.level` (sole level authority; not duplicated on `SpellRef`) |
 | `Spell.school` | retained directly | `SpellRef.school` |
