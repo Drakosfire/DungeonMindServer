@@ -56,22 +56,25 @@ class DeterministicIdFactory:
 class InMemoryCandidateRepository:
     def __init__(self, *, clock: Clock = utc_now) -> None:
         self._clock = clock
+        self._lock = RLock()
         self._candidates: dict[str, GeneratedStatblockCandidateV1] = {}
 
     def create(self, candidate: GeneratedStatblockCandidateV1) -> GeneratedStatblockCandidateV1:
-        if candidate.candidate_id in self._candidates:
-            raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
-        stored = _copy(candidate)
-        self._candidates[candidate.candidate_id] = stored
-        return _copy(stored)
+        with self._lock:
+            if candidate.candidate_id in self._candidates:
+                raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+            stored = _copy(candidate)
+            self._candidates[candidate.candidate_id] = stored
+            return _copy(stored)
 
     def get(self, candidate_id: str, *, now: datetime | None = None) -> GeneratedStatblockCandidateV1:
-        candidate = self._candidates.get(candidate_id)
-        if candidate is None:
-            raise CandidateNotFoundError(candidate_id)
-        if candidate.expires_at <= (now or self._clock()):
-            raise CandidateExpiredError(candidate_id)
-        return _copy(candidate)
+        with self._lock:
+            candidate = self._candidates.get(candidate_id)
+            if candidate is None:
+                raise CandidateNotFoundError(candidate_id)
+            if candidate.expires_at <= (now or self._clock()):
+                raise CandidateExpiredError(candidate_id)
+            return _copy(candidate)
 
 
 class InMemoryStatblockPersistenceRepository:

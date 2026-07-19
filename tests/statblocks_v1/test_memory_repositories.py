@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -12,6 +13,7 @@ from statblocks_v1.application.repositories import (
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
+    AmbiguousRequestPayloadError,
     CandidateExpiredError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
@@ -185,6 +187,20 @@ def test_idempotency_conflict_and_canonical_request_digest(load_fixture):
     assert changed.request_digest != _create(definition).request_digest
     assert compute_request_digest("create_statblock", {"x": 1}).startswith("sha256:")
 
+    # NFC-equivalent values remain equivalent; NFC-colliding keys fail closed.
+    assert compute_request_digest(
+        "create_statblock", {"note": "Café"}
+    ) == compute_request_digest("create_statblock", {"note": "Cafe\u0301"})
+    with pytest.raises(AmbiguousRequestPayloadError) as ambiguous:
+        compute_request_digest(
+            "create_statblock",
+            {"provenance": {"é": 1, "e\u0301": 2}},
+        )
+    assert ambiguous.value.details == {"key": "é"}
+    assert compute_request_digest(
+        "create_statblock", {"provenance": {"é": 1}}
+    ) != compute_request_digest("create_statblock", {"provenance": {"é": 2}})
+
 
 def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
@@ -281,6 +297,49 @@ def test_candidate_expiration(load_fixture):
     repository.create(candidate)
     with pytest.raises(CandidateExpiredError):
         repository.get(candidate.candidate_id, now=created + timedelta(minutes=1))
+
+
+def test_concurrent_candidate_creates_are_atomic(load_fixture):
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    created = _clock()
+    repository = InMemoryCandidateRepository(clock=_clock)
+
+    def make_candidate(tag: str) -> GeneratedStatblockCandidateV1:
+        return GeneratedStatblockCandidateV1(
+            candidate_id="cand_shared1",
+            definition=definition,
+            validation_receipt=validate_definition(
+                definition, ValidationMode.generation_candidate
+            ),
+            created_at=created,
+            expires_at=created + timedelta(minutes=5),
+            asset_brief={"tag": tag},
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(repository.create, make_candidate("a")),
+            pool.submit(repository.create, make_candidate("b")),
+        ]
+        results = []
+        errors = []
+        for future in futures:
+            try:
+                results.append(future.result())
+            except Exception as error:  # noqa: BLE001 - assert typed conflict below
+                errors.append(error)
+
+    assert len(results) == 1
+    assert len(errors) == 1
+    assert isinstance(errors[0], ImmutableResourceConflictError)
+    assert errors[0].details == {
+        "resource_type": "candidate",
+        "resource_id": "cand_shared1",
+    }
+    stored = repository.get("cand_shared1", now=created)
+    assert stored.asset_brief == results[0].asset_brief
+    results[0].asset_brief["tag"] = "mutated"
+    assert repository.get("cand_shared1", now=created).asset_brief != {"tag": "mutated"}
 
 
 def test_digest_api_still_rejects_non_definition_inputs(load_fixture):

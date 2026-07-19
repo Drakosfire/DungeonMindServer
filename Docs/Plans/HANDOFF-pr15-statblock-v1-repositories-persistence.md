@@ -243,8 +243,10 @@ Define typed domain/application errors for at least:
 - stale parent revision (CAS failure);
 - immutable revision/resource conflict;
 - idempotency conflict;
-- persistence unavailable;
-- transaction indeterminate/reconciliation required.
+- persistence unavailable (non-transaction reads/connectivity);
+- transaction indeterminate/reconciliation required (deadline/transport after a
+  transactional create/append attempt; reconcile via idempotency or fail closed);
+- ambiguous request payload (NFC-colliding map keys in request digests).
 
 Infrastructure exceptions must not leak as raw HTTP details later.
 

@@ -178,17 +178,30 @@ class FirestoreStatblockPersistenceRepository:
             created_at=now,
         )
         outcome = IdempotencyOutcomeV1(statblock_id=statblock_id, revision_id=revision_id)
-        self._transactional_write(
-            command.caller_scope,
-            "create_statblock",
-            command.idempotency_key,
-            command.request_digest,
-            outcome,
-            [
-                (self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
-                (self._revision_document(statblock_id, revision_id), _dump(revision)),
-            ],
-        )
+        try:
+            self._transactional_write(
+                command.caller_scope,
+                "create_statblock",
+                command.idempotency_key,
+                command.request_digest,
+                outcome,
+                [
+                    (self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
+                    (self._revision_document(statblock_id, revision_id), _dump(revision)),
+                ],
+                already_exists=ImmutableResourceConflictError("statblock", statblock_id),
+            )
+        except TransactionIndeterminateError:
+            reconciled = self._reconcile_idempotent_outcome(
+                command.caller_scope,
+                "create_statblock",
+                command.idempotency_key,
+                command.request_digest,
+            )
+            return (
+                self.get(reconciled.statblock_id),
+                self.get_revision(reconciled.statblock_id, reconciled.revision_id),
+            )
         record = self.get_idempotency(
             command.caller_scope, "create_statblock", command.idempotency_key
         )
@@ -226,7 +239,16 @@ class FirestoreStatblockPersistenceRepository:
             asset_bindings=asset_bindings,
             created_at=now,
         )
-        self._transactional_append(command, revision)
+        try:
+            self._transactional_append(command, revision)
+        except TransactionIndeterminateError:
+            reconciled = self._reconcile_idempotent_outcome(
+                command.caller_scope,
+                "append_revision",
+                command.idempotency_key,
+                command.request_digest,
+            )
+            return self.get_revision(reconciled.statblock_id, reconciled.revision_id)
         record = self.get_idempotency(
             command.caller_scope, "append_revision", command.idempotency_key
         )
@@ -242,6 +264,8 @@ class FirestoreStatblockPersistenceRepository:
         digest: str,
         outcome: IdempotencyOutcomeV1,
         writes: list[tuple[Any, dict]],
+        *,
+        already_exists: Exception,
     ) -> None:
         from google.cloud.firestore_v1 import transactional
 
@@ -271,7 +295,7 @@ class FirestoreStatblockPersistenceRepository:
                 ),
             )
 
-        self._run_transaction(operation_fn)
+        self._run_transaction(operation_fn, already_exists=already_exists)
 
     def _transactional_append(
         self, command: AppendRevisionCommand, revision: StatblockRevisionResourceV1
@@ -330,9 +354,29 @@ class FirestoreStatblockPersistenceRepository:
                 ),
             )
 
-        self._run_transaction(operation_fn)
+        self._run_transaction(
+            operation_fn,
+            already_exists=ImmutableRevisionConflictError(revision.revision_id),
+        )
 
-    def _run_transaction(self, operation: Any) -> None:
+    def _reconcile_idempotent_outcome(
+        self, scope: str, operation: str, key: str, digest: str
+    ) -> IdempotencyOutcomeV1:
+        """Resolve an uncertain commit via the durable idempotency record."""
+
+        try:
+            record = self.get_idempotency(scope, operation, key)
+        except PersistenceUnavailableError as error:
+            raise TransactionIndeterminateError() from error
+        if record is None:
+            raise TransactionIndeterminateError()
+        if record.request_digest != digest:
+            raise IdempotencyConflictError(key)
+        return record.outcome
+
+    def _run_transaction(
+        self, operation: Any, *, already_exists: Exception
+    ) -> None:
         known = (
             IdempotencyConflictError,
             ParentRevisionMismatchError,
@@ -347,9 +391,9 @@ class FirestoreStatblockPersistenceRepository:
             raise
         except Exception as error:
             if _is_already_exists(error):
-                raise ImmutableRevisionConflictError("unknown") from error
-            if _is_unavailable(error):
-                raise PersistenceUnavailableError() from error
+                raise already_exists from error
+            # Deadline/transport/retry failures may arrive after commit. Treat every
+            # non-domain transaction failure as indeterminate so callers reconcile.
             raise TransactionIndeterminateError() from error
 
     def _document(self, collection: str, document_id: str) -> Any:
@@ -397,11 +441,3 @@ def _is_already_exists(error: Exception) -> bool:
     if name in {"AlreadyExists", "Conflict"}:
         return True
     return "already exists" in str(error).lower()
-
-
-def _is_unavailable(error: Exception) -> bool:
-    name = type(error).__name__
-    if name in {"ServiceUnavailable", "DeadlineExceeded", "Unavailable", "RetryError"}:
-        return True
-    message = str(error).lower()
-    return "unavailable" in message or "deadline" in message

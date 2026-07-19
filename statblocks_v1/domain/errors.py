@@ -106,6 +106,15 @@ class IdempotencyConflictError(StatblockV1Error):
         )
 
 
+class AmbiguousRequestPayloadError(StatblockV1Error):
+    def __init__(self, key: str) -> None:
+        super().__init__(
+            "ambiguous_request_payload",
+            "Request map keys collide after Unicode NFC normalization",
+            {"key": key},
+        )
+
+
 class PersistenceValidationError(StatblockV1Error):
     def __init__(self) -> None:
         super().__init__("validation_failed", "Definition is not persistence-ready")

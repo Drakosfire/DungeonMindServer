@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from statblocks_v1.domain.canonicalization import canonicalize_definition
+from statblocks_v1.domain.errors import AmbiguousRequestPayloadError
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     IdempotencyRecordV1,
@@ -27,6 +28,7 @@ def compute_request_digest(operation: str, payload: dict[str, Any]) -> str:
 
     The definition component must already be PR14 canonical JSON text so Unicode
     and set-like field ordering cannot create false idempotency conflicts.
+    Distinct map keys that collide after NFC normalization fail closed.
     """
 
     canonical = json.dumps(
@@ -46,10 +48,13 @@ def _normalize_request_payload(value: Any) -> Any:
     if isinstance(value, str):
         return unicodedata.normalize("NFC", value)
     if isinstance(value, Mapping):
-        return {
-            unicodedata.normalize("NFC", str(key)): _normalize_request_payload(item)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-        }
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            nfc_key = unicodedata.normalize("NFC", str(key))
+            if nfc_key in normalized:
+                raise AmbiguousRequestPayloadError(nfc_key)
+            normalized[nfc_key] = _normalize_request_payload(item)
+        return {key: normalized[key] for key in sorted(normalized)}
     if isinstance(value, list):
         return [_normalize_request_payload(item) for item in value]
     return value
