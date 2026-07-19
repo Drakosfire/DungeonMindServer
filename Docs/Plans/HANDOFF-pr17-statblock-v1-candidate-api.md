@@ -23,18 +23,32 @@
 - Application entry points are `GenerationServiceV1.generate(GenerateStatblockCommandV1)`
   and `GenerationServiceV1.revise(ReviseStatblockCommandV1)`. Both return either
   `GeneratedStatblockCandidateV1` or `GenerationFailureV1`; routes must map the latter
-  without exposing provider exceptions.
+  without exposing provider exceptions (provider exceptions are caught at the service
+  boundary as `provider_failure`).
 - Construct the service through dependency injection with a `DefinitionProvider`,
   `CandidateRepository`, `GenerationSettingsV1`, clock, candidate-ID factory, and,
-  for revision locators, a definition resolver. Tests use `FakeDefinitionProvider`
-  plus `InMemoryCandidateRepository`.
+  for revision locators, `PersistenceDefinitionResolver` over
+  `StatblockPersistenceRepository.get_revision(statblock_id, revision_id)`.
+  Revision commands use `ExactRevisionLocatorV1(statblock_id, revision_id)`, not a
+  single-id `ResourceLocatorV1`. Tests use `FakeDefinitionProvider` plus
+  `InMemoryCandidateRepository`.
 - Provider outcomes are `success`, `refusal`, `incomplete`, `timeout`, `rate_limit`,
   and `failure`; application failures are prefixed `provider_`, with
-  `definition_invalid` reserved for parsing/semantic validation failures.
+  `definition_invalid`, `ruleset_mismatch`, `source_digest_mismatch`, and
+  resolver codes (`revision_not_found`, `statblock_not_found`, `source_unavailable`)
+  reserved for service-level failures.
+- Generation receipts store server-owned `caller_scope`/`actor` provenance and a
+  server-computed (optionally caller-verified) source description digest.
+  Warning-bearing candidate receipts may be persisted; invalid receipts are not.
+  `preserve_element_keys` is validated after revision (`ELEMENT_KEY_CHANGED` /
+  `ELEMENT_KEY_DROPPED` warnings). Requested image generation without a configured
+  asset generator yields an explicit asset warning.
 - Settings are `STATBLOCKS_V1_OPENAI_MODEL`,
   `STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS`, `STATBLOCKS_V1_OPENAI_MAX_RETRIES`, and
-  `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS`. The default model resolves
-  `MODEL_POLICY.json` action `structured_generation`, not a raw model ID.
+  `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS`. The default model resolves the in-repo
+  `DungeonMindServer/MODEL_POLICY.json` action `structured_generation` (not a path
+  above the repository root); missing policy raises
+  `InternalServiceMisconfiguredError` unless the env override is set.
 - `FakeDefinitionProvider` accepts a JSON payload or `ProviderOutcomeV1` and records
   calls. It supports offline route tests; `candidate_id_factory` and clock make
   receipts/candidate expiry deterministic.

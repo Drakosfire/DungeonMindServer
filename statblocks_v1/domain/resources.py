@@ -19,6 +19,13 @@ class ResourceLocatorV1(StrictModel):
     resource_id: str = Field(min_length=1)
 
 
+class ExactRevisionLocatorV1(StrictModel):
+    """Exact persisted revision coordinates for PR15 ``get_revision`` reads."""
+
+    statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
+    revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
+
+
 class IdempotencyOutcomeV1(StrictModel):
     """Exact create/append result pinned for durable replay."""
 
@@ -36,8 +43,10 @@ class GenerationReceiptV1(StrictModel):
     schema_version: str = Field(min_length=1)
     schema_fingerprint: str = Field(min_length=1)
     generated_at: datetime
+    caller_scope: str = Field(min_length=1)
+    actor: str | None = None
     source_description_digest: str | None = None
-    source_locator: ResourceLocatorV1 | None = None
+    source_locator: ExactRevisionLocatorV1 | None = None
     provider_request_id: str | None = None
     provider_response_id: str | None = None
     latency_ms: int | None = Field(default=None, ge=0)
@@ -57,7 +66,7 @@ class GeneratedStatblockCandidateV1(StrictModel):
     asset_warnings: list[str] = Field(default_factory=list)
     created_at: datetime
     expires_at: datetime
-    source_locator: ResourceLocatorV1 | None = None
+    source_locator: ExactRevisionLocatorV1 | None = None
 
 
 class StatblockResourceV1(StrictModel):

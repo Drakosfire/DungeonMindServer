@@ -5,7 +5,7 @@ from pydantic import Field, model_validator
 
 from statblocks_v1.domain.primitives import StrictModel
 from statblocks_v1.domain.profiles import RulesetRef
-from statblocks_v1.domain.resources import ResourceLocatorV1
+from statblocks_v1.domain.resources import ExactRevisionLocatorV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 
@@ -55,7 +55,7 @@ class ReviseStatblockCommandV1(StrictModel):
     revision_instructions: list[str] = Field(min_length=1)
     caller: CallerProvenanceV1
     source_definition: StatblockDefinitionV1 | None = None
-    source_locator: ResourceLocatorV1 | None = None
+    source_locator: ExactRevisionLocatorV1 | None = None
     source: SourceSnapshotV1 | None = None
     intent: GenerationIntentV1 = Field(default_factory=GenerationIntentV1)
     context: EncounterContextV1 = Field(default_factory=EncounterContextV1)
