@@ -5,6 +5,19 @@
 **Predecessors:** repository persistence and generation service  
 **Successor:** `HANDOFF-pr18-statblock-v1-revision-resource-api.md`
 
+## PR15 predecessor completion notes
+
+- Use the synchronous repository protocols from `statblocks_v1.application.repositories`;
+  route/service code must use `await asyncio.to_thread(...)` for Firestore calls.
+- `InMemoryCandidateRepository` and `InMemoryStatblockPersistenceRepository` accept
+  deterministic clock and ID fixtures. IDs are `cand_<base36>`, `sb_<base36>`, and
+  `rev_<base36>`.
+- Candidates expire at `expires_at` (also the Firestore TTL field). Collections are
+  `dungeonbuddy_statblock_candidates_v1`, `dungeonbuddy_statblocks_v1/revisions`,
+  and `dungeonbuddy_statblock_idempotency_v1`.
+- Reuse `compute_request_digest(operation, payload)` for request replay: it includes
+  operation parameters rather than using only the mechanics definition digest.
+
 ## 0. Mission
 
 Expose the generation, revision, validation, and candidate-read operations through the dedicated authenticated DungeonBuddy v1 router.

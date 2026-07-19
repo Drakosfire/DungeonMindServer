@@ -182,9 +182,11 @@ Atomically:
 1. verify idempotency key;
 2. load logical statblock;
 3. verify parent revision exists and belongs to statblock;
-4. write new immutable revision;
-5. update chronological `latest_revision_id`;
-6. write idempotency outcome.
+4. compare-and-swap: submitted parent must equal current `latest_revision_id`
+   (stale parents raise `stale_parent_revision`, distinct from missing/foreign parent);
+5. write new immutable revision;
+6. update chronological `latest_revision_id`;
+7. write idempotency outcome.
 
 Do not overwrite a revision document even when the caller supplies the same ID. IDs are server-owned.
 
@@ -194,7 +196,7 @@ Required behavior:
 
 ```text
 same key + same request digest
-  → return original successful outcome
+  → return original successful outcome (exact statblock_id + revision_id)
 
 same key + different request digest
   → typed idempotency conflict
@@ -203,7 +205,13 @@ retry after partial infrastructure error
   → reconcile transaction outcome before creating anything new
 ```
 
-The request digest is not the definition digest alone; it should distinguish create/append operation parameters and parent/candidate intent.
+Create outcomes must pin the original created revision, not `latest_revision_id`.
+Replay checks the idempotency record before persistence validation/ID allocation, with
+an atomic recheck at commit.
+
+The request digest is not the definition digest alone. It hashes operation parameters
+with the definition component as PR14 canonical JSON and NFC-normalized remaining
+strings so Unicode/set-order equivalents do not false-conflict.
 
 ## 6. Candidate persistence
 
@@ -232,10 +240,13 @@ Define typed domain/application errors for at least:
 - statblock not found;
 - revision not found;
 - parent revision mismatch;
-- immutable revision conflict;
+- stale parent revision (CAS failure);
+- immutable revision/resource conflict;
 - idempotency conflict;
-- persistence unavailable;
-- transaction indeterminate/reconciliation required.
+- persistence unavailable (non-transaction reads/connectivity);
+- transaction indeterminate/reconciliation required (deadline/transport after a
+  transactional create/append attempt; reconcile via idempotency or fail closed);
+- ambiguous request payload (NFC-colliding map keys in request digests).
 
 Infrastructure exceptions must not leak as raw HTTP details later.
 
