@@ -63,9 +63,34 @@ class ParentRevisionMismatchError(StatblockV1Error):
         )
 
 
-class ImmutableRevisionConflictError(StatblockV1Error):
-    def __init__(self, revision_id: str) -> None:
+class StaleParentRevisionError(StatblockV1Error):
+    def __init__(
+        self, statblock_id: str, parent_revision_id: str, latest_revision_id: str
+    ) -> None:
         super().__init__(
+            "stale_parent_revision",
+            "Parent revision is not the current latest revision",
+            {
+                "statblock_id": statblock_id,
+                "parent_revision_id": parent_revision_id,
+                "latest_revision_id": latest_revision_id,
+            },
+        )
+
+
+class ImmutableResourceConflictError(StatblockV1Error):
+    def __init__(self, resource_type: str, resource_id: str) -> None:
+        super().__init__(
+            "immutable_resource_conflict",
+            f"{resource_type} IDs are server-owned and immutable",
+            {"resource_type": resource_type, "resource_id": resource_id},
+        )
+
+
+class ImmutableRevisionConflictError(ImmutableResourceConflictError):
+    def __init__(self, revision_id: str) -> None:
+        StatblockV1Error.__init__(
+            self,
             "immutable_revision_conflict",
             "Revision IDs are server-owned and immutable",
             {"revision_id": revision_id},

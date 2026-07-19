@@ -45,6 +45,7 @@ from statblocks_v1.domain.receipts import (
 from statblocks_v1.domain.rule_elements import Mechanic, RuleElement, StatblockDefinitionV1
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
+    IdempotencyOutcomeV1,
     IdempotencyRecordV1,
     StatblockResourceV1,
     StatblockRevisionResourceV1,
@@ -67,6 +68,7 @@ __all__ = [
     "Duration",
     "Effect",
     "GeneratedStatblockCandidateV1",
+    "IdempotencyOutcomeV1",
     "IdempotencyRecordV1",
     "LairProfile",
     "Mechanic",

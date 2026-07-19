@@ -6,22 +6,37 @@ the event loop.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
 
 from statblocks_v1.application.repositories import AppendRevisionCommand, CreateStatblockCommand
 from statblocks_v1.domain.errors import (
-    CandidateExpiredError, CandidateNotFoundError, IdempotencyConflictError,
-    ParentRevisionMismatchError, PersistenceUnavailableError, RevisionNotFoundError,
-    StatblockNotFoundError, TransactionIndeterminateError,
+    CandidateExpiredError,
+    CandidateNotFoundError,
+    IdempotencyConflictError,
+    ImmutableResourceConflictError,
+    ImmutableRevisionConflictError,
+    ParentRevisionMismatchError,
+    PersistenceUnavailableError,
+    RevisionNotFoundError,
+    StaleParentRevisionError,
+    StatblockNotFoundError,
+    TransactionIndeterminateError,
 )
 from statblocks_v1.domain.resources import (
-    GeneratedStatblockCandidateV1, IdempotencyRecordV1, ResourceLocatorV1,
-    StatblockResourceV1, StatblockRevisionResourceV1,
+    GeneratedStatblockCandidateV1,
+    IdempotencyOutcomeV1,
+    IdempotencyRecordV1,
+    StatblockResourceV1,
+    StatblockRevisionResourceV1,
 )
 from statblocks_v1.infrastructure.memory_repositories import (
-    _persistence_material, _provenance, utc_now,
+    _persistence_material,
+    _provenance,
+    utc_now,
 )
 
 CANDIDATES_COLLECTION = "dungeonbuddy_statblock_candidates_v1"
@@ -36,11 +51,18 @@ class FirestoreCandidateRepository:
         self._client, self._clock = client, clock
 
     def create(self, candidate: GeneratedStatblockCandidateV1) -> GeneratedStatblockCandidateV1:
+        stored = candidate.model_copy(deep=True)
         try:
-            self._client.collection(CANDIDATES_COLLECTION).document(candidate.candidate_id).create(_dump(candidate))
+            self._client.collection(CANDIDATES_COLLECTION).document(stored.candidate_id).create(
+                _dump(stored)
+            )
         except Exception as error:
+            if _is_already_exists(error):
+                raise ImmutableResourceConflictError("candidate", stored.candidate_id) from error
+            if _is_unavailable(error):
+                raise PersistenceUnavailableError() from error
             raise PersistenceUnavailableError() from error
-        return candidate.model_copy(deep=True)
+        return stored.model_copy(deep=True)
 
     def get(self, candidate_id: str, *, now: datetime | None = None) -> GeneratedStatblockCandidateV1:
         try:
@@ -59,76 +81,172 @@ class FirestoreStatblockPersistenceRepository:
     """Atomic create/append adapter using Firestore read-write transactions."""
 
     def __init__(
-        self, client: Any, *, clock: Callable[[], datetime] = utc_now,
+        self,
+        client: Any,
+        *,
+        clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[str], str] | None = None,
     ) -> None:
         self._client, self._clock = client, clock
         self._id_factory = id_factory or (lambda prefix: f"{prefix}_{uuid4().hex}")
 
     def get(self, statblock_id: str) -> StatblockResourceV1:
-        snapshot = self._document(STATBLOCKS_COLLECTION, statblock_id).get()
+        try:
+            snapshot = self._document(STATBLOCKS_COLLECTION, statblock_id).get()
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
         if not snapshot.exists:
             raise StatblockNotFoundError(statblock_id)
         return StatblockResourceV1.model_validate(snapshot.to_dict())
 
     def get_revision(self, statblock_id: str, revision_id: str) -> StatblockRevisionResourceV1:
-        if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
-            raise StatblockNotFoundError(statblock_id)
-        snapshot = self._revision_document(statblock_id, revision_id).get()
+        try:
+            if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
+                raise StatblockNotFoundError(statblock_id)
+            snapshot = self._revision_document(statblock_id, revision_id).get()
+        except StatblockNotFoundError:
+            raise
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
         if not snapshot.exists:
             raise RevisionNotFoundError(revision_id)
         return StatblockRevisionResourceV1.model_validate(snapshot.to_dict())
 
     def list_for_statblock(self, statblock_id: str) -> list[StatblockRevisionResourceV1]:
-        if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
-            raise StatblockNotFoundError(statblock_id)
+        try:
+            if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
+                raise StatblockNotFoundError(statblock_id)
+            snapshots = list(
+                self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").stream()
+            )
+        except StatblockNotFoundError:
+            raise
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
         return [
             StatblockRevisionResourceV1.model_validate(snapshot.to_dict())
-            for snapshot in self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").stream()
+            for snapshot in snapshots
         ]
 
-    def get_idempotency(self, caller_scope: str, operation: str, idempotency_key: str) -> IdempotencyRecordV1 | None:
-        snapshot = self._idempotency_document(caller_scope, operation, idempotency_key).get()
-        return IdempotencyRecordV1.model_validate(snapshot.to_dict()) if snapshot.exists else None
+    def get_idempotency(
+        self, caller_scope: str, operation: str, idempotency_key: str
+    ) -> IdempotencyRecordV1 | None:
+        try:
+            snapshot = self._idempotency_document(caller_scope, operation, idempotency_key).get()
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
+        if not snapshot.exists:
+            return None
+        return IdempotencyRecordV1.model_validate(snapshot.to_dict())
 
-    def create_statblock(self, command: CreateStatblockCommand) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
-        canonical, digest, receipt = _persistence_material(command.definition)
-        now, statblock_id, revision_id = self._clock(), self._id_factory("sb"), self._id_factory("rev")
-        statblock = StatblockResourceV1(statblock_id=statblock_id, latest_revision_id=revision_id, created_at=now, created_by=command.created_by)
-        revision = StatblockRevisionResourceV1(
-            statblock_id=statblock_id, revision_id=revision_id, definition=command.definition,
-            canonical_definition=canonical, definition_digest=digest, validation_receipt=receipt,
-            provenance=_provenance(command.provenance, command.candidate_id),
-            asset_bindings=command.asset_bindings, created_at=now,
+    def create_statblock(
+        self, command: CreateStatblockCommand
+    ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
+        existing = self.get_idempotency(
+            command.caller_scope, "create_statblock", command.idempotency_key
         )
-        outcome = ResourceLocatorV1(resource_type="statblock", resource_id=statblock_id)
-        self._transactional_write(command.caller_scope, "create_statblock", command.idempotency_key, command.request_digest,
-                                  outcome, [(self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
-                                            (self._revision_document(statblock_id, revision_id), _dump(revision))])
-        record = self.get_idempotency(command.caller_scope, "create_statblock", command.idempotency_key)
-        if record and record.outcome != outcome:
-            return self.get(record.outcome.resource_id), self.get_revision(record.outcome.resource_id, self.get(record.outcome.resource_id).latest_revision_id)
+        if existing is not None:
+            if existing.request_digest != command.request_digest:
+                raise IdempotencyConflictError(command.idempotency_key)
+            return (
+                self.get(existing.outcome.statblock_id),
+                self.get_revision(existing.outcome.statblock_id, existing.outcome.revision_id),
+            )
+
+        canonical, digest, receipt = _persistence_material(command.definition)
+        now = self._clock()
+        statblock_id = self._id_factory("sb")
+        revision_id = self._id_factory("rev")
+        definition = command.definition.model_copy(deep=True)
+        asset_bindings = deepcopy(command.asset_bindings)
+        provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+        statblock = StatblockResourceV1(
+            statblock_id=statblock_id,
+            latest_revision_id=revision_id,
+            created_at=now,
+            created_by=command.created_by,
+        )
+        revision = StatblockRevisionResourceV1(
+            statblock_id=statblock_id,
+            revision_id=revision_id,
+            definition=definition,
+            canonical_definition=str(canonical),
+            definition_digest=digest,
+            validation_receipt=receipt,
+            provenance=provenance,
+            asset_bindings=asset_bindings,
+            created_at=now,
+        )
+        outcome = IdempotencyOutcomeV1(statblock_id=statblock_id, revision_id=revision_id)
+        self._transactional_write(
+            command.caller_scope,
+            "create_statblock",
+            command.idempotency_key,
+            command.request_digest,
+            outcome,
+            [
+                (self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
+                (self._revision_document(statblock_id, revision_id), _dump(revision)),
+            ],
+        )
+        record = self.get_idempotency(
+            command.caller_scope, "create_statblock", command.idempotency_key
+        )
+        if record is not None and record.outcome != outcome:
+            return (
+                self.get(record.outcome.statblock_id),
+                self.get_revision(record.outcome.statblock_id, record.outcome.revision_id),
+            )
         return statblock, revision
 
     def append_revision(self, command: AppendRevisionCommand) -> StatblockRevisionResourceV1:
-        canonical, digest, receipt = _persistence_material(command.definition)
-        now, revision_id = self._clock(), self._id_factory("rev")
-        revision = StatblockRevisionResourceV1(
-            statblock_id=command.statblock_id, revision_id=revision_id, parent_revision_id=command.parent_revision_id,
-            definition=command.definition, canonical_definition=canonical, definition_digest=digest,
-            validation_receipt=receipt, provenance=_provenance(command.provenance, command.candidate_id),
-            asset_bindings=command.asset_bindings, created_at=now,
+        existing = self.get_idempotency(
+            command.caller_scope, "append_revision", command.idempotency_key
         )
-        statblock_ref = self._document(STATBLOCKS_COLLECTION, command.statblock_id)
-        self._transactional_append(command, statblock_ref, revision)
-        record = self.get_idempotency(command.caller_scope, "append_revision", command.idempotency_key)
-        if record and record.outcome.resource_id != revision_id:
-            return self.get_revision(command.statblock_id, record.outcome.resource_id)
+        if existing is not None:
+            if existing.request_digest != command.request_digest:
+                raise IdempotencyConflictError(command.idempotency_key)
+            return self.get_revision(existing.outcome.statblock_id, existing.outcome.revision_id)
+
+        canonical, digest, receipt = _persistence_material(command.definition)
+        now = self._clock()
+        revision_id = self._id_factory("rev")
+        definition = command.definition.model_copy(deep=True)
+        asset_bindings = deepcopy(command.asset_bindings)
+        provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+        revision = StatblockRevisionResourceV1(
+            statblock_id=command.statblock_id,
+            revision_id=revision_id,
+            parent_revision_id=command.parent_revision_id,
+            definition=definition,
+            canonical_definition=str(canonical),
+            definition_digest=digest,
+            validation_receipt=receipt,
+            provenance=provenance,
+            asset_bindings=asset_bindings,
+            created_at=now,
+        )
+        self._transactional_append(command, revision)
+        record = self.get_idempotency(
+            command.caller_scope, "append_revision", command.idempotency_key
+        )
+        if record is not None and record.outcome.revision_id != revision_id:
+            return self.get_revision(record.outcome.statblock_id, record.outcome.revision_id)
         return revision
 
-    def _transactional_write(self, scope: str, operation: str, key: str, digest: str, outcome: ResourceLocatorV1, writes: list[tuple[Any, dict]]) -> None:
+    def _transactional_write(
+        self,
+        scope: str,
+        operation: str,
+        key: str,
+        digest: str,
+        outcome: IdempotencyOutcomeV1,
+        writes: list[tuple[Any, dict]],
+    ) -> None:
         from google.cloud.firestore_v1 import transactional
+
         idem_ref = self._idempotency_document(scope, operation, key)
+
         @transactional
         def operation_fn(transaction):
             existing = idem_ref.get(transaction=transaction)
@@ -139,17 +257,34 @@ class FirestoreStatblockPersistenceRepository:
                 return
             for document, data in writes:
                 transaction.create(document, data)
-            transaction.create(idem_ref, _dump(IdempotencyRecordV1(
-                caller_scope=scope, operation=operation, idempotency_key=key, request_digest=digest,
-                outcome=outcome, created_at=self._clock(),
-            )))
+            transaction.create(
+                idem_ref,
+                _dump(
+                    IdempotencyRecordV1(
+                        caller_scope=scope,
+                        operation=operation,
+                        idempotency_key=key,
+                        request_digest=digest,
+                        outcome=outcome,
+                        created_at=self._clock(),
+                    )
+                ),
+            )
+
         self._run_transaction(operation_fn)
 
-    def _transactional_append(self, command: AppendRevisionCommand, statblock_ref: Any, revision: StatblockRevisionResourceV1) -> None:
+    def _transactional_append(
+        self, command: AppendRevisionCommand, revision: StatblockRevisionResourceV1
+    ) -> None:
         from google.cloud.firestore_v1 import transactional
-        idem_ref = self._idempotency_document(command.caller_scope, "append_revision", command.idempotency_key)
+
+        idem_ref = self._idempotency_document(
+            command.caller_scope, "append_revision", command.idempotency_key
+        )
+        statblock_ref = self._document(STATBLOCKS_COLLECTION, command.statblock_id)
         parent_ref = self._revision_document(command.statblock_id, command.parent_revision_id)
         revision_ref = self._revision_document(command.statblock_id, revision.revision_id)
+
         @transactional
         def operation_fn(transaction):
             existing = idem_ref.get(transaction=transaction)
@@ -158,36 +293,115 @@ class FirestoreStatblockPersistenceRepository:
                 if record.request_digest != command.request_digest:
                     raise IdempotencyConflictError(command.idempotency_key)
                 return
-            if not statblock_ref.get(transaction=transaction).exists or not parent_ref.get(transaction=transaction).exists:
-                raise ParentRevisionMismatchError(command.statblock_id, command.parent_revision_id)
+
+            statblock_snap = statblock_ref.get(transaction=transaction)
+            if not statblock_snap.exists:
+                raise StatblockNotFoundError(command.statblock_id)
+            statblock = StatblockResourceV1.model_validate(statblock_snap.to_dict())
+
+            parent_snap = parent_ref.get(transaction=transaction)
+            if not parent_snap.exists:
+                raise ParentRevisionMismatchError(
+                    command.statblock_id, command.parent_revision_id
+                )
+            if statblock.latest_revision_id != command.parent_revision_id:
+                raise StaleParentRevisionError(
+                    command.statblock_id,
+                    command.parent_revision_id,
+                    statblock.latest_revision_id,
+                )
+
             transaction.create(revision_ref, _dump(revision))
             transaction.update(statblock_ref, {"latest_revision_id": revision.revision_id})
-            transaction.create(idem_ref, _dump(IdempotencyRecordV1(
-                caller_scope=command.caller_scope, operation="append_revision", idempotency_key=command.idempotency_key,
-                request_digest=command.request_digest, outcome=ResourceLocatorV1(resource_type="revision", resource_id=revision.revision_id),
-                created_at=self._clock(),
-            )))
+            transaction.create(
+                idem_ref,
+                _dump(
+                    IdempotencyRecordV1(
+                        caller_scope=command.caller_scope,
+                        operation="append_revision",
+                        idempotency_key=command.idempotency_key,
+                        request_digest=command.request_digest,
+                        outcome=IdempotencyOutcomeV1(
+                            statblock_id=command.statblock_id,
+                            revision_id=revision.revision_id,
+                        ),
+                        created_at=self._clock(),
+                    )
+                ),
+            )
+
         self._run_transaction(operation_fn)
 
     def _run_transaction(self, operation: Any) -> None:
+        known = (
+            IdempotencyConflictError,
+            ParentRevisionMismatchError,
+            StaleParentRevisionError,
+            StatblockNotFoundError,
+            ImmutableRevisionConflictError,
+            ImmutableResourceConflictError,
+        )
         try:
             operation(self._client.transaction())
-        except (IdempotencyConflictError, ParentRevisionMismatchError):
+        except known:
             raise
         except Exception as error:
+            if _is_already_exists(error):
+                raise ImmutableRevisionConflictError("unknown") from error
+            if _is_unavailable(error):
+                raise PersistenceUnavailableError() from error
             raise TransactionIndeterminateError() from error
 
     def _document(self, collection: str, document_id: str) -> Any:
         return self._client.collection(collection).document(document_id)
 
     def _revision_document(self, statblock_id: str, revision_id: str) -> Any:
-        return self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").document(revision_id)
+        return self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").document(
+            revision_id
+        )
 
     def _idempotency_document(self, scope: str, operation: str, key: str) -> Any:
         import hashlib
+
         digest = hashlib.sha256(f"{scope}\x1f{operation}\x1f{key}".encode()).hexdigest()
         return self._document(IDEMPOTENCY_COLLECTION, digest)
 
 
 def _dump(model: Any) -> dict[str, Any]:
-    return model.model_dump(mode="json")
+    """Encode models for Firestore while preserving native timestamp fields.
+
+    ``model_dump(mode="json")`` stringifies datetimes and breaks TTL policies that
+    require a timestamp on ``expires_at``. Canonical definition text remains an
+    exact string.
+    """
+
+    return _firestore_encode(model.model_dump(mode="python"))
+
+
+def _firestore_encode(value: Any) -> Any:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(key): _firestore_encode(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_firestore_encode(item) for item in value]
+    return value
+
+
+def _is_already_exists(error: Exception) -> bool:
+    name = type(error).__name__
+    if name in {"AlreadyExists", "Conflict"}:
+        return True
+    return "already exists" in str(error).lower()
+
+
+def _is_unavailable(error: Exception) -> bool:
+    name = type(error).__name__
+    if name in {"ServiceUnavailable", "DeadlineExceeded", "Unavailable", "RetryError"}:
+        return True
+    message = str(error).lower()
+    return "unavailable" in message or "deadline" in message

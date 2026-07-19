@@ -15,10 +15,15 @@
 - Candidate IDs use `cand_<base36>`; statblock/revision IDs use `sb_<base36>` and
   `rev_<base36>`. Candidate TTL is enforced by `expires_at`; Firestore TTL must also
   be configured on that field.
-- `compute_request_digest(operation, payload)` covers complete operation parameters;
-  it is distinct from the definition digest. Firestore collections are
-  `dungeonbuddy_statblock_candidates_v1`, `dungeonbuddy_statblocks_v1` with
-  `revisions` subcollections, and `dungeonbuddy_statblock_idempotency_v1`.
+- `compute_request_digest(operation, payload)` covers complete operation parameters
+  with the definition component as PR14 canonical JSON plus NFC-normalized remaining
+  strings; it is distinct from the definition digest.
+  Create/append idempotency outcomes pin `IdempotencyOutcomeV1(statblock_id, revision_id)`
+  so create replay returns the original revision after later appends.
+  Append is compare-and-swap against `latest_revision_id` (`stale_parent_revision`).
+  Firestore collections are `dungeonbuddy_statblock_candidates_v1`,
+  `dungeonbuddy_statblocks_v1` with `revisions` subcollections, and
+  `dungeonbuddy_statblock_idempotency_v1`. Candidate `expires_at` is a native timestamp.
 
 ## 0. Mission
 

@@ -19,6 +19,13 @@ class ResourceLocatorV1(StrictModel):
     resource_id: str = Field(min_length=1)
 
 
+class IdempotencyOutcomeV1(StrictModel):
+    """Exact create/append result pinned for durable replay."""
+
+    statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
+    revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
+
+
 class GenerationReceiptV1(StrictModel):
     """Extensible, server-owned audit data populated by the generation service."""
 
@@ -79,5 +86,5 @@ class IdempotencyRecordV1(StrictModel):
     operation: str = Field(min_length=1)
     idempotency_key: str = Field(min_length=1)
     request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    outcome: ResourceLocatorV1
+    outcome: IdempotencyOutcomeV1
     created_at: datetime

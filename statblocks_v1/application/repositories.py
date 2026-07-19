@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+import unicodedata
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Protocol
 
+from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     IdempotencyRecordV1,
@@ -21,14 +23,36 @@ from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 
 def compute_request_digest(operation: str, payload: dict[str, Any]) -> str:
-    """Hash all operation parameters, not merely the mechanics definition."""
+    """Hash operation intent with NFC-normalized, order-stable JSON.
+
+    The definition component must already be PR14 canonical JSON text so Unicode
+    and set-like field ordering cannot create false idempotency conflicts.
+    """
+
     canonical = json.dumps(
-        {"operation": operation, "payload": payload},
+        {
+            "operation": operation,
+            "payload": _normalize_request_payload(payload),
+        },
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
+        allow_nan=False,
     ).encode("utf-8")
     return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
+def _normalize_request_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        return unicodedata.normalize("NFC", value)
+    if isinstance(value, Mapping):
+        return {
+            unicodedata.normalize("NFC", str(key)): _normalize_request_payload(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, list):
+        return [_normalize_request_payload(item) for item in value]
+    return value
 
 
 class CandidateRepository(Protocol):
@@ -90,7 +114,7 @@ class CreateStatblockCommand:
         return compute_request_digest(
             "create_statblock",
             {
-                "definition": self.definition.model_dump(mode="json"),
+                "definition_canonical": str(canonicalize_definition(self.definition)),
                 "created_by": self.created_by,
                 "provenance": self.provenance,
                 "asset_bindings": self.asset_bindings,
@@ -128,7 +152,7 @@ class AppendRevisionCommand:
             {
                 "statblock_id": self.statblock_id,
                 "parent_revision_id": self.parent_revision_id,
-                "definition": self.definition.model_dump(mode="json"),
+                "definition_canonical": str(canonicalize_definition(self.definition)),
                 "provenance": self.provenance,
                 "asset_bindings": self.asset_bindings,
                 "candidate_id": self.candidate_id,
