@@ -206,6 +206,49 @@ GeneratedStatblockCandidateV1
   generation_receipt
   asset_brief
   assets
+  asset_warnings[]
+  created_at
+  expires_at
+  source_locator
+```
+
+`generation_receipt` is server-owned audit data:
+
+```text
+GenerationReceiptV1
+  request_id
+  provider
+  model
+  prompt_version
+  schema_version
+  schema_fingerprint
+  generated_at
+  caller_scope
+  actor
+  source_description_digest
+  source_definition_digest
+  source_locator
+  provider_request_id / provider_response_id
+  latency_ms / input_tokens / output_tokens
+```
+
+Ownership and provenance rules:
+
+- `caller_scope` / `actor` come from the authenticated request, never from model output.
+- `source_description_digest` digests authored prose (NFC + SHA-256). Callers may supply a
+  matching digest; a mismatch is rejected. It does not identify source mechanics.
+- `source_definition_digest` is required for every revision and is the PR14 digest of the
+  exact `StatblockDefinitionV1` embedded in the revision prompt (inline submission or
+  resolved immutable revision).
+- `source_locator` is present when revision used an exact `(statblock_id, revision_id)` read.
+- When `generate_images` is requested, `asset_brief` stores the exact effective brief passed
+  to the asset generator (authored description brief, or creature-name fallback).
+- `asset_warnings` are typed partial outcomes with stable codes, not free-form strings:
+
+```text
+AssetWarningV1
+  code: asset_generator_unconfigured | asset_generation_failed
+  message
 ```
 
 A candidate is not accepted mechanics truth. It may be edited, regenerated, rejected, or
@@ -915,9 +958,9 @@ The response is another candidate, not a persisted revision.
 
 ```json
 {
-  "contract": "dungeonmind.dungeonbuddy-statblocks",
-  "contract_version": "1.0.0",
-  "candidate_id": "candidate_...",
+  "contract": "dungeonbuddy-statblock",
+  "contract_version": "v1",
+  "candidate_id": "cand_...",
   "definition": {},
   "validation_receipt": {
     "status": "warnings",
@@ -925,16 +968,38 @@ The response is another candidate, not a persisted revision.
   },
   "generation_receipt": {
     "request_id": "req_...",
-    "generator_version": "...",
+    "provider": "openai",
     "model": "...",
-    "prompt_version": "...",
-    "created_at": "..."
+    "prompt_version": "statblock-generation-prompt-v1",
+    "schema_version": "...",
+    "schema_fingerprint": "...",
+    "generated_at": "...",
+    "caller_scope": "dungeonbuddy",
+    "actor": "optional-actor",
+    "source_description_digest": "sha256:...",
+    "source_definition_digest": "sha256:...",
+    "source_locator": {
+      "statblock_id": "sb_...",
+      "revision_id": "rev_..."
+    }
   },
   "asset_brief": {
     "prompt": "...",
     "recommended_roles": ["portrait", "token"]
   },
-  "assets": []
+  "assets": [],
+  "asset_warnings": [
+    {
+      "code": "asset_generator_unconfigured",
+      "message": "Asset generation was requested but no asset generator is configured."
+    }
+  ],
+  "created_at": "...",
+  "expires_at": "...",
+  "source_locator": {
+    "statblock_id": "sb_...",
+    "revision_id": "rev_..."
+  }
 }
 ```
 

@@ -72,6 +72,41 @@ class GenerationFailureV1:
 GenerationResultV1 = GeneratedStatblockCandidateV1 | GenerationFailureV1
 
 
+@dataclass(frozen=True)
+class _PinnedOperationIntent:
+    """Caller-independent operation intent, snapshotted before the provider call.
+
+    Nested models are deep-copied at construction so concurrent mutation of the
+    original command cannot change prompt, digests, ruleset, caller, locator,
+    key-preservation inputs, or asset intent after the operation starts.
+    """
+
+    request_id: str
+    ruleset: RulesetRef
+    caller: CallerProvenanceV1
+    prompt: str
+    source_description_digest: str | None
+    source_definition_digest: str | None
+    source_locator: ExactRevisionLocatorV1 | None
+    source_definition: StatblockDefinitionV1 | None
+    preserve_element_keys: bool
+    asset_prompt: str | None
+    generate_assets: bool
+    include_generation_brief: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "ruleset", self.ruleset.model_copy(deep=True))
+        object.__setattr__(self, "caller", self.caller.model_copy(deep=True))
+        if self.source_locator is not None:
+            object.__setattr__(
+                self, "source_locator", self.source_locator.model_copy(deep=True)
+            )
+        if self.source_definition is not None:
+            object.__setattr__(
+                self, "source_definition", self.source_definition.model_copy(deep=True)
+            )
+
+
 class GenerationServiceV1:
     """Coordinates provider output without letting provider metadata enter the definition."""
 
@@ -95,93 +130,23 @@ class GenerationServiceV1:
         self._asset_generator = asset_generator
 
     def generate(self, command: GenerateStatblockCommandV1) -> GenerationResultV1:
-        digest_error = _verified_source_digest(command.source)
-        if isinstance(digest_error, GenerationFailureV1):
-            return digest_error
-        source_digest = digest_error
-        return self._run(
-            request_id=command.request_id,
-            ruleset=command.ruleset,
-            caller=command.caller,
-            prompt=build_generation_prompt(command),
-            source_digest=source_digest,
-            source_definition_digest=None,
-            source_locator=None,
-            source_definition=None,
-            preserve_element_keys=False,
-            asset_prompt=(
-                command.source.description if command.asset_options.include_generation_brief else None
-            ),
-            generate_assets=command.asset_options.generate_images,
-            include_generation_brief=command.asset_options.include_generation_brief,
-        )
+        pinned = _pin_generate_intent(command)
+        if isinstance(pinned, GenerationFailureV1):
+            return pinned
+        return self._run(pinned)
 
     def revise(self, command: ReviseStatblockCommandV1) -> GenerationResultV1:
-        source = command.source_definition
-        source_locator = command.source_locator
-        if source is None:
-            if source_locator is None:
-                return GenerationFailureV1("invalid_request", "Revision source is missing")
-            if self._definition_resolver is None:
-                return GenerationFailureV1(
-                    "source_unavailable", "No definition resolver is configured"
-                )
-            try:
-                source = self._definition_resolver.resolve(source_locator)
-            except StatblockV1Error as error:
-                return GenerationFailureV1(error.code, error.message)
-            except Exception:
-                return GenerationFailureV1(
-                    "source_unavailable", "Failed to resolve source revision"
-                )
+        pinned = _pin_revise_intent(command, self._definition_resolver)
+        if isinstance(pinned, GenerationFailureV1):
+            return pinned
+        return self._run(pinned)
 
-        source_digest: str | None = None
-        if command.source is not None:
-            digest_error = _verified_source_digest(command.source)
-            if isinstance(digest_error, GenerationFailureV1):
-                return digest_error
-            source_digest = digest_error
-
-        return self._run(
-            request_id=command.request_id,
-            ruleset=command.ruleset,
-            caller=command.caller,
-            prompt=build_revision_prompt(command, source),
-            source_digest=source_digest,
-            source_definition_digest=compute_definition_digest(source),
-            source_locator=source_locator,
-            source_definition=source,
-            preserve_element_keys=command.preserve_element_keys,
-            asset_prompt=(
-                command.source.description
-                if command.source and command.asset_options.include_generation_brief
-                else None
-            ),
-            generate_assets=command.asset_options.generate_images,
-            include_generation_brief=command.asset_options.include_generation_brief,
-        )
-
-    def _run(
-        self,
-        *,
-        request_id: str,
-        ruleset: RulesetRef,
-        caller: CallerProvenanceV1,
-        prompt: str,
-        source_digest: str | None,
-        source_definition_digest: str | None,
-        source_locator: ExactRevisionLocatorV1 | None,
-        source_definition: StatblockDefinitionV1 | None,
-        preserve_element_keys: bool,
-        asset_prompt: str | None,
-        generate_assets: bool,
-        include_generation_brief: bool,
-    ) -> GenerationResultV1:
+    def _run(self, intent: _PinnedOperationIntent) -> GenerationResultV1:
         compiled = compile_openai_definition_schema()
         started = time.monotonic()
         try:
             outcome = self._provider.generate_definition(
-                prompt=prompt,
+                prompt=intent.prompt,
                 schema=compiled,
                 options=ProviderOptionsV1(
                     model=self._settings.model,
@@ -208,7 +173,7 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "definition_invalid", "Provider output does not match StatblockDefinitionV1"
             )
-        if not _ruleset_matches(definition.ruleset, ruleset):
+        if not _ruleset_matches(definition.ruleset, intent.ruleset):
             return GenerationFailureV1(
                 "ruleset_mismatch",
                 "Generated definition ruleset does not match the requested ruleset",
@@ -222,16 +187,18 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "definition_invalid", "Provider output has structural or reference errors"
             )
-        if source_definition is not None and preserve_element_keys:
-            receipt = _with_key_preservation_warnings(receipt, source_definition, definition)
+        if intent.source_definition is not None and intent.preserve_element_keys:
+            receipt = _with_key_preservation_warnings(
+                receipt, intent.source_definition, definition
+            )
 
         asset_warnings: list[AssetWarningV1] = []
         assets: list[dict[str, object]] = []
         asset_brief_model: AssetBriefV1 | None = None
-        if generate_assets:
+        if intent.generate_assets:
             # When images are requested, always persist the exact brief used.
             # Without an authored description brief, fall back to the creature name.
-            effective_prompt = asset_prompt or definition.identity.name
+            effective_prompt = intent.asset_prompt or definition.identity.name
             asset_brief_model = AssetBriefV1(prompt=effective_prompt)
             if self._asset_generator is None:
                 asset_warnings.append(
@@ -252,8 +219,8 @@ class GenerationServiceV1:
                             message="Asset generation failed; review the candidate without assets.",
                         )
                     )
-        elif include_generation_brief and asset_prompt is not None:
-            asset_brief_model = AssetBriefV1(prompt=asset_prompt)
+        elif intent.include_generation_brief and intent.asset_prompt is not None:
+            asset_brief_model = AssetBriefV1(prompt=intent.asset_prompt)
 
         measured_latency_ms = int((time.monotonic() - started) * 1000)
         latency_ms = (
@@ -265,18 +232,18 @@ class GenerationServiceV1:
             definition=definition,
             validation_receipt=receipt,
             generation_receipt=GenerationReceiptV1(
-                request_id=request_id,
+                request_id=intent.request_id,
                 provider=self._provider.provider_name,
                 model=self._settings.model,
                 prompt_version=PROMPT_VERSION,
                 schema_version=compiled.compiler_version,
                 schema_fingerprint=compiled.fingerprint,
                 generated_at=now,
-                caller_scope=caller.caller_scope,
-                actor=caller.actor,
-                source_description_digest=source_digest,
-                source_definition_digest=source_definition_digest,
-                source_locator=source_locator,
+                caller_scope=intent.caller.caller_scope,
+                actor=intent.caller.actor,
+                source_description_digest=intent.source_description_digest,
+                source_definition_digest=intent.source_definition_digest,
+                source_locator=intent.source_locator,
                 provider_request_id=outcome.request_id,
                 provider_response_id=outcome.response_id,
                 latency_ms=latency_ms,
@@ -290,9 +257,90 @@ class GenerationServiceV1:
             asset_warnings=asset_warnings,
             created_at=now,
             expires_at=now + timedelta(seconds=self._settings.candidate_ttl_seconds),
-            source_locator=source_locator,
+            source_locator=intent.source_locator,
         )
         return self._candidates.create(candidate)
+
+
+def _pin_generate_intent(
+    command: GenerateStatblockCommandV1,
+) -> _PinnedOperationIntent | GenerationFailureV1:
+    """Deep-copy and derive all generate inputs before any provider call."""
+
+    snapshot = command.model_copy(deep=True)
+    digest_error = _verified_source_digest(snapshot.source)
+    if isinstance(digest_error, GenerationFailureV1):
+        return digest_error
+    return _PinnedOperationIntent(
+        request_id=snapshot.request_id,
+        ruleset=snapshot.ruleset,
+        caller=snapshot.caller,
+        prompt=build_generation_prompt(snapshot),
+        source_description_digest=digest_error,
+        source_definition_digest=None,
+        source_locator=None,
+        source_definition=None,
+        preserve_element_keys=False,
+        asset_prompt=(
+            snapshot.source.description if snapshot.asset_options.include_generation_brief else None
+        ),
+        generate_assets=snapshot.asset_options.generate_images,
+        include_generation_brief=snapshot.asset_options.include_generation_brief,
+    )
+
+
+def _pin_revise_intent(
+    command: ReviseStatblockCommandV1,
+    definition_resolver: DefinitionResolver | None,
+) -> _PinnedOperationIntent | GenerationFailureV1:
+    """Deep-copy and derive all revise inputs before any provider call."""
+
+    snapshot = command.model_copy(deep=True)
+    source = snapshot.source_definition
+    source_locator = snapshot.source_locator
+    if source is None:
+        if source_locator is None:
+            return GenerationFailureV1("invalid_request", "Revision source is missing")
+        if definition_resolver is None:
+            return GenerationFailureV1(
+                "source_unavailable", "No definition resolver is configured"
+            )
+        try:
+            source = definition_resolver.resolve(source_locator).model_copy(deep=True)
+        except StatblockV1Error as error:
+            return GenerationFailureV1(error.code, error.message)
+        except Exception:
+            return GenerationFailureV1(
+                "source_unavailable", "Failed to resolve source revision"
+            )
+    else:
+        source = source.model_copy(deep=True)
+
+    source_digest: str | None = None
+    if snapshot.source is not None:
+        digest_error = _verified_source_digest(snapshot.source)
+        if isinstance(digest_error, GenerationFailureV1):
+            return digest_error
+        source_digest = digest_error
+
+    return _PinnedOperationIntent(
+        request_id=snapshot.request_id,
+        ruleset=snapshot.ruleset,
+        caller=snapshot.caller,
+        prompt=build_revision_prompt(snapshot, source),
+        source_description_digest=source_digest,
+        source_definition_digest=compute_definition_digest(source),
+        source_locator=source_locator,
+        source_definition=source,
+        preserve_element_keys=snapshot.preserve_element_keys,
+        asset_prompt=(
+            snapshot.source.description
+            if snapshot.source and snapshot.asset_options.include_generation_brief
+            else None
+        ),
+        generate_assets=snapshot.asset_options.generate_images,
+        include_generation_brief=snapshot.asset_options.include_generation_brief,
+    )
 
 
 def _verified_source_digest(source: SourceSnapshotV1) -> str | GenerationFailureV1:

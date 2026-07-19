@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import math
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import pytest
@@ -27,7 +29,7 @@ from statblocks_v1.application.resolvers import PersistenceDefinitionResolver
 from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import InternalServiceMisconfiguredError, RevisionNotFoundError
-from statblocks_v1.domain.profiles import RulesetRef
+from statblocks_v1.domain.profiles import RulesetEdition, RulesetRef
 from statblocks_v1.domain.receipts import ValidationStatus
 from statblocks_v1.domain.resources import AssetWarningCode, ExactRevisionLocatorV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
@@ -405,6 +407,100 @@ def test_revision_duplicate_identity_is_ambiguous_not_misattributed(load_fixture
     codes = [issue.code for issue in result.validation_receipt.issues]
     assert "ELEMENT_KEY_IDENTITY_AMBIGUOUS" in codes
     assert "ELEMENT_KEY_CHANGED" not in codes
+
+
+def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixture) -> None:
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    expected_digest = compute_definition_digest(source)
+    persistence = InMemoryStatblockPersistenceRepository(
+        clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),
+        id_factory=DeterministicIdFactory(),
+    )
+    statblock, revision = persistence.create_statblock(
+        CreateStatblockCommand(
+            caller_scope="tests",
+            idempotency_key="pin-revision-source",
+            definition=source,
+            created_by="tests",
+        )
+    )
+    locator = ExactRevisionLocatorV1(
+        statblock_id=statblock.statblock_id, revision_id=revision.revision_id
+    )
+    command = ReviseStatblockCommandV1(
+        request_id="req_pinned",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Keep the club"],
+        caller=CallerProvenanceV1(caller_scope="tests", actor="original"),
+        source_locator=locator,
+        source=SourceSnapshotV1(
+            name_hint="Pinned",
+            description="Pinned revision description.",
+        ),
+        asset_options=AssetOptionsV1(generate_images=True, include_generation_brief=True),
+        preserve_element_keys=True,
+    )
+
+    entered = threading.Event()
+    release = threading.Event()
+    payload = source.model_dump(mode="json")
+
+    def blocking_callback(prompt, schema, options):
+        entered.set()
+        assert release.wait(timeout=2)
+        return ProviderOutcomeV1.succeeded(payload)
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider({}, callback=blocking_callback),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_pinned",
+        definition_resolver=PersistenceDefinitionResolver(persistence),
+    )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(service.revise, command)
+        assert entered.wait(timeout=2)
+        # Mutate every caller-owned field while the provider is blocked.
+        command.request_id = "req_hijacked"
+        command.ruleset.edition = RulesetEdition.edition_2014
+        command.caller.caller_scope = "hijacked"
+        command.caller.actor = "mutated"
+        command.source.description = "Mutated description that must not affect digests."
+        command.asset_options.generate_images = False
+        command.preserve_element_keys = False
+        command.source_locator = ExactRevisionLocatorV1(
+            statblock_id="sb_hijacked01", revision_id="rev_hijacked01"
+        )
+        command.revision_instructions[:] = ["Hijacked instructions"]
+        release.set()
+        result = future.result(timeout=2)
+
+    assert not isinstance(result, GenerationFailureV1)
+    assert result.generation_receipt.request_id == "req_pinned"
+    assert result.generation_receipt.caller_scope == "tests"
+    assert result.generation_receipt.actor == "original"
+    assert result.generation_receipt.source_definition_digest == expected_digest
+    assert result.generation_receipt.source_description_digest == _digest_text(
+        "Pinned revision description."
+    )
+    assert result.generation_receipt.source_locator == locator
+    assert result.source_locator == locator
+    assert result.asset_brief is not None
+    assert result.asset_brief["prompt"] == "Pinned revision description."
+    assert [warning.code for warning in result.asset_warnings] == [
+        AssetWarningCode.asset_generator_unconfigured
+    ]
+    assert KEY_PRESERVATION_PASS_VERSION in result.validation_receipt.validator_version
+
+    result.generation_receipt.caller_scope = "returned-mutated"
+    stored = candidates.get("cand_pinned")
+    assert stored.generation_receipt.caller_scope == "tests"
+    assert stored.generation_receipt.source_definition_digest == expected_digest
+    assert stored.generation_receipt.source_locator == locator
 
 
 def test_revision_from_exact_locator(load_fixture) -> None:

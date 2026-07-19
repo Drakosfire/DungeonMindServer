@@ -25,6 +25,10 @@
   `GeneratedStatblockCandidateV1` or `GenerationFailureV1`; routes must map the latter
   without exposing provider exceptions (provider exceptions are caught at the service
   boundary as `provider_failure`).
+- The service deep-copies and pins operation intent before the provider call (prompt,
+  digests, ruleset, caller, locator, source definition, asset options). Concurrent
+  mutation of the caller's command after entry cannot change receipt provenance or
+  key-preservation inputs. Treat commands as write-once at the route boundary.
 - Construct the service through dependency injection with a `DefinitionProvider`,
   `CandidateRepository`, `GenerationSettingsV1`, clock, candidate-ID factory, and,
   for revision locators, `PersistenceDefinitionResolver` over
