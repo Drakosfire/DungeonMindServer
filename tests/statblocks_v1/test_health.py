@@ -86,15 +86,20 @@ def test_domain_package_imports_without_external_env(monkeypatch) -> None:
     assert domain_protocols.Clock is not None
 
 
-def test_health_returns_foundation_contract(client: TestClient, auth_headers: dict[str, str]) -> None:
+def test_health_returns_available_capabilities(client: TestClient, auth_headers: dict[str, str]) -> None:
     response = client.get(HEALTH_PATH, headers=auth_headers)
 
     assert response.status_code == 200
     assert response.json() == {
-        "status": "foundation",
+        "status": "available",
         "contract": CONTRACT_NAME,
         "contract_version": CONTRACT_VERSION,
-        "capabilities": [],
+        "capabilities": [
+            "candidate_generate",
+            "candidate_revise",
+            "definition_validate",
+            "candidate_read",
+        ],
     }
 
 

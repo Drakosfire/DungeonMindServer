@@ -1,6 +1,7 @@
 # HANDOFF — PR17 Statblock v1 candidate API
 
-**Status:** READY AFTER PR15 AND PR16  
+**Status:** IN REVIEW — rebased onto merged PR16; candidate idempotency deferred  
+
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Predecessors:** repository persistence and generation service  
 **Successor:** `HANDOFF-pr18-statblock-v1-revision-resource-api.md`
