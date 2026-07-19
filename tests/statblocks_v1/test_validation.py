@@ -135,15 +135,17 @@ def test_repeated_validation_matches_except_supplied_time(load_fixture) -> None:
 
 def test_passive_perception_checks_perception_skill_value(load_fixture) -> None:
     payload = load_fixture("simple_bruiser")
+    # Wisdom 10 (mod 0) + PB 2 => standard Perception 2; passive must be 12.
     payload["proficiencies"]["skills"] = [
         {
             "skill": "Perception",
-            "value": 5,
+            "ability": "wisdom",
+            "value": 2,
             "derivation": "standard",
             "note": None,
         }
     ]
-    payload["senses"]["passive_perception"] = 10  # should be 15
+    payload["senses"]["passive_perception"] = 10
 
     receipt = validate_definition(
         StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
@@ -152,6 +154,118 @@ def test_passive_perception_checks_perception_skill_value(load_fixture) -> None:
     issue = next(item for item in receipt.issues if item.code == "PASSIVE_PERCEPTION_MISMATCH")
     assert issue.field_path == "senses.passive_perception"
     assert issue.severity is ValidationSeverity.error
+    assert "SKILL_DERIVATION_MISMATCH" not in {item.code for item in receipt.issues}
+
+
+def test_standard_saving_throw_derivation_must_match_ability_and_pb(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    # Strength 18 (mod +4) + PB 2 => expected standard save +6.
+    payload["proficiencies"]["saving_throws"] = [
+        {
+            "ability": "strength",
+            "value": 2,
+            "derivation": "standard",
+            "note": None,
+        }
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    issue = next(
+        item for item in receipt.issues if item.code == "SAVING_THROW_DERIVATION_MISMATCH"
+    )
+    assert issue.field_path == "proficiencies.saving_throws[0].value"
+    assert receipt.is_persistence_ready is False
+
+
+def test_expertise_skill_derivation_and_explicit_override(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    # Dexterity 10 (mod 0) + 2×PB => expertise Stealth 4.
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Stealth",
+            "ability": "dexterity",
+            "value": 3,
+            "derivation": "expertise",
+            "note": None,
+        },
+        {
+            "skill": "Athletics",
+            "ability": "strength",
+            "value": 9,
+            "derivation": "explicit_override",
+            "note": "magical boots",
+        },
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    codes = {item.code for item in receipt.issues}
+    assert "SKILL_DERIVATION_MISMATCH" in codes
+    expertise = next(
+        item for item in receipt.issues if item.code == "SKILL_DERIVATION_MISMATCH"
+    )
+    assert expertise.field_path == "proficiencies.skills[0].value"
+    assert "SAVING_THROW_DERIVATION_MISMATCH" not in codes
+    assert receipt.is_persistence_ready is False
+
+    payload["proficiencies"]["skills"][0]["value"] = 4
+    fixed = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert "SKILL_DERIVATION_MISMATCH" not in {item.code for item in fixed.issues}
+    assert fixed.is_persistence_ready
+
+
+def test_duplicate_saving_throw_and_normalized_skill_rejected(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["proficiencies"]["saving_throws"] = [
+        {
+            "ability": "constitution",
+            "value": 5,
+            "derivation": "standard",
+            "note": None,
+        },
+        {
+            "ability": "constitution",
+            "value": 5,
+            "derivation": "standard",
+            "note": None,
+        },
+    ]
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Perception",
+            "ability": "wisdom",
+            "value": 2,
+            "derivation": "standard",
+            "note": None,
+        },
+        {
+            "skill": "perception",
+            "ability": "wisdom",
+            "value": 2,
+            "derivation": "standard",
+            "note": None,
+        },
+    ]
+    payload["senses"]["passive_perception"] = 12
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    by_code = {item.code: item for item in receipt.issues}
+    assert by_code["DUPLICATE_SAVING_THROW_ABILITY"].field_path == (
+        "proficiencies.saving_throws[1].ability"
+    )
+    assert by_code["DUPLICATE_SKILL_NAME"].field_path == "proficiencies.skills[1].skill"
+    assert receipt.is_persistence_ready is False
+    assert "PASSIVE_PERCEPTION_MISMATCH" not in by_code
 
 
 def test_recharge_usage_requires_typed_range_object(load_fixture) -> None:

@@ -10,7 +10,7 @@ accepted-definition/revision operation, not a field added to `StatblockDefinitio
 | `hit_points`, `hit_dice` | retained but restructured | `vitality.hit_points` (`formula` or `fixed_value`) |
 | `speed` | retained but restructured | `movement.modes[]` |
 | `abilities` | retained directly | `abilities` using full ability names |
-| `saving_throws`, `skills` | retained but restructured | `proficiencies.saving_throws[]`, `.skills[]` |
+| `saving_throws`, `skills` | retained but restructured | `proficiencies.saving_throws[]`, `.skills[]` (`SkillBonus.ability` is required typed authority for derivation checks) |
 | `damage_resistance`, `damage_immunity`, `damage_vulnerability` | retained but restructured | `defenses.damage_interactions[]` |
 | `condition_immunity` | retained but restructured | `defenses.condition_immunities[]` |
 | `senses` | retained but restructured | `senses.senses[]`, `.passive_perception` |

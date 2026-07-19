@@ -90,7 +90,11 @@ At minimum:
 - ability-score ranges are enforced;
 - CR serialization is valid for selected ruleset;
 - proficiency bonus and XP agree with ruleset unless an explicit override is declared;
-- passive Perception agrees with inputs or declares override semantics.
+- save/skill `standard` and `expertise` values match ability modifier arithmetic using
+  `challenge.proficiency_bonus`; `explicit_override` is preserved; duplicate save
+  abilities and case-normalized skill names are rejected; `SkillBonus.ability` is the
+  typed ability authority (no string guessing);
+- passive Perception agrees with a unique typed Perception skill or warns when unverified.
 
 ### Local identity and references
 

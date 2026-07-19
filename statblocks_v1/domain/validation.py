@@ -9,6 +9,7 @@ from datetime import datetime
 from statblocks_v1.domain.canonicalization import CANONICALIZER_VERSION
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.primitives import (
+    AbilityName,
     ActivationKind,
     AutomationSupport,
     DamageEffect,
@@ -20,6 +21,10 @@ from statblocks_v1.domain.primitives import (
     TargetKind,
     Usage,
     UsageKind,
+)
+from statblocks_v1.domain.profiles import (
+    AbilityScores,
+    ProficiencyDerivation,
 )
 from statblocks_v1.domain.receipts import (
     VALIDATOR_VERSION,
@@ -200,16 +205,16 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
             "Challenge proficiency bonus does not match the selected CR.",
         )
 
-    wisdom_mod = (definition.abilities.wisdom - 10) // 2
-    perception = next(
-        (
-            skill
-            for skill in definition.proficiencies.skills
-            if skill.skill.casefold() == "perception"
-        ),
-        None,
-    )
-    if perception is not None:
+    _validate_proficiency_derivations(definition, issue)
+
+    wisdom_mod = _ability_modifier(definition.abilities, AbilityName.wisdom)
+    perception_entries = [
+        (index, skill)
+        for index, skill in enumerate(definition.proficiencies.skills)
+        if skill.skill.casefold() == "perception"
+    ]
+    if len(perception_entries) == 1:
+        _, perception = perception_entries[0]
         expected_passive = 10 + perception.value
         if definition.senses.passive_perception != expected_passive:
             issue(
@@ -218,7 +223,7 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
                 "senses.passive_perception",
                 "Passive Perception must equal 10 + Perception skill value.",
             )
-    else:
+    elif len(perception_entries) == 0:
         expected_passive = 10 + wisdom_mod
         if definition.senses.passive_perception != expected_passive:
             issue(
@@ -227,6 +232,88 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
                 "senses.passive_perception",
                 "Passive Perception differs from Wisdom without a typed Perception skill.",
                 "Add a Perception skill or confirm the value during review.",
+            )
+
+
+def _ability_modifier(abilities: AbilityScores, ability: AbilityName) -> int:
+    return (getattr(abilities, ability.value) - 10) // 2
+
+
+def _expected_proficiency_bonus(
+    abilities: AbilityScores,
+    ability: AbilityName,
+    derivation: ProficiencyDerivation,
+    proficiency_bonus: int,
+) -> int | None:
+    modifier = _ability_modifier(abilities, ability)
+    if derivation is ProficiencyDerivation.standard:
+        return modifier + proficiency_bonus
+    if derivation is ProficiencyDerivation.expertise:
+        return modifier + (2 * proficiency_bonus)
+    return None
+
+
+def _validate_proficiency_derivations(
+    definition: StatblockDefinitionV1, issue: IssueEmitter
+) -> None:
+    """Verify save/skill derivation arithmetic and reject duplicate authorities."""
+
+    proficiency_bonus = definition.challenge.proficiency_bonus
+    seen_abilities: dict[AbilityName, int] = {}
+    for index, saving_throw in enumerate(definition.proficiencies.saving_throws):
+        path = f"proficiencies.saving_throws[{index}]"
+        if saving_throw.ability in seen_abilities:
+            issue(
+                "DUPLICATE_SAVING_THROW_ABILITY",
+                ValidationSeverity.error,
+                f"{path}.ability",
+                f"Saving throw for '{saving_throw.ability.value}' appears more than once.",
+            )
+        else:
+            seen_abilities[saving_throw.ability] = index
+
+        expected = _expected_proficiency_bonus(
+            definition.abilities,
+            saving_throw.ability,
+            saving_throw.derivation,
+            proficiency_bonus,
+        )
+        if expected is not None and saving_throw.value != expected:
+            issue(
+                "SAVING_THROW_DERIVATION_MISMATCH",
+                ValidationSeverity.error,
+                f"{path}.value",
+                f"Declared {saving_throw.derivation.value} saving throw value "
+                f"{saving_throw.value} does not equal expected {expected}.",
+            )
+
+    seen_skills: dict[str, int] = {}
+    for index, skill in enumerate(definition.proficiencies.skills):
+        path = f"proficiencies.skills[{index}]"
+        normalized = skill.skill.casefold()
+        if normalized in seen_skills:
+            issue(
+                "DUPLICATE_SKILL_NAME",
+                ValidationSeverity.error,
+                f"{path}.skill",
+                f"Skill '{skill.skill}' duplicates an earlier entry after normalization.",
+            )
+        else:
+            seen_skills[normalized] = index
+
+        expected = _expected_proficiency_bonus(
+            definition.abilities,
+            skill.ability,
+            skill.derivation,
+            proficiency_bonus,
+        )
+        if expected is not None and skill.value != expected:
+            issue(
+                "SKILL_DERIVATION_MISMATCH",
+                ValidationSeverity.error,
+                f"{path}.value",
+                f"Declared {skill.derivation.value} skill value {skill.value} "
+                f"does not equal expected {expected} for {skill.ability.value}.",
             )
 
 

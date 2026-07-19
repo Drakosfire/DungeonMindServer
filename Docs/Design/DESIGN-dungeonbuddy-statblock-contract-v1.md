@@ -389,10 +389,11 @@ Ability modifiers are derived and are not independently authored.
 
 ```text
 ProficiencyProfile
-  proficiency_bonus
   saving_throws[]
   skills[]
 ```
+
+Proficiency bonus is authored only on `challenge.proficiency_bonus`.
 
 ```text
 SavingThrowBonus
@@ -403,12 +404,15 @@ SavingThrowBonus
 
 SkillBonus
   skill
+  ability
   value
   derivation: standard | expertise | explicit_override
   note: optional
 ```
 
-DungeonMindServer verifies standard derivations and preserves intentional overrides.
+DungeonMindServer verifies `standard` and `expertise` derivations against ability
+modifiers and `challenge.proficiency_bonus`, rejects duplicate save abilities and
+normalized skill names, and preserves intentional `explicit_override` values.
 
 ### 5.7 Senses and communication
 

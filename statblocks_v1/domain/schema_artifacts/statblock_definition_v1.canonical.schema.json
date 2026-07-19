@@ -2102,7 +2102,11 @@
     },
     "SkillBonus": {
       "additionalProperties": false,
+      "description": "Authored skill bonus with explicit ability authority for derivation checks.",
       "properties": {
+        "ability": {
+          "$ref": "#/$defs/AbilityName"
+        },
         "derivation": {
           "$ref": "#/$defs/ProficiencyDerivation"
         },
@@ -2130,6 +2134,7 @@
       },
       "required": [
         "skill",
+        "ability",
         "value",
         "derivation"
       ],

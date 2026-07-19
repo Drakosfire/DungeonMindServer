@@ -22,6 +22,10 @@
   persistence-mode receipt with no errors may claim it. Candidate/preview receipts
   never report `is_persistence_ready` even when they have no errors.
 - Proficiency bonus authority is `challenge.proficiency_bonus` only.
+  `SkillBonus.ability` is required typed authority for skill derivation checks.
+  Persistence validation enforces `standard` / `expertise` arithmetic for saves and
+  skills, preserves `explicit_override`, and rejects duplicate save abilities plus
+  case-normalized duplicate skill names.
   `Usage.recharge_range` is a `{minimum, maximum}` object.
 - Nested effect references report real collection paths
   (e.g. `mechanic.hit_effects[i]`, `mechanic.failure_effects[i]`), never a
@@ -30,6 +34,8 @@
   `HP_METHOD_FIELDS_INCOHERENT`, `HP_DISPLAYED_AVERAGE_MISMATCH`,
   `RULESET_CR_INVALID`, `RULESET_CR_PROFICIENCY_MISMATCH`,
   `PASSIVE_PERCEPTION_MISMATCH`, `PASSIVE_PERCEPTION_UNVERIFIED`,
+  `DUPLICATE_SAVING_THROW_ABILITY`, `DUPLICATE_SKILL_NAME`,
+  `SAVING_THROW_DERIVATION_MISMATCH`, `SKILL_DERIVATION_MISMATCH`,
   `DUPLICATE_LOCAL_KEY`, `DEFAULT_PHASE_CARDINALITY`,
   `UNKNOWN_ELEMENT_REFERENCE`, `UNKNOWN_MULTIATTACK_ELEMENT`,
   `UNKNOWN_RESOURCE_REFERENCE`, `UNKNOWN_PHASE_REFERENCE`,
