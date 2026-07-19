@@ -48,6 +48,7 @@ STDLIB_AND_TYPING_ROOTS = {
     "unicodedata",
     "pathlib",
     "copy",
+    "time",
 }
 
 FORBIDDEN_LEGACY = (

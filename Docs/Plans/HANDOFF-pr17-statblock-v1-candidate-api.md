@@ -18,6 +18,56 @@
 - Reuse `compute_request_digest(operation, payload)` for request replay: it includes
   operation parameters rather than using only the mechanics definition digest.
 
+## PR16 predecessor completion notes
+
+- Application entry points are `GenerationServiceV1.generate(GenerateStatblockCommandV1)`
+  and `GenerationServiceV1.revise(ReviseStatblockCommandV1)`. Both return either
+  `GeneratedStatblockCandidateV1` or `GenerationFailureV1`; routes must map the latter
+  without exposing provider exceptions (provider exceptions are caught at the service
+  boundary as `provider_failure`).
+- The service deep-copies and pins operation intent before the provider call (prompt,
+  digests, ruleset, caller, locator, source definition, asset options). Concurrent
+  mutation of the caller's command after entry cannot change receipt provenance or
+  key-preservation inputs. Treat commands as write-once at the route boundary.
+- Construct the service through dependency injection with a `DefinitionProvider`,
+  `CandidateRepository`, `GenerationSettingsV1`, clock, candidate-ID factory, and,
+  for revision locators, `PersistenceDefinitionResolver` over
+  `StatblockPersistenceRepository.get_revision(statblock_id, revision_id)`.
+  Revision commands use `ExactRevisionLocatorV1(statblock_id, revision_id)`, not a
+  single-id `ResourceLocatorV1`. Tests use `FakeDefinitionProvider` plus
+  `InMemoryCandidateRepository`.
+- Provider outcomes are `success`, `refusal`, `incomplete`, `timeout`, `rate_limit`,
+  and `failure`; application failures are prefixed `provider_`, with
+  `definition_invalid`, `ruleset_mismatch`, `source_digest_mismatch`, and
+  resolver codes (`revision_not_found`, `statblock_not_found`, `source_unavailable`)
+  reserved for service-level failures.
+- Generation receipts store server-owned `caller_scope`/`actor` provenance, a
+  server-computed (optionally caller-verified) source description digest, and for
+  every revision a PR14 `source_definition_digest` of the exact mechanics revised
+  (inline submitted definition or resolved locator revision). Description digests
+  never substitute for mechanics provenance.
+  Warning-bearing candidate receipts may be persisted; invalid receipts are not.
+  `preserve_element_keys` is a versioned post-validation pass
+  (`validator_version` gains `+statblock-key-preservation-v1`) emitting
+  `ELEMENT_KEY_CHANGED`, `ELEMENT_KEY_DROPPED`, `ELEMENT_KEY_REPURPOSED`, and
+  `ELEMENT_KEY_IDENTITY_AMBIGUOUS`.
+  Asset partial outcomes use typed `AssetWarningV1` codes
+  (`asset_generator_unconfigured`, `asset_generation_failed`). When
+  `generate_images=True`, the exact effective `AssetBriefV1` passed to the
+  generator is always persisted on the candidate (name fallback when
+  `include_generation_brief=False`).
+- Settings are `STATBLOCKS_V1_OPENAI_MODEL`,
+  `STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS`, `STATBLOCKS_V1_OPENAI_MAX_RETRIES`, and
+  `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS`. Values are validated on the settings
+  model itself (non-empty model, finite timeout `> 0`, retries `>= 0`, TTL `> 0`);
+  malformed env input raises `InternalServiceMisconfiguredError`. The default
+  model resolves the in-repo `DungeonMindServer/MODEL_POLICY.json` action
+  `structured_generation`; missing policy raises
+  `InternalServiceMisconfiguredError` unless the env override is set.
+- `FakeDefinitionProvider` accepts a JSON payload or `ProviderOutcomeV1` and records
+  calls. It supports offline route tests; `candidate_id_factory` and clock make
+  receipts/candidate expiry deterministic.
+
 ## 0. Mission
 
 Expose the generation, revision, validation, and candidate-read operations through the dedicated authenticated DungeonBuddy v1 router.

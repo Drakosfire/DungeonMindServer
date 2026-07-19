@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import Field
@@ -19,11 +20,32 @@ class ResourceLocatorV1(StrictModel):
     resource_id: str = Field(min_length=1)
 
 
+class ExactRevisionLocatorV1(StrictModel):
+    """Exact persisted revision coordinates for PR15 ``get_revision`` reads."""
+
+    statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
+    revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
+
+
 class IdempotencyOutcomeV1(StrictModel):
     """Exact create/append result pinned for durable replay."""
 
     statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
     revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
+
+
+class AssetWarningCode(str, Enum):
+    """Stable machine-readable codes for candidate asset partial outcomes."""
+
+    asset_generator_unconfigured = "asset_generator_unconfigured"
+    asset_generation_failed = "asset_generation_failed"
+
+
+class AssetWarningV1(StrictModel):
+    """Typed partial-outcome warning for optional asset generation."""
+
+    code: AssetWarningCode
+    message: str = Field(min_length=1)
 
 
 class GenerationReceiptV1(StrictModel):
@@ -36,8 +58,13 @@ class GenerationReceiptV1(StrictModel):
     schema_version: str = Field(min_length=1)
     schema_fingerprint: str = Field(min_length=1)
     generated_at: datetime
+    caller_scope: str = Field(min_length=1)
+    actor: str | None = None
     source_description_digest: str | None = None
-    source_locator: ResourceLocatorV1 | None = None
+    source_definition_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    source_locator: ExactRevisionLocatorV1 | None = None
     provider_request_id: str | None = None
     provider_response_id: str | None = None
     latency_ms: int | None = Field(default=None, ge=0)
@@ -54,9 +81,10 @@ class GeneratedStatblockCandidateV1(StrictModel):
     generation_receipt: GenerationReceiptV1 | None = None
     asset_brief: dict[str, Any] | None = None
     assets: list[dict[str, Any]] = Field(default_factory=list)
+    asset_warnings: list[AssetWarningV1] = Field(default_factory=list)
     created_at: datetime
     expires_at: datetime
-    source_locator: ResourceLocatorV1 | None = None
+    source_locator: ExactRevisionLocatorV1 | None = None
 
 
 class StatblockResourceV1(StrictModel):

@@ -2,15 +2,23 @@
 from __future__ import annotations
 
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from statblocks_v1.application.repositories import AppendRevisionCommand, CreateStatblockCommand
+from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import StaleParentRevisionError, StatblockNotFoundError
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import (
+    AssetWarningCode,
+    AssetWarningV1,
+    ExactRevisionLocatorV1,
+    GeneratedStatblockCandidateV1,
+    GenerationReceiptV1,
+)
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.firestore_repositories import (
@@ -97,7 +105,7 @@ def test_firestore_candidate_ttl_timestamp_round_trip(firestore_client, bruiser)
     created = datetime(2026, 1, 1, tzinfo=timezone.utc)
     expires = created + timedelta(hours=2)
     candidate = GeneratedStatblockCandidateV1(
-        candidate_id="cand_fs0001",
+        candidate_id=f"cand_fs{uuid.uuid4().hex[:10]}",
         definition=bruiser,
         validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
         created_at=created,
@@ -113,6 +121,94 @@ def test_firestore_candidate_ttl_timestamp_round_trip(firestore_client, bruiser)
     assert isinstance(raw["expires_at"], datetime)
     loaded = repository.get(candidate.candidate_id, now=created)
     assert loaded.expires_at == expires
+
+
+def test_firestore_candidate_typed_contract_round_trip(firestore_client, bruiser):
+    repository = FirestoreCandidateRepository(firestore_client)
+    created = datetime(2026, 7, 19, 12, 0, tzinfo=timezone.utc)
+    expires = created + timedelta(hours=6)
+    locator = ExactRevisionLocatorV1(statblock_id="sb_fsource01", revision_id="rev_fsource01")
+    source_definition_digest = compute_definition_digest(bruiser)
+    candidate_id = f"cand_fs{uuid.uuid4().hex[:10]}"
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id=candidate_id,
+        definition=bruiser,
+        validation_receipt=validate_definition(
+            bruiser, ValidationMode.generation_candidate, validated_at=created
+        ),
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_fs_typed",
+            provider="fake",
+            model="test-model",
+            prompt_version="statblock-generation-prompt-v1",
+            schema_version="statblock-openai-schema-v1",
+            schema_fingerprint="fp_test",
+            generated_at=created,
+            caller_scope="dungeonbuddy",
+            actor="emulator",
+            source_description_digest="sha256:" + ("a" * 64),
+            source_definition_digest=source_definition_digest,
+            source_locator=locator,
+            latency_ms=0,
+        ),
+        asset_brief={
+            "prompt": "Emulator round-trip creature",
+            "recommended_roles": ["portrait", "token"],
+        },
+        assets=[{"role": "portrait", "url": "https://example.test/portrait.png"}],
+        asset_warnings=[
+            AssetWarningV1(
+                code=AssetWarningCode.asset_generator_unconfigured,
+                message="Asset generation was requested but no asset generator is configured.",
+            ),
+            AssetWarningV1(
+                code=AssetWarningCode.asset_generation_failed,
+                message="Asset generation failed; review the candidate without assets.",
+            ),
+        ],
+        created_at=created,
+        expires_at=expires,
+        source_locator=locator,
+    )
+
+    repository.create(candidate)
+    raw = (
+        firestore_client.collection(CANDIDATES_COLLECTION)
+        .document(candidate_id)
+        .get()
+        .to_dict()
+    )
+    assert isinstance(raw["expires_at"], datetime)
+    assert isinstance(raw["created_at"], datetime)
+    assert isinstance(raw["generation_receipt"]["generated_at"], datetime)
+    assert raw["generation_receipt"]["source_definition_digest"] == source_definition_digest
+    assert raw["generation_receipt"]["source_locator"] == {
+        "statblock_id": "sb_fsource01",
+        "revision_id": "rev_fsource01",
+    }
+    assert raw["asset_warnings"] == [
+        {
+            "code": "asset_generator_unconfigured",
+            "message": "Asset generation was requested but no asset generator is configured.",
+        },
+        {
+            "code": "asset_generation_failed",
+            "message": "Asset generation failed; review the candidate without assets.",
+        },
+    ]
+    assert raw["asset_brief"]["prompt"] == "Emulator round-trip creature"
+
+    loaded = repository.get(candidate_id, now=created)
+    assert loaded.model_dump(mode="json") == candidate.model_dump(mode="json")
+    assert loaded.generation_receipt is not None
+    assert loaded.generation_receipt.source_definition_digest == source_definition_digest
+    assert loaded.generation_receipt.source_locator == locator
+    assert loaded.source_locator == locator
+    assert [warning.code for warning in loaded.asset_warnings] == [
+        AssetWarningCode.asset_generator_unconfigured,
+        AssetWarningCode.asset_generation_failed,
+    ]
+    assert loaded.asset_brief == candidate.asset_brief
 
 
 def test_firestore_concurrent_append_only_one_succeeds(firestore_client, bruiser):

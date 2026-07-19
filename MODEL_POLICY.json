@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "models": {
+    "highest_intelligence": "gpt-5.4",
+    "fast_smart": "gpt-5.3-codex",
+    "fast_smart_mini": "gpt-5.4-mini",
+    "cheapest": "gpt-5.4-nano",
+    "retrieval_synthesis": "gpt-5.3-chat-latest"
+  },
+  "actions": {
+    "default_text_generation": "fast_smart",
+    "structured_generation": "cheapest",
+    "map_prompt_compilation": "fast_smart",
+    "svg_mask_generation": "fast_smart",
+    "player_character_generation": "fast_smart",
+    "ruleslawyer_response_synthesis": "retrieval_synthesis",
+    "query_planning": "cheapest",
+    "architecture_and_complex_reasoning": "highest_intelligence",
+    "wiki_compile": "cheapest",
+    "corpus_session_planner": "fast_smart_mini",
+    "live_turn_classifier": "cheapest",
+    "npc_intent_classifier": "cheapest",
+    "graph_memory_category_extraction": "fast_smart_mini",
+    "hermes_graph_agent": "fast_smart_mini"
+  },
+  "notes": {
+    "policy": "Prefer the smallest model that reliably does the job. Escalate to gpt-5.4 only when the task truly needs maximum reasoning quality.",
+    "deprecated_defaults": [
+      "gpt-5.1"
+    ]
+  }
+}
