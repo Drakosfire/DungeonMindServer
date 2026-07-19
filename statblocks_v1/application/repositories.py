@@ -9,6 +9,7 @@ import hashlib
 import json
 import unicodedata
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -95,6 +96,19 @@ class StatblockPersistenceRepository(
 
 
 class CreateStatblockCommand:
+    """Immutable create intent: inputs are snapshotted and the digest is fixed."""
+
+    __slots__ = (
+        "caller_scope",
+        "idempotency_key",
+        "created_by",
+        "candidate_id",
+        "_definition",
+        "_provenance",
+        "_asset_bindings",
+        "_request_digest",
+    )
+
     def __init__(
         self,
         *,
@@ -106,29 +120,65 @@ class CreateStatblockCommand:
         asset_bindings: list[dict[str, Any]] | None = None,
         candidate_id: str | None = None,
     ) -> None:
-        self.caller_scope = caller_scope
-        self.idempotency_key = idempotency_key
-        self.definition = definition
-        self.created_by = created_by
-        self.provenance = provenance or {}
-        self.asset_bindings = asset_bindings or []
-        self.candidate_id = candidate_id
+        object.__setattr__(self, "caller_scope", caller_scope)
+        object.__setattr__(self, "idempotency_key", idempotency_key)
+        object.__setattr__(self, "created_by", created_by)
+        object.__setattr__(self, "candidate_id", candidate_id)
+        object.__setattr__(self, "_definition", definition.model_copy(deep=True))
+        object.__setattr__(self, "_provenance", deepcopy(provenance or {}))
+        object.__setattr__(self, "_asset_bindings", deepcopy(asset_bindings or []))
+        object.__setattr__(
+            self,
+            "_request_digest",
+            compute_request_digest(
+                "create_statblock",
+                {
+                    "definition_canonical": str(
+                        canonicalize_definition(self._definition)
+                    ),
+                    "created_by": created_by,
+                    "provenance": self._provenance,
+                    "asset_bindings": self._asset_bindings,
+                    "candidate_id": candidate_id,
+                },
+            ),
+        )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("CreateStatblockCommand is immutable after construction")
+
+    @property
+    def definition(self) -> StatblockDefinitionV1:
+        return self._definition.model_copy(deep=True)
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        return deepcopy(self._provenance)
+
+    @property
+    def asset_bindings(self) -> list[dict[str, Any]]:
+        return deepcopy(self._asset_bindings)
 
     @property
     def request_digest(self) -> str:
-        return compute_request_digest(
-            "create_statblock",
-            {
-                "definition_canonical": str(canonicalize_definition(self.definition)),
-                "created_by": self.created_by,
-                "provenance": self.provenance,
-                "asset_bindings": self.asset_bindings,
-                "candidate_id": self.candidate_id,
-            },
-        )
+        return self._request_digest
 
 
 class AppendRevisionCommand:
+    """Immutable append intent: inputs are snapshotted and the digest is fixed."""
+
+    __slots__ = (
+        "caller_scope",
+        "idempotency_key",
+        "statblock_id",
+        "parent_revision_id",
+        "candidate_id",
+        "_definition",
+        "_provenance",
+        "_asset_bindings",
+        "_request_digest",
+    )
+
     def __init__(
         self,
         *,
@@ -141,28 +191,50 @@ class AppendRevisionCommand:
         asset_bindings: list[dict[str, Any]] | None = None,
         candidate_id: str | None = None,
     ) -> None:
-        self.caller_scope = caller_scope
-        self.idempotency_key = idempotency_key
-        self.statblock_id = statblock_id
-        self.parent_revision_id = parent_revision_id
-        self.definition = definition
-        self.provenance = provenance or {}
-        self.asset_bindings = asset_bindings or []
-        self.candidate_id = candidate_id
+        object.__setattr__(self, "caller_scope", caller_scope)
+        object.__setattr__(self, "idempotency_key", idempotency_key)
+        object.__setattr__(self, "statblock_id", statblock_id)
+        object.__setattr__(self, "parent_revision_id", parent_revision_id)
+        object.__setattr__(self, "candidate_id", candidate_id)
+        object.__setattr__(self, "_definition", definition.model_copy(deep=True))
+        object.__setattr__(self, "_provenance", deepcopy(provenance or {}))
+        object.__setattr__(self, "_asset_bindings", deepcopy(asset_bindings or []))
+        object.__setattr__(
+            self,
+            "_request_digest",
+            compute_request_digest(
+                "append_revision",
+                {
+                    "statblock_id": statblock_id,
+                    "parent_revision_id": parent_revision_id,
+                    "definition_canonical": str(
+                        canonicalize_definition(self._definition)
+                    ),
+                    "provenance": self._provenance,
+                    "asset_bindings": self._asset_bindings,
+                    "candidate_id": candidate_id,
+                },
+            ),
+        )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("AppendRevisionCommand is immutable after construction")
+
+    @property
+    def definition(self) -> StatblockDefinitionV1:
+        return self._definition.model_copy(deep=True)
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        return deepcopy(self._provenance)
+
+    @property
+    def asset_bindings(self) -> list[dict[str, Any]]:
+        return deepcopy(self._asset_bindings)
 
     @property
     def request_digest(self) -> str:
-        return compute_request_digest(
-            "append_revision",
-            {
-                "statblock_id": self.statblock_id,
-                "parent_revision_id": self.parent_revision_id,
-                "definition_canonical": str(canonicalize_definition(self.definition)),
-                "provenance": self.provenance,
-                "asset_bindings": self.asset_bindings,
-                "candidate_id": self.candidate_id,
-            },
-        )
+        return self._request_digest
 
 
 Clock = Callable[[], datetime]

@@ -94,43 +94,52 @@ class InMemoryStatblockPersistenceRepository:
         self._idempotency: dict[tuple[str, str, str], IdempotencyRecordV1] = {}
 
     def get(self, statblock_id: str) -> StatblockResourceV1:
-        statblock = self._statblocks.get(statblock_id)
-        if statblock is None:
-            raise StatblockNotFoundError(statblock_id)
-        return _copy(statblock)
+        with self._lock:
+            statblock = self._statblocks.get(statblock_id)
+            if statblock is None:
+                raise StatblockNotFoundError(statblock_id)
+            return _copy(statblock)
 
     def get_idempotency(
         self, caller_scope: str, operation: str, idempotency_key: str
     ) -> IdempotencyRecordV1 | None:
-        record = self._idempotency.get((caller_scope, operation, idempotency_key))
-        return _copy(record) if record else None
+        with self._lock:
+            record = self._idempotency.get((caller_scope, operation, idempotency_key))
+            return _copy(record) if record else None
 
     def get_revision(self, statblock_id: str, revision_id: str) -> StatblockRevisionResourceV1:
-        if statblock_id not in self._statblocks:
-            raise StatblockNotFoundError(statblock_id)
-        revision = self._revisions.get((statblock_id, revision_id))
-        if revision is None:
-            raise RevisionNotFoundError(revision_id)
-        return _copy(revision)
+        with self._lock:
+            if statblock_id not in self._statblocks:
+                raise StatblockNotFoundError(statblock_id)
+            revision = self._revisions.get((statblock_id, revision_id))
+            if revision is None:
+                raise RevisionNotFoundError(revision_id)
+            return _copy(revision)
 
     def list_for_statblock(self, statblock_id: str) -> list[StatblockRevisionResourceV1]:
-        if statblock_id not in self._statblocks:
-            raise StatblockNotFoundError(statblock_id)
-        return [
-            _copy(revision)
-            for (owner, _), revision in self._revisions.items()
-            if owner == statblock_id
-        ]
+        with self._lock:
+            if statblock_id not in self._statblocks:
+                raise StatblockNotFoundError(statblock_id)
+            return [
+                _copy(revision)
+                for (owner, _), revision in tuple(self._revisions.items())
+                if owner == statblock_id
+            ]
 
     def create_statblock(
         self, command: CreateStatblockCommand
     ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
+        # Snapshot once at the repository boundary; command fields are already frozen.
+        request_digest = command.request_digest
+        definition = command.definition
+        provenance = command.provenance
+        asset_bindings = command.asset_bindings
         with self._lock:
             replay = self._replay(
                 command.caller_scope,
                 "create_statblock",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
             )
             if replay is not None:
                 return (
@@ -138,7 +147,7 @@ class InMemoryStatblockPersistenceRepository:
                     self.get_revision(replay.statblock_id, replay.revision_id),
                 )
 
-            canonical, digest, receipt = _persistence_material(command.definition)
+            canonical, digest, receipt = _persistence_material(definition)
             now = self._clock()
             statblock_id = self._id_factory("sb")
             revision_id = self._id_factory("rev")
@@ -147,9 +156,9 @@ class InMemoryStatblockPersistenceRepository:
             if (statblock_id, revision_id) in self._revisions:
                 raise ImmutableRevisionConflictError(revision_id)
 
-            definition = command.definition.model_copy(deep=True)
-            asset_bindings = deepcopy(command.asset_bindings)
-            provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+            stored_definition = definition.model_copy(deep=True)
+            stored_bindings = deepcopy(asset_bindings)
+            stored_provenance = deepcopy(_provenance(provenance, command.candidate_id))
             statblock = StatblockResourceV1(
                 statblock_id=statblock_id,
                 latest_revision_id=revision_id,
@@ -159,12 +168,12 @@ class InMemoryStatblockPersistenceRepository:
             revision = StatblockRevisionResourceV1(
                 statblock_id=statblock_id,
                 revision_id=revision_id,
-                definition=definition,
+                definition=stored_definition,
                 canonical_definition=str(canonical),
                 definition_digest=digest,
                 validation_receipt=receipt,
-                provenance=provenance,
-                asset_bindings=asset_bindings,
+                provenance=stored_provenance,
+                asset_bindings=stored_bindings,
                 created_at=now,
             )
             self._statblocks[statblock_id] = statblock
@@ -173,19 +182,23 @@ class InMemoryStatblockPersistenceRepository:
                 command.caller_scope,
                 "create_statblock",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
                 IdempotencyOutcomeV1(statblock_id=statblock_id, revision_id=revision_id),
                 now,
             )
             return _copy(statblock), _copy(revision)
 
     def append_revision(self, command: AppendRevisionCommand) -> StatblockRevisionResourceV1:
+        request_digest = command.request_digest
+        definition = command.definition
+        provenance = command.provenance
+        asset_bindings = command.asset_bindings
         with self._lock:
             replay = self._replay(
                 command.caller_scope,
                 "append_revision",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
             )
             if replay is not None:
                 return self.get_revision(replay.statblock_id, replay.revision_id)
@@ -204,25 +217,25 @@ class InMemoryStatblockPersistenceRepository:
                     statblock.latest_revision_id,
                 )
 
-            canonical, digest, receipt = _persistence_material(command.definition)
+            canonical, digest, receipt = _persistence_material(definition)
             now = self._clock()
             revision_id = self._id_factory("rev")
             if (command.statblock_id, revision_id) in self._revisions:
                 raise ImmutableRevisionConflictError(revision_id)
 
-            definition = command.definition.model_copy(deep=True)
-            asset_bindings = deepcopy(command.asset_bindings)
-            provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+            stored_definition = definition.model_copy(deep=True)
+            stored_bindings = deepcopy(asset_bindings)
+            stored_provenance = deepcopy(_provenance(provenance, command.candidate_id))
             revision = StatblockRevisionResourceV1(
                 statblock_id=command.statblock_id,
                 revision_id=revision_id,
                 parent_revision_id=command.parent_revision_id,
-                definition=definition,
+                definition=stored_definition,
                 canonical_definition=str(canonical),
                 definition_digest=digest,
                 validation_receipt=receipt,
-                provenance=provenance,
-                asset_bindings=asset_bindings,
+                provenance=stored_provenance,
+                asset_bindings=stored_bindings,
                 created_at=now,
             )
             self._revisions[(command.statblock_id, revision_id)] = revision
@@ -233,7 +246,7 @@ class InMemoryStatblockPersistenceRepository:
                 command.caller_scope,
                 "append_revision",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
                 IdempotencyOutcomeV1(
                     statblock_id=command.statblock_id, revision_id=revision_id
                 ),

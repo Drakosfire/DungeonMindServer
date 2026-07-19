@@ -59,8 +59,6 @@ class FirestoreCandidateRepository:
         except Exception as error:
             if _is_already_exists(error):
                 raise ImmutableResourceConflictError("candidate", stored.candidate_id) from error
-            if _is_unavailable(error):
-                raise PersistenceUnavailableError() from error
             raise PersistenceUnavailableError() from error
         return stored.model_copy(deep=True)
 
@@ -142,24 +140,28 @@ class FirestoreStatblockPersistenceRepository:
     def create_statblock(
         self, command: CreateStatblockCommand
     ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
+        request_digest = command.request_digest
+        definition = command.definition
+        provenance = command.provenance
+        asset_bindings = command.asset_bindings
         existing = self.get_idempotency(
             command.caller_scope, "create_statblock", command.idempotency_key
         )
         if existing is not None:
-            if existing.request_digest != command.request_digest:
+            if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(command.idempotency_key)
             return (
                 self.get(existing.outcome.statblock_id),
                 self.get_revision(existing.outcome.statblock_id, existing.outcome.revision_id),
             )
 
-        canonical, digest, receipt = _persistence_material(command.definition)
+        canonical, digest, receipt = _persistence_material(definition)
         now = self._clock()
         statblock_id = self._id_factory("sb")
         revision_id = self._id_factory("rev")
-        definition = command.definition.model_copy(deep=True)
-        asset_bindings = deepcopy(command.asset_bindings)
-        provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+        stored_definition = definition.model_copy(deep=True)
+        stored_bindings = deepcopy(asset_bindings)
+        stored_provenance = deepcopy(_provenance(provenance, command.candidate_id))
         statblock = StatblockResourceV1(
             statblock_id=statblock_id,
             latest_revision_id=revision_id,
@@ -169,12 +171,12 @@ class FirestoreStatblockPersistenceRepository:
         revision = StatblockRevisionResourceV1(
             statblock_id=statblock_id,
             revision_id=revision_id,
-            definition=definition,
+            definition=stored_definition,
             canonical_definition=str(canonical),
             definition_digest=digest,
             validation_receipt=receipt,
-            provenance=provenance,
-            asset_bindings=asset_bindings,
+            provenance=stored_provenance,
+            asset_bindings=stored_bindings,
             created_at=now,
         )
         outcome = IdempotencyOutcomeV1(statblock_id=statblock_id, revision_id=revision_id)
@@ -183,7 +185,7 @@ class FirestoreStatblockPersistenceRepository:
                 command.caller_scope,
                 "create_statblock",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
                 outcome,
                 [
                     (self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
@@ -196,7 +198,7 @@ class FirestoreStatblockPersistenceRepository:
                 command.caller_scope,
                 "create_statblock",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
             )
             return (
                 self.get(reconciled.statblock_id),
@@ -213,40 +215,44 @@ class FirestoreStatblockPersistenceRepository:
         return statblock, revision
 
     def append_revision(self, command: AppendRevisionCommand) -> StatblockRevisionResourceV1:
+        request_digest = command.request_digest
+        definition = command.definition
+        provenance = command.provenance
+        asset_bindings = command.asset_bindings
         existing = self.get_idempotency(
             command.caller_scope, "append_revision", command.idempotency_key
         )
         if existing is not None:
-            if existing.request_digest != command.request_digest:
+            if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(command.idempotency_key)
             return self.get_revision(existing.outcome.statblock_id, existing.outcome.revision_id)
 
-        canonical, digest, receipt = _persistence_material(command.definition)
+        canonical, digest, receipt = _persistence_material(definition)
         now = self._clock()
         revision_id = self._id_factory("rev")
-        definition = command.definition.model_copy(deep=True)
-        asset_bindings = deepcopy(command.asset_bindings)
-        provenance = deepcopy(_provenance(command.provenance, command.candidate_id))
+        stored_definition = definition.model_copy(deep=True)
+        stored_bindings = deepcopy(asset_bindings)
+        stored_provenance = deepcopy(_provenance(provenance, command.candidate_id))
         revision = StatblockRevisionResourceV1(
             statblock_id=command.statblock_id,
             revision_id=revision_id,
             parent_revision_id=command.parent_revision_id,
-            definition=definition,
+            definition=stored_definition,
             canonical_definition=str(canonical),
             definition_digest=digest,
             validation_receipt=receipt,
-            provenance=provenance,
-            asset_bindings=asset_bindings,
+            provenance=stored_provenance,
+            asset_bindings=stored_bindings,
             created_at=now,
         )
         try:
-            self._transactional_append(command, revision)
+            self._transactional_append(command, revision, request_digest=request_digest)
         except TransactionIndeterminateError:
             reconciled = self._reconcile_idempotent_outcome(
                 command.caller_scope,
                 "append_revision",
                 command.idempotency_key,
-                command.request_digest,
+                request_digest,
             )
             return self.get_revision(reconciled.statblock_id, reconciled.revision_id)
         record = self.get_idempotency(
@@ -298,7 +304,11 @@ class FirestoreStatblockPersistenceRepository:
         self._run_transaction(operation_fn, already_exists=already_exists)
 
     def _transactional_append(
-        self, command: AppendRevisionCommand, revision: StatblockRevisionResourceV1
+        self,
+        command: AppendRevisionCommand,
+        revision: StatblockRevisionResourceV1,
+        *,
+        request_digest: str,
     ) -> None:
         from google.cloud.firestore_v1 import transactional
 
@@ -314,7 +324,7 @@ class FirestoreStatblockPersistenceRepository:
             existing = idem_ref.get(transaction=transaction)
             if existing.exists:
                 record = IdempotencyRecordV1.model_validate(existing.to_dict())
-                if record.request_digest != command.request_digest:
+                if record.request_digest != request_digest:
                     raise IdempotencyConflictError(command.idempotency_key)
                 return
 
@@ -344,7 +354,7 @@ class FirestoreStatblockPersistenceRepository:
                         caller_scope=command.caller_scope,
                         operation="append_revision",
                         idempotency_key=command.idempotency_key,
-                        request_digest=command.request_digest,
+                        request_digest=request_digest,
                         outcome=IdempotencyOutcomeV1(
                             statblock_id=command.statblock_id,
                             revision_id=revision.revision_id,

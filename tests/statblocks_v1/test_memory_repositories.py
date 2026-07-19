@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -207,16 +208,28 @@ def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     expected_canonical = str(canonicalize_definition(definition))
     expected_digest = compute_definition_digest(definition)
     repository = _repository()
+    provenance = {"source": "test"}
+    assets = [{"asset_id": "img_1"}]
     command = _create(
         definition,
-        provenance={"source": "test"},
-        asset_bindings=[{"asset_id": "img_1"}],
+        provenance=provenance,
+        asset_bindings=assets,
     )
-    _, revision = repository.create_statblock(command)
+    frozen_digest = command.request_digest
 
-    command.definition.identity.name = "Mutated After Store"
-    command.provenance["source"] = "mutated"
-    command.asset_bindings[0]["asset_id"] = "img_mutated"
+    # Mutate the caller's originals and any returned property copies before/during create.
+    definition.identity.name = "Mutated Source Definition"
+    provenance["source"] = "mutated-source"
+    assets[0]["asset_id"] = "img_source_mutated"
+    command.definition.identity.name = "Mutated Property Copy"
+    command.provenance["source"] = "mutated-property"
+    command.asset_bindings[0]["asset_id"] = "img_property_mutated"
+    with pytest.raises(AttributeError):
+        command.created_by = "hijacked"
+
+    _, revision = repository.create_statblock(command)
+    assert command.request_digest == frozen_digest
+
     returned = repository.get_revision(revision.statblock_id, revision.revision_id)
     returned.definition.identity.name = "Mutated Returned Copy"
     returned.provenance["source"] = "returned-mutated"
@@ -227,7 +240,11 @@ def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     assert stored.asset_bindings == [{"asset_id": "img_1"}]
     assert stored.canonical_definition == expected_canonical
     assert stored.definition_digest == expected_digest
+    assert stored.validation_receipt.definition_digest == expected_digest
     assert compute_definition_digest(stored.definition) == stored.definition_digest
+    record = repository.get_idempotency("dungeonbuddy", "create_statblock", "create-1")
+    assert record is not None
+    assert record.request_digest == frozen_digest
 
 
 def test_id_collisions_cannot_overwrite_history(load_fixture):
@@ -351,3 +368,52 @@ def test_digest_api_still_rejects_non_definition_inputs(load_fixture):
         compute_definition_digest(canonical)
     with pytest.raises(TypeError):
         compute_definition_digest(str(canonical).encode("utf-8"))
+
+
+def test_concurrent_readers_observe_committed_state_only(load_fixture):
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    repository = _repository()
+    statblock, first = repository.create_statblock(_create(definition))
+    stop = threading.Event()
+    errors: list[BaseException] = []
+
+    def writer() -> None:
+        parent = first.revision_id
+        for index in range(25):
+            revision = repository.append_revision(
+                _append(
+                    definition,
+                    statblock.statblock_id,
+                    parent,
+                    key=f"append-concurrent-{index}",
+                )
+            )
+            parent = revision.revision_id
+        stop.set()
+
+    def reader() -> None:
+        while not stop.is_set():
+            try:
+                current = repository.get(statblock.statblock_id)
+                repository.get_revision(statblock.statblock_id, current.latest_revision_id)
+                listed = repository.list_for_statblock(statblock.statblock_id)
+                assert any(
+                    item.revision_id == current.latest_revision_id for item in listed
+                )
+                repository.get_idempotency(
+                    "dungeonbuddy", "create_statblock", "create-1"
+                )
+            except BaseException as error:  # noqa: BLE001 - collect race failures
+                errors.append(error)
+                stop.set()
+                return
+
+    threads = [threading.Thread(target=writer), threading.Thread(target=reader)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert errors == []
+    assert len(repository.list_for_statblock(statblock.statblock_id)) == 26

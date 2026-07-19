@@ -21,6 +21,7 @@ from statblocks_v1.domain.errors import (
 )
 from statblocks_v1.domain.receipts import ValidationMode
 from statblocks_v1.domain.resources import (
+    GeneratedStatblockCandidateV1,
     IdempotencyOutcomeV1,
     IdempotencyRecordV1,
     StatblockResourceV1,
@@ -29,6 +30,7 @@ from statblocks_v1.domain.resources import (
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.firestore_repositories import (
+    FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
 from statblocks_v1.infrastructure.memory_repositories import DeterministicIdFactory
@@ -211,7 +213,7 @@ def test_append_already_exists_uses_revision_id(load_fixture, monkeypatch):
 
     monkeypatch.setattr(repository, "get_idempotency", lambda *args, **kwargs: None)
 
-    def append_collision(cmd, revision):
+    def append_collision(cmd, revision, *, request_digest):
         raise ImmutableRevisionConflictError(revision.revision_id)
 
     monkeypatch.setattr(repository, "_transactional_append", append_collision)
@@ -219,3 +221,33 @@ def test_append_already_exists_uses_revision_id(load_fixture, monkeypatch):
     with pytest.raises(ImmutableRevisionConflictError) as exc:
         repository.append_revision(command)
     assert exc.value.details == {"revision_id": "rev_000001"}
+
+
+def test_candidate_create_maps_client_failures_to_persistence_unavailable(load_fixture):
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+
+    class _DeadlineExceeded(Exception):
+        pass
+
+    class _FailingCollection:
+        def document(self, _candidate_id: str):
+            return SimpleNamespace(
+                create=lambda _payload: (_ for _ in ()).throw(
+                    _DeadlineExceeded("deadline exceeded")
+                )
+            )
+
+    client = SimpleNamespace(collection=lambda _name: _FailingCollection())
+    repository = FirestoreCandidateRepository(client, clock=_clock)
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id="cand_fail001",
+        definition=definition,
+        validation_receipt=validate_definition(
+            definition, ValidationMode.generation_candidate
+        ),
+        created_at=_clock(),
+        expires_at=_clock(),
+    )
+
+    with pytest.raises(PersistenceUnavailableError):
+        repository.create(candidate)
