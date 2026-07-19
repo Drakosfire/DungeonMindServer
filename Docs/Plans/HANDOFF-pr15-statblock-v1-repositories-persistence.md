@@ -25,7 +25,7 @@
   `SkillBonus.ability` is required typed authority for skill derivation checks.
   Persistence validation enforces `standard` / `expertise` arithmetic for saves and
   skills, preserves `explicit_override`, and rejects duplicate save abilities plus
-  case-normalized duplicate skill names.
+  NFC + casefold-normalized duplicate skill names (matching canonicalization).
   `Usage.recharge_range` is a `{minimum, maximum}` object.
 - Nested effect references report real collection paths
   (e.g. `mechanic.hit_effects[i]`, `mechanic.failure_effects[i]`), never a

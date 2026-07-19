@@ -268,6 +268,36 @@ def test_duplicate_saving_throw_and_normalized_skill_rejected(load_fixture) -> N
     assert "PASSIVE_PERCEPTION_MISMATCH" not in by_code
 
 
+def test_duplicate_skill_rejects_nfc_equivalent_names(load_fixture) -> None:
+    """Composed and decomposed Unicode names must collide before canonicalization."""
+
+    payload = load_fixture("simple_bruiser")
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Café",
+            "ability": "charisma",
+            "value": 1,
+            "derivation": "standard",
+            "note": None,
+        },
+        {
+            "skill": "Cafe\u0301",
+            "ability": "charisma",
+            "value": 1,
+            "derivation": "standard",
+            "note": None,
+        },
+    ]
+
+    receipt = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+
+    issue = next(item for item in receipt.issues if item.code == "DUPLICATE_SKILL_NAME")
+    assert issue.field_path == "proficiencies.skills[1].skill"
+    assert receipt.is_persistence_ready is False
+
+
 def test_recharge_usage_requires_typed_range_object(load_fixture) -> None:
     payload = load_fixture("simple_bruiser")
     payload["rule_elements"][0]["usage"] = {

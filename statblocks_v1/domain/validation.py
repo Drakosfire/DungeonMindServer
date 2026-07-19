@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Callable, Iterable
 from datetime import datetime
 
@@ -211,7 +212,7 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
     perception_entries = [
         (index, skill)
         for index, skill in enumerate(definition.proficiencies.skills)
-        if skill.skill.casefold() == "perception"
+        if _normalize_skill_name(skill.skill) == "perception"
     ]
     if len(perception_entries) == 1:
         _, perception = perception_entries[0]
@@ -233,6 +234,12 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
                 "Passive Perception differs from Wisdom without a typed Perception skill.",
                 "Add a Perception skill or confirm the value during review.",
             )
+
+
+def _normalize_skill_name(skill: str) -> str:
+    """Match canonicalization: Unicode NFC, then casefold for identity."""
+
+    return unicodedata.normalize("NFC", skill).casefold()
 
 
 def _ability_modifier(abilities: AbilityScores, ability: AbilityName) -> int:
@@ -290,7 +297,7 @@ def _validate_proficiency_derivations(
     seen_skills: dict[str, int] = {}
     for index, skill in enumerate(definition.proficiencies.skills):
         path = f"proficiencies.skills[{index}]"
-        normalized = skill.skill.casefold()
+        normalized = _normalize_skill_name(skill.skill)
         if normalized in seen_skills:
             issue(
                 "DUPLICATE_SKILL_NAME",
