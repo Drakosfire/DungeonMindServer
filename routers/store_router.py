@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, File, UploadFile, Form
 from .auth_router import get_current_user
+from auth_service import User
 import os
 import json
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ import storegenerator.sd_generator as sd
 import logging
 from cloudflare.handle_images import upload_image_to_cloudflare
 from cloudflareR2.cloudflareR2_utils import upload_html_and_get_url
+from security_limits.paid_budget import paid_budget_store
 
 # Cloudflare credentials
 cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
@@ -36,8 +38,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @router.get("/list-saved-stores")
-async def list_saved_stores(current_user: dict = Depends(get_current_user)):
-    user_id = current_user['sub']
+async def list_saved_stores(current_user: User = Depends(get_current_user)):
+    user_id = current_user.user_id
     # logger.info(f"User ID: {user_id}")
     # Retrieve a list of all store names for the user, using store_name = extract_title(store_data) from each store    
     try:
@@ -53,8 +55,8 @@ async def list_saved_stores(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/load-store")
-async def load_store(storeName: str, current_user: dict = Depends(get_current_user)):
-    user_id = current_user['sub']
+async def load_store(storeName: str, current_user: User = Depends(get_current_user)):
+    user_id = current_user.user_id
     document_id = f"{user_id}_{storeName}"
     try:
         store_data = firestore_utils.get_document('stores', document_id)
@@ -69,8 +71,8 @@ async def load_store(storeName: str, current_user: dict = Depends(get_current_us
     
 
 @router.post("/save-store")
-async def save_store(store_data: dict, current_user: dict = Depends(get_current_user)):
-    user_id = current_user['sub']
+async def save_store(store_data: dict, current_user: User = Depends(get_current_user)):
+    user_id = current_user.user_id
     # print(f"store_data: {store_data}")
     store_name = extract_title(store_data)
 
@@ -106,7 +108,11 @@ async def list_loading_images():
         return {"images": []}
     
 @router.post('/process-description')
-async def process_description(data: DescriptionRequest):
+async def process_description(
+    data: DescriptionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    paid_budget_store.consume(current_user.user_id)
     user_input = data.user_input
     llm_output = store_helper.call_llm_and_cleanup(user_input)
     processed_blocks = block_builder.build_blocks(llm_output, block_builder.block_id)
@@ -117,7 +123,11 @@ async def process_description(data: DescriptionRequest):
 # It is called when the user clicks the "Generate Image" button
 # I should manage the upload to Cloudflare in the saveLoadHandler.js file
 @router.post('/generate-image')
-async def generate_image(data: GenerateImageRequest):
+async def generate_image(
+    data: GenerateImageRequest,
+    current_user: User = Depends(get_current_user),
+):
+    paid_budget_store.consume(current_user.user_id)
     sd_prompt = data.sd_prompt
     if not sd_prompt:
         raise HTTPException(status_code=400, detail="Missing sd_prompt")
@@ -132,7 +142,11 @@ async def generate_image(data: GenerateImageRequest):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.post('/upload-image')
-async def upload_image(image_data: dict):
+async def upload_image(
+    image_data: dict,
+    current_user: User = Depends(get_current_user),
+):
+    paid_budget_store.consume(current_user.user_id)
     # logger.info("Uploading image: %s", image_data)
     image_url = image_data['image_url']
     uploaded_image = await upload_image_to_cloudflare(image_url)
@@ -155,7 +169,11 @@ def extract_title(json_data):
 
 # Share store
 @router.post('/share-store')
-async def share_store(html_content: dict):
+async def share_store(
+    html_content: dict,
+    current_user: User = Depends(get_current_user),
+):
+    paid_budget_store.consume(current_user.user_id)
     # logger.info(f"html_content: {html_content}")
     share_url = upload_html_and_get_url(html_content)
     # print(f"Share URL: {share_url}")

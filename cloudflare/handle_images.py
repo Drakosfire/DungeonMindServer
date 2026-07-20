@@ -5,6 +5,14 @@ from dotenv import load_dotenv
 import logging
 from typing import Union
 from fastapi import UploadFile
+import io
+
+from security_limits.image_validation import (
+    MAX_UPLOAD_BYTES,
+    read_upload_limited,
+    validate_image_bytes,
+)
+from security_limits.download_limits import download_url_allowed, MAX_PROXY_BYTES
 
 load_dotenv(dotenv_path='../.env')
 
@@ -36,16 +44,35 @@ async def upload_image_to_cloudflare(image_input: Union[str, UploadFile]):
     
     # Check if input is a URL or UploadFile
     if isinstance(image_input, str):
+        if not download_url_allowed(image_input):
+            raise HTTPException(
+                status_code=400,
+                detail="Source image URL host is not allowlisted",
+            )
+        # Fetch with size/type caps before handing URL to Cloudflare
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
+            async with client.stream("GET", image_input) as upstream:
+                upstream.raise_for_status()
+                buf = bytearray()
+                async for chunk in upstream.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) > MAX_PROXY_BYTES:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"Source image exceeds maximum size of {MAX_PROXY_BYTES} bytes",
+                        )
+                mime = validate_image_bytes(bytes(buf), max_bytes=MAX_PROXY_BYTES)
         files = {
-            'url': (None, image_input),
+            'file': ("remote-image", bytes(buf), mime),
             'metadata': (None, '{"key":"value"}'),
             'requireSignedURLs': (None, 'false')
         }
     else:
-        # Handle uploaded file
-        file_content = await image_input.read()
+        # Handle uploaded file — incremental read + magic sniff
+        file_content, sniffed_mime = await read_upload_limited(image_input)
+        filename = image_input.filename or "upload.bin"
         files = {
-            'file': (image_input.filename, file_content, image_input.content_type),
+            'file': (filename, file_content, sniffed_mime),
             'metadata': (None, '{"key":"value"}'),
             'requireSignedURLs': (None, 'false')
         }
@@ -64,5 +91,5 @@ async def upload_image_to_cloudflare(image_input: Union[str, UploadFile]):
         if not public_url.endswith('/Full'):
             public_url = '/'.join(public_url.split('/')[:-1]) + '/Full'
             
-        logger.info(f"Image uploaded successfully. Public URL: {public_url}")
+        logger.info("Image uploaded successfully to Cloudflare Images")
         return public_url

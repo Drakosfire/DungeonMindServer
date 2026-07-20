@@ -136,9 +136,9 @@ class DungeonMindSessionConfig:
         """
         middleware_kwargs = self.get_middleware_kwargs()
         app.add_middleware(SessionMiddleware, **middleware_kwargs)
-        
+
+        # Never log middleware_kwargs — it includes secret_key
         logger.info("Added standardized session middleware to application")
-        logger.debug(f"Session middleware config: {middleware_kwargs}")
 
 # Global session configuration instance
 session_config = DungeonMindSessionConfig()

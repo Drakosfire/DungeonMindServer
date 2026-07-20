@@ -155,7 +155,7 @@ async def download_media_file(media_url: str, account_sid: str, auth_token: str)
             response.raise_for_status()
             return response.content
     except Exception as e:
-        logger.error(f"Failed to download media from {media_url}: {str(e)}")
+        logger.error("Failed to download media (index request failed): %s", type(e).__name__)
         return None
 
 @lru_cache(maxsize=100)
@@ -166,21 +166,24 @@ def get_cached_response(message_id: str) -> Optional[dict]:
 async def forward_message(payload: dict, headers: dict, retry_count: int = 0) -> bool:
     """Forward message to external API with retry logic"""
     try:
-        logger.info(f"=== Forwarding Message to External API ===")
-        logger.info(f"Endpoint: {config.external_endpoint}")
-        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-        logger.info(f"Headers: {json.dumps({k: v for k, v in headers.items() if k.lower() != 'authorization'}, indent=2)}")
+        message_sid = payload.get("message_sid", "unknown")
+        logger.info(
+            "Forwarding SMS/MMS message_sid=%s retry=%s",
+            message_sid,
+            retry_count,
+        )
         
         async with httpx.AsyncClient(timeout=config.request_timeout) as client:
-            logger.info(f"Making request to {config.external_endpoint}")
             response = await client.post(config.external_endpoint, json=payload, headers=headers)
-            logger.info(f"Response status: {response.status_code}")
-            logger.info(f"Response body: {response.text}")
+            logger.info(
+                "External forward response: message_sid=%s status=%s",
+                message_sid,
+                response.status_code,
+            )
             response.raise_for_status()
-            logger.info(f"External API response: {response.status_code}")
             return True
     except httpx.ConnectError as e:
-        logger.error(f"Connection error: {str(e)}")
+        logger.error("Connection error forwarding message: %s", type(e).__name__)
         if retry_count < config.max_retries:
             logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: Connection error")
             await asyncio.sleep(config.retry_delay * (retry_count + 1))  # Exponential backoff
@@ -189,7 +192,7 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
             logger.error(f"Failed to forward message after {config.max_retries} retries: Connection error")
             return False
     except httpx.TimeoutException as e:
-        logger.error(f"Timeout error: {str(e)}")
+        logger.error("Timeout error forwarding message: %s", type(e).__name__)
         if retry_count < config.max_retries:
             logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: Timeout")
             await asyncio.sleep(config.retry_delay * (retry_count + 1))
@@ -198,8 +201,10 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
             logger.error(f"Failed to forward message after {config.max_retries} retries: Timeout")
             return False
     except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error {e.response.status_code}: {str(e)}")
-        logger.error(f"Response body: {e.response.text}")
+        logger.error(
+            "HTTP error forwarding message: status=%s",
+            e.response.status_code,
+        )
         if retry_count < config.max_retries:
             logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: HTTP {e.response.status_code}")
             await asyncio.sleep(config.retry_delay * (retry_count + 1))
@@ -208,13 +213,13 @@ async def forward_message(payload: dict, headers: dict, retry_count: int = 0) ->
             logger.error(f"Failed to forward message after {config.max_retries} retries: HTTP {e.response.status_code}")
             return False
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        logger.error("Unexpected error forwarding message: %s", type(e).__name__)
         if retry_count < config.max_retries:
-            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: {str(e)}")
+            logger.warning(f"Retry {retry_count + 1}/{config.max_retries} for message forwarding: {type(e).__name__}")
             await asyncio.sleep(config.retry_delay * (retry_count + 1))
             return await forward_message(payload, headers, retry_count + 1)
         else:
-            logger.error(f"Failed to forward message after {config.max_retries} retries: {str(e)}")
+            logger.error(f"Failed to forward message after {config.max_retries} retries: {type(e).__name__}")
             return False
 
 @router.post("/receive")
@@ -323,26 +328,22 @@ async def receive_sms(request: Request) -> Response:
         else:
             message_type = "SMS"
         
-        logger.info(f"=== Message Details ===")
-        logger.info(f"MessageSid: {message_sid} (Type: {message_type})")
-        logger.info(f"From: {from_number}")
-        logger.info(f"To: {to_number}")
-        logger.info(f"AccountSid: {account_sid}")
-        logger.info(f"Status: {message_status}")
-        logger.info(f"ApiVersion: {api_version}")
-        logger.info(f"Body: {message_body}")
-        logger.info(f"NumMedia: {num_media}")
-        logger.info(f"Supported media items: {len(media)}")
-        logger.info(f"Unsupported media items: {len(unsupported_media)}")
-        if all_media:
-            for media_item in all_media:
-                status = "✓" if media_item['supported'] else "✗"
-                logger.info(f"Media {media_item['index']} {status}: {media_item['content_type']} - {media_item['url']}")
+        logger.info(
+            "SMS/MMS accepted: message_sid=%s type=%s status=%s num_media=%s "
+            "supported_media=%s unsupported_media=%s body_chars=%s",
+            message_sid,
+            message_type,
+            message_status,
+            num_media,
+            len(media),
+            len(unsupported_media),
+            len(message_body or ""),
+        )
 
         # Check cache first
         cached_response = get_cached_response(message_sid)
         if cached_response:
-            logger.info(f"Using cached response for message {message_sid}")
+            logger.info("Using cached response for message_sid=%s", message_sid)
             return Response(content=str(resp), media_type="application/xml")
 
         # Build Twilio-compatible payload with all standard fields
@@ -390,17 +391,12 @@ async def receive_sms(request: Request) -> Response:
             "Authorization": f"Bearer {config.external_api_key}"
         }
 
-        # Log the forwarding attempt
-        logger.info(f"=== Forwarding Message ===")
-        logger.info(f"Forwarding to: {config.external_endpoint}")
-        logger.info(f"Message Type: {message_type}")
-        if all_media:
-            logger.info(f"Total Media Items: {len(all_media)} (Supported: {len(media)}, Unsupported: {len(unsupported_media)})")
-            for media_item in all_media:
-                status = "✓" if media_item['supported'] else "✗"
-                logger.info(f"  {status} {media_item['content_type']}: {media_item['url']}")
-        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
-        logger.info(f"Headers: {json.dumps({k: v for k, v in headers.items() if k.lower() != 'authorization'}, indent=2)}")
+        logger.info(
+            "Forwarding message_sid=%s type=%s media_count=%s",
+            message_sid,
+            message_type,
+            num_media,
+        )
         
         # Note: Twilio media URLs expire after a few hours
         # If long-term storage is needed, download immediately
@@ -412,7 +408,7 @@ async def receive_sms(request: Request) -> Response:
             # Cache successful response
             get_cached_response.cache_clear()  # Clear old cache entries
             get_cached_response(message_sid)
-            logger.info(f"Successfully forwarded message {message_sid}")
+            logger.info("Successfully forwarded message_sid=%s", message_sid)
             return Response(content=str(resp), media_type="application/xml")
         else:
             # Store failed message for later retry
@@ -422,7 +418,7 @@ async def receive_sms(request: Request) -> Response:
                 "timestamp": datetime.utcnow(),
                 "retry_count": 0
             }
-            logger.warning(f"Failed to forward message {message_sid}, stored for retry")
+            logger.warning("Failed to forward message_sid=%s, stored for retry", message_sid)
             return Response(content=str(resp), media_type="application/xml", status_code=202)  # Accepted but not processed
 
     except HTTPException as he:

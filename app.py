@@ -25,6 +25,11 @@ else:
     load_dotenv('.env.development', override=True)
     logger.info(f"Development environment detected.")
 
+# Fail closed before importing SMS router (which may honor TWILIO_TEST_MODE)
+from security.production_guards import assert_safe_production_config
+
+assert_safe_production_config()
+
 # Presence-only startup checks (never log secret values, lengths, or endpoints)
 logger.debug(
     "SMS/Twilio env configured: external_key=%s external_endpoint=%s twilio_sid=%s twilio_token=%s",
@@ -163,6 +168,18 @@ from session_config import add_session_middleware
 add_session_middleware(app)
 # Add the middleware with the appropriate allowed hosts (this used to be first)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
+
+@app.middleware("http")
+async def _release_demo_quota_middleware(request, call_next):
+    """Release in-flight demo quota slots after the response completes."""
+    try:
+        return await call_next(request)
+    finally:
+        ip = getattr(request.state, "demo_quota_ip", None)
+        if ip:
+            from security_limits.demo_quota import demo_quota_store
+            demo_quota_store.release(ip)
 
 # Routers
 app.include_router(
@@ -357,6 +374,19 @@ async def get_config():
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+def create_app() -> FastAPI:
+    """
+    Application factory for tests and alternative entrypoints.
+
+    Re-checks production guards. Router mounting happens at module import
+    (uvicorn `app:app`); callers that need a fresh ENVIRONMENT for mounts
+    should import this module in a subprocess after setting env.
+    """
+    assert_safe_production_config()
+    return app
+
 
 if __name__ == "__main__":
     import uvicorn

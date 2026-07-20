@@ -14,6 +14,7 @@ from typing import Dict, Any
 
 from .auth_router import get_current_user
 from session_management import get_session
+from security_limits.demo_quota import require_demo_quota_card_item
 
 # Import the new routers for delegation
 from .cardgenerator_project_router import (
@@ -119,55 +120,59 @@ async def duplicate_project_compat(
 @router.post('/generate-item-dict')
 async def generate_item_dict_compat(
     request: Dict[str, Any],
-    session_data=Depends(get_session)
+    session_data=Depends(get_session),
+    _demo_quota=Depends(require_demo_quota_card_item),
 ):
     """
-    COMPATIBILITY: Redirect old generate-item-dict to new generate-item
+    COMPATIBILITY: Redirect old generate-item-dict to new generate-item (public demo quota).
     """
     logger.info("🔄 Compatibility redirect: /generate-item-dict -> /card-generation/generate-item")
     from .card_generation_router import ItemGenerationRequest
     # Convert from old format {userIdea: "..."} to new format
     user_idea = request.get('userIdea') or request.get('user_input', '')
     item_request = ItemGenerationRequest(userIdea=user_idea)
-    return await generate_item_description(item_request, session_data)
+    return await generate_item_description(item_request, session_data, _demo_quota)
 
 @router.post('/generate-core-images')
 async def generate_core_images_compat(
     sdPrompt: str = Form(...),
     numImages: int = Form(default=4),
-    session_data=Depends(get_session)
+    session_data=Depends(get_session),
+    current_user=Depends(get_current_user),
 ):
     """
-    COMPATIBILITY: Redirect old generate-core-images to new endpoint
+    COMPATIBILITY: Redirect old generate-core-images to new endpoint (auth required).
     """
     logger.info("🔄 Compatibility redirect: /generate-core-images -> /card-generation/generate-core-images")
-    return await generate_core_images(sdPrompt, numImages, session_data)
+    return await generate_core_images(sdPrompt, numImages, session_data, current_user)
 
 @router.post('/generate-card-images')
 async def generate_card_images_compat(
     template: UploadFile = File(...),
     sdPrompt: str = Form(...),
     numImages: int = Form(default=4),
-    session_data=Depends(get_session)
+    session_data=Depends(get_session),
+    current_user=Depends(get_current_user),
 ):
     """
-    COMPATIBILITY: Redirect old generate-card-images to new endpoint
+    COMPATIBILITY: Redirect old generate-card-images to new endpoint (auth required).
     """
     logger.info("🔄 Compatibility redirect: /generate-card-images -> /card-generation/generate-card-images")
-    return await generate_card_images(template, sdPrompt, numImages, session_data)
+    return await generate_card_images(template, sdPrompt, numImages, session_data, current_user)
 
 @router.post('/render-card-text')
 async def render_card_text_compat(
     request: Dict[str, Any],
-    session_data=Depends(get_session)
+    session_data=Depends(get_session),
+    current_user=Depends(get_current_user),
 ):
     """
-    COMPATIBILITY: Redirect old render-card-text to new render-text
+    COMPATIBILITY: Redirect old render-card-text to new render-text (auth required).
     """
     logger.info("🔄 Compatibility redirect: /render-card-text -> /card-generation/render-text")
     from .card_generation_router import RenderCardRequest
     render_request = RenderCardRequest(**request)
-    return await render_card_text(render_request, session_data)
+    return await render_card_text(render_request, session_data, current_user)
 
 # ============================================================================
 # IMAGE MANAGEMENT COMPATIBILITY

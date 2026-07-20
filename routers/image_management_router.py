@@ -288,6 +288,44 @@ SERVICE_COLLECTION_MAP = {
 }
 
 
+def _owner_field_for_service(service: str) -> str:
+    # map/card/pcg store owner as userId; statblock uses createdBy
+    if service in ("map", "card", "pcg"):
+        return "userId"
+    return "createdBy"
+
+
+def user_owns_image_url(user_id: str, image_url: str, service: str) -> bool:
+    """
+    True if image_url appears in one of the caller's projects for this service.
+    Must be checked before any cloud delete.
+    """
+    from firebase_admin import firestore
+
+    db = firestore.client()
+    collection_name = SERVICE_COLLECTION_MAP.get(service, "statblock_projects")
+    user_field = _owner_field_for_service(service)
+    query = db.collection(collection_name).where(user_field, "==", user_id)
+
+    for doc in query.stream():
+        project_data = doc.to_dict() or {}
+        if service == "map":
+            if project_data.get("base_image_url") == image_url:
+                return True
+            if project_data.get("baseImageUrl") == image_url:
+                return True
+        else:
+            images = (
+                project_data.get("state", {})
+                .get("generatedContent", {})
+                .get("images", [])
+            )
+            for img in images:
+                if img.get("url") == image_url:
+                    return True
+    return False
+
+
 class LibraryImage(BaseModel):
     """Image in user's library."""
     id: str
@@ -335,10 +373,10 @@ async def get_image_library(
         
         # Query user's projects
         # Note: Different services use different field names for user ownership
-        # - map: uses "userId" 
-        # - others: use "createdBy"
+        # - map/card/pcg: uses "userId"
+        # - statblock: uses "createdBy"
         projects_ref = db.collection(collection_name)
-        user_field = "userId" if service == "map" else "createdBy"
+        user_field = _owner_field_for_service(service)
         query = projects_ref.where(user_field, "==", user_id)
         
         # Aggregate all images from all projects
@@ -417,83 +455,89 @@ async def get_image_library(
 @router.delete('/delete')
 async def delete_image(
     image_url: str = Query(..., description="URL of the image to delete"),
-    service: str = Query("statblock", description="Service: statblock, card, pcg"),
+    service: str = Query("statblock", description="Service: statblock, card, pcg, map"),
     current_user: User = Depends(get_current_user)
 ):
     """
     Delete an image from cloud storage AND from Firestore.
-    
-    Removes from:
-    1. Cloud storage (Cloudflare Images, R2)
-    2. User's projects in Firestore (state.generatedContent.images)
+
+    Ownership is verified against the caller's projects before any cloud delete.
     """
     from firebase_admin import firestore
-    
+
     try:
-        # Validate input
         if not image_url.strip():
             raise HTTPException(status_code=422, detail="Image URL cannot be empty")
-        
-        logger.info(f"🗑️ [ImageDelete] user={current_user.email}, url={image_url[:50]}...")
-        
-        # 1. Delete from cloud storage
+
+        user_id = current_user.user_id
+        logger.info(
+            "ImageDelete request user_id=%s service=%s url_chars=%s",
+            user_id,
+            service,
+            len(image_url),
+        )
+
+        if not user_owns_image_url(user_id, image_url, service):
+            raise HTTPException(
+                status_code=403,
+                detail="Image not found in your projects; delete denied",
+            )
+
         result = await image_management_service.delete_image(image_url)
         cloud_deleted = result.success
-        
-        # 2. Delete from Firestore (user's projects)
+
         firestore_deleted = False
         db = firestore.client()
-        user_id = current_user.user_id
         collection_name = SERVICE_COLLECTION_MAP.get(service, "statblock_projects")
-        
-        # Query user's projects
-        projects_ref = db.collection(collection_name)
-        query = projects_ref.where("createdBy", "==", user_id)
-        
+        user_field = _owner_field_for_service(service)
+        query = db.collection(collection_name).where(user_field, "==", user_id)
+
         projects_found = 0
         for doc in query.stream():
             projects_found += 1
-            project_data = doc.to_dict()
-            project_id = project_data.get("id", doc.id)
-            generated_content = project_data.get("state", {}).get("generatedContent", {})
-            images = generated_content.get("images", [])
-            
-            logger.debug(f"🔍 [ImageDelete] Checking project {doc.id}: {len(images)} images")
-            
-            # Find and remove images matching this URL
-            original_count = len(images)
+            project_data = doc.to_dict() or {}
+
+            if service == "map":
+                if (
+                    project_data.get("base_image_url") == image_url
+                    or project_data.get("baseImageUrl") == image_url
+                ):
+                    doc.reference.update({
+                        "base_image_url": None,
+                        "baseImageUrl": None,
+                    })
+                    firestore_deleted = True
+                continue
+
+            images = (
+                project_data.get("state", {})
+                .get("generatedContent", {})
+                .get("images", [])
+            )
             updated_images = [img for img in images if img.get("url") != image_url]
-            removed_count = original_count - len(updated_images)
-            
-            if removed_count > 0:
-                # Image was found in this project, update it
-                logger.info(f"🗑️ [ImageDelete] Found {removed_count} matching images in project {doc.id}")
-                logger.info(f"🗑️ [ImageDelete] Updating: {original_count} → {len(updated_images)} images")
-                
-                # Perform the update (use explicit doc_ref for reliability)
-                doc_ref = doc.reference
-                doc_ref.update({
+            if len(updated_images) < len(images):
+                doc.reference.update({
                     "state.generatedContent.images": updated_images
                 })
-                
                 firestore_deleted = True
-                logger.info(f"✅ [ImageDelete] Updated Firestore project {doc.id}")
-        
-        logger.info(f"🔍 [ImageDelete] Scanned {projects_found} projects for user {user_id}")
-        
-        if firestore_deleted:
-            logger.info(f"✅ [ImageDelete] Removed from Firestore")
-        else:
-            logger.info(f"ℹ️ [ImageDelete] Image not found in Firestore projects")
-        
+
+        logger.info(
+            "ImageDelete scanned projects=%s cloud=%s firestore=%s",
+            projects_found,
+            cloud_deleted,
+            firestore_deleted,
+        )
+
         return {
             "success": True,
             "cloud_deleted": cloud_deleted,
             "firestore_deleted": firestore_deleted,
             "message": f"Image deleted (cloud={cloud_deleted}, firestore={firestore_deleted})"
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ [ImageDelete] Error: {e}")
+        logger.error("ImageDelete error: %s", type(e).__name__)
         logger.exception("Full traceback:")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -34,31 +34,38 @@ google = oauth.register(
     client_kwargs={'scope': 'openid profile email'},
 )
 
-# Check if the required environment variables are set
+# Defer hard failure to login — import-time raise breaks test collection
 logger.info(f"Redirect URI: {redirect_callback}")
-if not google.client_id or not google.client_secret:
-    raise ValueError("GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set in .env file or environment variables")
+_oauth_configured = bool(google.client_id and google.client_secret)
+if not _oauth_configured:
+    logger.error(
+        "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set; "
+        "/api/auth/login will return 503 until configured"
+    )
 
 @router.get('/login')
 async def login(request: Request):
+    if not _oauth_configured:
+        raise HTTPException(status_code=503, detail="OAuth is not configured on this server")
+
     redirect_uri = redirect_callback
     
     # Store the return URL in session so we can redirect back after OAuth
     return_to = request.query_params.get('redirect', '/')
     request.session['return_to'] = return_to
     
-    logger.info(f"Login request from: {request.headers.get('x-forwarded-proto', 'unknown')}://{request.headers.get('host', 'unknown')}")
-    logger.info(f"Using redirect URI: {redirect_uri}")
-    logger.info(f"Will return user to: {return_to}")
+    logger.info(
+        "Login request: host=%s return_to_set=%s",
+        request.headers.get("host", "unknown"),
+        bool(return_to),
+    )
     return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
 
 @router.get('/callback')
 async def auth_callback(request: Request):
     try:
-        logger.info("Auth callback processing...")
-        logger.info(f"Request URL: {request.url}")
-        logger.info(f"Request headers: {dict(request.headers)}")
-        logger.info(f"Existing session data: {dict(request.session) if request.session else 'None'}")
+        # Never log headers, cookies, session dicts, or full URL (may contain code/state)
+        logger.info("Auth callback processing")
         
         token = await oauth.google.authorize_access_token(request)
         user = await oauth.google.parse_id_token(token, nonce=request.session.get('nonce'))
@@ -67,9 +74,7 @@ async def auth_callback(request: Request):
         user_dict = dict(user)
         request.session['user'] = user_dict
         
-        logger.info(f"User authenticated successfully: {user_dict.get('email')} (ID: {user_dict.get('sub')})")
-        logger.info(f"Session after storing user: {dict(request.session)}")
-        logger.info(f"Session ID: {request.session.get('_session_id', 'no-session-id')}")
+        logger.info("User authenticated successfully (sub present=%s)", bool(user_dict.get("sub")))
         
         # Get the return URL from session (stored during login)
         return_to = request.session.pop('return_to', '/')
@@ -77,11 +82,11 @@ async def auth_callback(request: Request):
         # Redirect back to the frontend application at the original page
         frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
         redirect_url = frontend_url.rstrip('/') + return_to
-        logger.info(f"Redirecting to frontend: {redirect_url}")
+        logger.info("Auth callback redirecting to frontend")
         return RedirectResponse(url=redirect_url)
         
     except Exception as e:
-        logger.error(f"Error during authorization: {str(e)}", exc_info=True)
+        logger.error("Error during authorization: %s", type(e).__name__, exc_info=True)
         # Redirect to frontend with error parameter
         frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
         return RedirectResponse(url=f"{frontend_url}?auth_error=true")
@@ -102,8 +107,7 @@ async def profile(request: Request):
 
 @router.get('/logout')
 async def logout(request: Request):
-    user_email = request.session.get('user', {}).get('email', 'unknown')
-    logger.info(f"Logging out user: {user_email}")
+    logger.info("Logout requested (authenticated=%s)", "user" in request.session)
     request.session.clear()
     
     # Redirect back to frontend
@@ -144,27 +148,12 @@ async def get_current_user_endpoint(request: Request):
     Get the current authenticated user.
     Returns user data if authenticated, 401 if not.
     """
-    logger.info("'/current-user' endpoint accessed")
-    
-    # Debug session and cookie information
-    session_id = request.session.get('session_id', 'no-session-id')
-    cookies_received = dict(request.cookies)
-    session_data = dict(request.session) if request.session else {}
-    
-    logger.info(f"Session ID: {session_id}")
-    logger.info(f"Cookies received: {list(cookies_received.keys())}")
-    logger.info(f"Session data keys: {list(session_data.keys())}")
-    logger.info(f"Has 'user' in session: {'user' in session_data}")
-    
-    if 'user' in session_data:
-        logger.info(f"User in session: {session_data['user'].get('email', 'no-email')}")
-    
     auth_result = await auth_service.get_current_user_from_request(request)
     
     if auth_result.authenticated:
-        logger.info(f"User authenticated successfully: {auth_result.user.email}")
+        logger.info("current-user: authenticated")
         # Return the user data as a dictionary for API compatibility
         return auth_result.user.dict()
     else:
-        logger.warning(f"User not authenticated: {auth_result.error}")
+        logger.info("current-user: not authenticated")
         return JSONResponse(status_code=401, content={"detail": auth_result.error or "Not authenticated"})

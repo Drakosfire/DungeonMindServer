@@ -17,6 +17,10 @@ from session_management import get_session, session_manager
 from cardgenerator.services.card_generation_service import card_generation_service
 from cardgenerator.services.image_management_service import image_management_service
 from cardgenerator.utils.error_handler import CardGenerationError, ImageProcessingError
+from routers.auth_router import get_current_user
+from auth_service import User
+from security_limits.demo_quota import require_demo_quota_card_item
+from security_limits.paid_budget import paid_budget_store
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +41,11 @@ class RenderCardRequest(BaseModel):
 @router.post('/generate-item')
 async def generate_item_description(
     request: ItemGenerationRequest,
-    session_data = Depends(get_session)
+    session_data = Depends(get_session),
+    _demo_quota = Depends(require_demo_quota_card_item),
 ):
     """
-    Generate item description using AI
+    Generate item description using AI (public demo — IP/day quota).
     
     Step 1: Text generation for the card
     """
@@ -50,7 +55,11 @@ async def generate_item_description(
         if not request.userIdea:
             raise HTTPException(status_code=422, detail="User idea is required")
         
-        logger.info(f"Generating item description for: {request.userIdea} (session: {session_id})")
+        logger.info(
+            "Generating item description (idea_chars=%s session=%s)",
+            len(request.userIdea),
+            session_id,
+        )
         
         # Generate item description using AI
         item_details = await card_generation_service.generate_item_description(request.userIdea)
@@ -67,7 +76,7 @@ async def generate_item_description(
             
             logger.debug(f"Updated session with generated item for session {session_id}")
         
-        logger.info(f"Successfully generated item description for: {request.userIdea}")
+        logger.info("Successfully generated item description (session=%s)", session_id)
         return {
             "success": True,
             "item_details": item_details,
@@ -86,20 +95,28 @@ async def generate_item_description(
 async def generate_core_images(
     sdPrompt: str = Form(...),
     numImages: int = Form(default=4),
-    session_data = Depends(get_session)
+    session_data = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Generate core images using Stable Diffusion
+    Generate core images using Stable Diffusion (auth required).
     
     Step 2: Image generation for the card
     """
     try:
         session, session_id = session_data
+        paid_budget_store.consume(current_user.user_id)
         
         if not sdPrompt:
             raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
         
-        logger.info(f"Generating {numImages} core images for prompt: {sdPrompt} (session: {session_id})")
+        logger.info(
+            "Generating %s core images (prompt_chars=%s session=%s user=%s)",
+            numImages,
+            len(sdPrompt),
+            session_id,
+            current_user.user_id,
+        )
         
         # Generate images using Stable Diffusion
         image_result = await card_generation_service.generate_core_images(sdPrompt, numImages)
@@ -136,22 +153,30 @@ async def generate_card_images(
     template: UploadFile = File(...),
     sdPrompt: str = Form(...),
     numImages: int = Form(default=4),
-    session_data = Depends(get_session)
+    session_data = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Generate card images with borders and templates
+    Generate card images with borders and templates (auth required).
     
     Step 3: Card image generation with styling
     """
     try:
         session, session_id = session_data
+        paid_budget_store.consume(current_user.user_id)
         
         if not template:
             raise HTTPException(status_code=422, detail="Template file is required")
         if not sdPrompt:
             raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
         
-        logger.info(f"Generating {numImages} card images with template for prompt: {sdPrompt} (session: {session_id})")
+        logger.info(
+            "Generating %s card images (prompt_chars=%s session=%s user=%s)",
+            numImages,
+            len(sdPrompt),
+            session_id,
+            current_user.user_id,
+        )
         
         # Upload template file first to get URL
         from cardgenerator.services.image_management_service import image_management_service
@@ -191,15 +216,17 @@ async def generate_card_images(
 @router.post('/render-text')
 async def render_card_text(
     request: RenderCardRequest,
-    session_data = Depends(get_session)
+    session_data = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Render text on card and return the image directly from memory
+    Render text on card and return the image directly from memory (auth required).
     
     Final step that creates the completed card and streams it to the user
     """
     try:
         session, session_id = session_data
+        paid_budget_store.consume(current_user.user_id)
         
         # Validate inputs
         if not request.image_url:
@@ -265,15 +292,17 @@ async def render_card_text(
 @router.post('/render-text-with-url')
 async def render_card_text_with_url(
     request: RenderCardRequest,
-    session_data = Depends(get_session)
+    session_data = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Render text on card and upload to cloud storage, returning the URL
+    Render text on card and upload to cloud storage, returning the URL (auth required).
     
     Alternative endpoint that uploads the completed card to cloud storage
     """
     try:
         session, session_id = session_data
+        paid_budget_store.consume(current_user.user_id)
         
         # Validate inputs
         if not request.image_url:

@@ -11,6 +11,7 @@ from models.ruleslawyer_models import (
     UpdateSavedRuleRequest,
 )
 from dependencies import get_current_user, get_ruleslawyer_db
+from security_limits.demo_quota import require_demo_quota_ruleslawyer
 from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
@@ -263,7 +264,10 @@ async def load_embedding(request: EmbeddingRequest):
         raise HTTPException(status_code=500, detail="Failed to load embeddings. Please try again later.") from e
 
 @router.post("/query")
-async def query_rules(request: RulesQueryRequest):
+async def query_rules(
+    request: RulesQueryRequest,
+    _demo_quota=Depends(require_demo_quota_ruleslawyer),
+):
     import time as time_module
     request_start_time = time_module.time()
     

@@ -15,6 +15,8 @@ import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
+from security_limits.demo_quota import require_demo_quota_statblock
+from security_limits.paid_budget import paid_budget_store
 from auth_service import User
 
 # Import StatBlock components
@@ -76,11 +78,12 @@ async def health_check():
 @router.post("/generate-statblock")
 async def generate_statblock(
     request: CreatureGenerationRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    _demo_quota=Depends(require_demo_quota_statblock),
 ):
     """
-    Generate a complete D&D 5e creature statblock from description
-    Does not require authentication - works for anonymous users
+    Generate a complete D&D 5e creature statblock from description.
+    Public demo allowlist — hard IP/day quota. Authenticated users also counted.
     """
     start_time = time.time()
     user_id = current_user.email if current_user else 'anonymous'
@@ -512,12 +515,19 @@ async def delete_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Permanently delete an image from Cloudflare storage
-    This removes the image from all projects (permanent deletion)
-    Requires authentication for security
+    Permanently delete an image from Cloudflare storage.
+    Ownership must be verified in the caller's statblock projects first.
     """
     try:
-        logger.info(f"Deleting image from library for user: {current_user.email}")
+        from routers.image_management_router import user_owns_image_url
+
+        logger.info("Statblock delete-image for user_id=%s", current_user.user_id)
+
+        if not user_owns_image_url(current_user.user_id, image_url, "statblock"):
+            raise HTTPException(
+                status_code=403,
+                detail="Image not found in your projects; delete denied",
+            )
         
         # Extract Cloudflare image ID from URL
         # Cloudflare URLs typically look like: https://imagedelivery.net/{account_hash}/{image_id}/{variant}
@@ -526,7 +536,7 @@ async def delete_image(
         # Try to extract image ID from Cloudflare URL
         match = re.search(r'/([a-zA-Z0-9-]+)/[^/]+$', image_url)
         if not match:
-            logger.warning(f"Could not extract image ID from URL: {image_url}")
+            logger.warning("Could not extract image ID from owned URL")
             # Return success anyway (image may already be deleted or URL malformed)
             return {
                 "success": True,
@@ -552,9 +562,9 @@ async def delete_image(
             cf_result = cf_response.json()
             
             if cf_result.get("success"):
-                logger.info(f"✅ Successfully deleted image {image_id} from Cloudflare")
+                logger.info("Successfully deleted owned image from Cloudflare")
             else:
-                logger.warning(f"Cloudflare deletion returned: {cf_result}")
+                logger.warning("Cloudflare deletion returned non-success for owned image")
                 # Don't fail if Cloudflare returns error (image may already be deleted)
         
         return {
@@ -565,12 +575,8 @@ async def delete_image(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting image: {str(e)}")
-        # Return success to prevent UI blocking (optimistic deletion)
-        return {
-            "success": True,
-            "message": "Image deletion processed"
-        }
+        logger.error("Error deleting image: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Image deletion failed")
 
 @router.delete("/project/{project_id}")
 async def delete_project(
