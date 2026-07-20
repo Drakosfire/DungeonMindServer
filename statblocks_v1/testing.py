@@ -12,8 +12,9 @@ server environment):
 Equivalent:
 
     PYTHONPATH=. uv run --isolated --no-project \\
-      --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \\
-      --with 'pydantic==2.7.4' --with 'httpx>=0.27.0' \\
+      --with 'pytest>=8.3.5' --with 'fastapi==0.115.6' \\
+      --with 'pydantic==2.7.4' --with 'httpx==0.28.1' \\
+      --with 'starlette==0.41.3' \\
       pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 """
 
@@ -21,8 +22,10 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from statblocks_v1.api.health import health_router, liveness_router
 from statblocks_v1.api.http_errors import register_error_handlers
 from statblocks_v1.api.router import router
+from statblocks_v1.observability import request_observability
 
 
 def create_contract_app() -> FastAPI:
@@ -33,6 +36,9 @@ def create_contract_app() -> FastAPI:
         description="DungeonMindServer-owned DungeonBuddy statblock contract.",
     )
     register_error_handlers(app)
+    app.middleware("http")(request_observability)
+    app.include_router(liveness_router)
+    app.include_router(health_router)
     app.include_router(router)
     return app
 

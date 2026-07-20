@@ -5,6 +5,19 @@
 **Predecessor:** PR20 production launch  
 **Route impact:** no intended v1 behavior change
 
+## PR20 predecessor completion notes
+
+- PR20 launch commit: `feat(statblocks_v1): harden and launch-ready v1 route (PR20)`.
+  The v1 contract artifact now has fingerprint `sha256:0d0969b8102e7ae83d1fafa6ed473505eec4fa87ae4f27adda256db4e891491c`;
+  use the runbook/config guide before touching its route wiring.
+- Generation can be disabled with `STATBLOCKS_V1_FEATURE_ENABLED=false` while
+  exact persisted reads remain available. PR20 intentionally left every legacy
+  route in place; PR21 owns consumer evidence, quarantine, and any cleanup.
+- The current server has no Dockerfile. It uses `uv.lock` and should be built
+  from that committed lockfile rather than a fresh dependency compilation.
+- No legacy consumer inventory was collected during launch hardening. Treat
+  every route listed below as active until production evidence says otherwise.
+
 ## 0. Mission
 
 Reduce architectural ambiguity and repository drag after the DungeonBuddy statblock v1 route is operating.

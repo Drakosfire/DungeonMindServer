@@ -5983,8 +5983,8 @@
     },
     "/api/internal/dungeonbuddy/v1/statblocks/health": {
       "get": {
-        "description": "Advertise the candidate and acceptance workflow available to DungeonBuddy.",
-        "operationId": "health_api_internal_dungeonbuddy_v1_statblocks_health_get",
+        "description": "Authenticated contract discovery; never exposes configuration values.",
+        "operationId": "statblocks_v1_capabilities",
         "parameters": [
           {
             "in": "header",
@@ -6052,10 +6052,114 @@
                 }
               }
             },
-            "description": "Internal service misconfigured, provider unavailable, or persistence unavailable"
+            "description": "Internal service misconfigured"
           }
         },
-        "summary": "Health",
+        "summary": "Capabilities",
+        "tags": [
+          "DungeonBuddy Statblocks v1"
+        ]
+      }
+    },
+    "/api/internal/dungeonbuddy/v1/statblocks/health/live": {
+      "get": {
+        "description": "Process-level health: no secrets or dependency probes.",
+        "operationId": "statblocks_v1_liveness",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Statblocks V1 Liveness",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness",
+        "tags": [
+          "DungeonBuddy Statblocks v1"
+        ]
+      }
+    },
+    "/api/internal/dungeonbuddy/v1/statblocks/health/ready": {
+      "get": {
+        "description": "Configuration readiness, not an invasive provider availability probe.",
+        "operationId": "statblocks_v1_readiness",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-DungeonBuddy-Internal-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Dungeonbuddy-Internal-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Missing internal API key"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Invalid internal API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Internal service misconfigured"
+          }
+        },
+        "summary": "Readiness",
         "tags": [
           "DungeonBuddy Statblocks v1"
         ]

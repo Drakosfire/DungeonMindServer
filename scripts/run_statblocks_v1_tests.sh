@@ -17,7 +17,8 @@ export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 exec uv run --isolated --no-project \
   --with 'pytest>=8.3.5' \
-  --with 'fastapi>=0.115.4' \
+  --with 'fastapi==0.115.6' \
   --with 'pydantic==2.7.4' \
-  --with 'httpx>=0.27.0' \
+  --with 'httpx==0.28.1' \
+  --with 'starlette==0.41.3' \
   pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q "$@"

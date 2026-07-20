@@ -34,6 +34,7 @@ from statblocks_v1.testing import create_test_app
 @pytest.fixture
 def api_client(monkeypatch, load_fixture, auth_headers):
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers["X-DungeonBuddy-Internal-Key"])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
     candidates = InMemoryCandidateRepository(clock=lambda: now)

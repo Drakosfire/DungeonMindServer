@@ -23,11 +23,13 @@ MINIMAL_UV_WITH = (
     "--with",
     "pytest>=8.3.5",
     "--with",
-    "fastapi>=0.115.4",
+    "fastapi==0.115.6",
     "--with",
     "pydantic==2.7.4",
     "--with",
-    "httpx>=0.27.0",
+    "httpx==0.28.1",
+    "--with",
+    "starlette==0.41.3",
 )
 HEAVY_DEPENDENCY_MODULES = (
     "openai",

@@ -7,7 +7,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
 from statblocks_v1.api.dependencies import (
     Clock,
     Validator,
@@ -17,6 +16,7 @@ from statblocks_v1.api.dependencies import (
     get_persistence_repository,
     get_revision_service,
     get_validator,
+    require_generation_enabled,
     require_internal_service_auth,
 )
 from statblocks_v1.api.http_errors import raise_for_generation_failure
@@ -26,7 +26,6 @@ from statblocks_v1.api.models import (
     CreateStatblockResponseV1,
     ErrorEnvelopeV1,
     GenerateCandidateRequestV1,
-    HealthResponseV1,
     RevisionListResponseV1,
     ReviseCandidateRequestV1,
     ValidateDefinitionRequestV1,
@@ -122,36 +121,12 @@ router = APIRouter(
 )
 
 
-@router.get(
-    "/statblocks/health",
-    response_model=HealthResponseV1,
-    responses=_AUTH_ERROR_RESPONSES,
-)
-async def health() -> HealthResponseV1:
-    """Advertise the candidate and acceptance workflow available to DungeonBuddy."""
-    return HealthResponseV1(
-        status="available",
-        contract=CONTRACT_NAME,
-        contract_version=CONTRACT_VERSION,
-        capabilities=[
-            "candidate_generate",
-            "candidate_revise",
-            "definition_validate",
-            "candidate_read",
-            "statblock_create",
-            "statblock_revision_append",
-            "statblock_read",
-            "statblock_revision_list",
-            "statblock_revision_read",
-        ],
-    )
-
-
 @router.post(
     "/statblock-candidates:generate",
     response_model=GeneratedStatblockCandidateV1,
     responses=_CANDIDATE_ERROR_RESPONSES,
     operation_id="generate_statblock_candidate_v1",
+    dependencies=[Depends(require_generation_enabled)],
 )
 async def generate_candidate(
     request: GenerateCandidateRequestV1,
@@ -177,6 +152,7 @@ async def generate_candidate(
     response_model=GeneratedStatblockCandidateV1,
     responses=_REVISE_ERROR_RESPONSES,
     operation_id="revise_statblock_candidate_v1",
+    dependencies=[Depends(require_generation_enabled)],
 )
 async def revise_candidate(
     request: ReviseCandidateRequestV1,

@@ -57,6 +57,8 @@ from routers.statblockgenerator_router import router as statblockgenerator_route
 # Import DungeonBuddy statblock v1 bounded-context router
 from firestore.firebase_config import db as dungeonbuddy_statblocks_v1_db
 from statblocks_v1.api import dependencies as dungeonbuddy_statblocks_v1_dependencies
+from statblocks_v1.api.health import health_router as dungeonbuddy_statblocks_v1_health_router
+from statblocks_v1.api.health import liveness_router as dungeonbuddy_statblocks_v1_liveness_router
 from statblocks_v1.api.http_errors import register_error_handlers as register_statblocks_v1_error_handlers
 from statblocks_v1.api.router import router as dungeonbuddy_statblocks_v1_router
 from statblocks_v1.infrastructure.runtime import (
@@ -64,6 +66,7 @@ from statblocks_v1.infrastructure.runtime import (
     build_generation_service as build_statblocks_v1_generation_service,
     build_persistence_repository as build_statblocks_v1_persistence_repository,
 )
+from statblocks_v1.observability import request_observability as statblocks_v1_request_observability
 
 # Import PlayerCharacterGenerator router
 from routers.playercharactergenerator_router import router as playercharactergenerator_router
@@ -233,6 +236,9 @@ dungeonbuddy_statblocks_v1_dependencies.configure_persistence_repository_factory
 dungeonbuddy_statblocks_v1_dependencies.configure_generation_service_factory(
     lambda: build_statblocks_v1_generation_service(client=dungeonbuddy_statblocks_v1_db)
 )
+app.middleware("http")(statblocks_v1_request_observability)
+app.include_router(dungeonbuddy_statblocks_v1_liveness_router)
+app.include_router(dungeonbuddy_statblocks_v1_health_router)
 app.include_router(
     dungeonbuddy_statblocks_v1_router,
     tags=["DungeonBuddy Statblocks v1"]

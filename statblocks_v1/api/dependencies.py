@@ -21,13 +21,14 @@ from typing import Annotated
 
 from fastapi import Header
 
-from statblocks_v1.api.http_errors import StatblockV1HTTPError
+from statblocks_v1.api.http_errors import GenerationTransportError, StatblockV1HTTPError
 from statblocks_v1.application.generation import GenerationServiceV1
 from statblocks_v1.application.repositories import (
     CandidateRepository,
     StatblockPersistenceRepository,
 )
 from statblocks_v1.application.revisions import RevisionServiceV1
+from statblocks_v1.config import ConfigurationError, StatblocksV1Settings
 from statblocks_v1.domain.errors import (
     InternalServiceMisconfiguredError,
     UnauthorizedInternalClientError,
@@ -98,6 +99,30 @@ async def require_internal_service_auth(
         raise StatblockV1HTTPError(
             403,
             UnauthorizedInternalClientError("Invalid internal API key"),
+        )
+
+
+async def require_generation_enabled() -> None:
+    """Fail generation closed while preserving configured persisted-resource reads."""
+    try:
+        settings = StatblocksV1Settings.from_environment()
+    except ConfigurationError:
+        raise StatblockV1HTTPError(503, InternalServiceMisconfiguredError()) from None
+    if not settings.feature_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "generation_disabled",
+                "Statblock generation is disabled",
+            ),
+        )
+    if not settings.openai_api_key:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "provider_not_configured",
+                "Statblock generation is not configured",
+            ),
         )
 
 

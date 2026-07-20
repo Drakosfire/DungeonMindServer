@@ -15,6 +15,7 @@ from statblocks_v1.application.repositories import (
 )
 from statblocks_v1.application.resolvers import PersistenceDefinitionResolver
 from statblocks_v1.application.settings import GenerationSettingsV1
+from statblocks_v1.config import StatblocksV1Settings
 from statblocks_v1.infrastructure.firestore_repositories import (
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
@@ -23,11 +24,21 @@ from statblocks_v1.infrastructure.openai_provider import OpenAIDefinitionProvide
 
 
 def build_candidate_repository(client: Any) -> CandidateRepository:
-    return FirestoreCandidateRepository(client)
+    settings = StatblocksV1Settings.from_environment()
+    return FirestoreCandidateRepository(
+        client,
+        candidates_collection=settings.candidates_collection,
+        idempotency_collection=settings.idempotency_collection,
+    )
 
 
 def build_persistence_repository(client: Any) -> StatblockPersistenceRepository:
-    return FirestoreStatblockPersistenceRepository(client)
+    settings = StatblocksV1Settings.from_environment()
+    return FirestoreStatblockPersistenceRepository(
+        client,
+        statblocks_collection=settings.statblocks_collection,
+        idempotency_collection=settings.idempotency_collection,
+    )
 
 
 def build_generation_service(
