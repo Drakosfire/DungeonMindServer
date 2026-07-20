@@ -135,6 +135,12 @@ gone (TTL deletion). Idempotency is consulted **before** `get_for_acceptance`, a
 server-owned `provenance.candidate` audit evidence is excluded from the request
 digest (`candidate_id` remains in the digest).
 
+Idempotency is also consulted **before** semantic persistence validation.
+Validation and candidate lookup run only when the key is genuinely new, so a
+changed-but-invalid retry yields `409 idempotency_conflict` rather than
+`422 validation_failed`, and exact replay survives future validator-policy
+changes.
+
 Add a full exact-replay test.
 
 ## 6. Idempotency
@@ -146,9 +152,11 @@ Required behavior:
 ```text
 same key + same canonical request
   → return original resource outcome
+    (consult idempotency before persistence validation)
 
 same key + changed definition, parent, or operation metadata
   → 409 typed idempotency conflict
+    (even when the changed payload would fail persistence validation)
 
 concurrent same-key requests
   → one revision only

@@ -29,10 +29,14 @@ SERVICE_CREATED_BY = "dungeonbuddy"
 
 
 class RevisionServiceV1:
-    """Validate and enrich acceptances before the atomic persistence boundary.
+    """Enrich acceptances and gate writes behind durable idempotency.
 
-    Idempotency is consulted before candidate lookup so same-key replay remains
-    available after Firestore TTL deletes the source candidate document.
+    Replay is consulted before persistence validation and candidate lookup so:
+    - same key + same request returns the original outcome even if validator
+      policy later changes;
+    - same key + changed definition/metadata returns ``idempotency_conflict``
+      even when the changed payload would otherwise fail validation.
+    Validation and candidate audit run only for genuinely new keys.
     """
 
     def __init__(
@@ -57,7 +61,6 @@ class RevisionServiceV1:
         asset_bindings: list[dict[str, Any]] | None = None,
         candidate_id: str | None = None,
     ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
-        self._validate_persistence(definition)
         client_provenance = _seal_client_provenance(
             change_summary=change_summary,
             accepted_through=accepted_through,
@@ -76,6 +79,7 @@ class RevisionServiceV1:
         if replayed is not None:
             return replayed
 
+        self._validate_persistence(definition)
         enriched = self._with_candidate_audit(candidate_id, definition, client_provenance)
         return self._persistence.create_statblock(
             CreateStatblockCommand(
@@ -102,7 +106,6 @@ class RevisionServiceV1:
         asset_bindings: list[dict[str, Any]] | None = None,
         candidate_id: str | None = None,
     ) -> StatblockRevisionResourceV1:
-        self._validate_persistence(definition)
         client_provenance = _seal_client_provenance(
             change_summary=change_summary,
             accepted_through=accepted_through,
@@ -122,6 +125,7 @@ class RevisionServiceV1:
         if replayed is not None:
             return replayed
 
+        self._validate_persistence(definition)
         enriched = self._with_candidate_audit(candidate_id, definition, client_provenance)
         return self._persistence.append_revision(
             AppendRevisionCommand(

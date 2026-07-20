@@ -298,6 +298,54 @@ def test_persistence_validation_failure_returns_receipt(resource_client, load_fi
     assert error["details"]["validation_receipt"]["status"] == "invalid"
 
 
+def test_idempotency_conflict_before_validation_for_changed_invalid_payload(
+    resource_client, load_fixture
+) -> None:
+    """Same key + changed invalid definition must 409, never 422 validation_failed."""
+
+    client, definition, _, _, _, headers = resource_client
+    invalid = load_fixture("unknown_resource_pool")
+
+    created = client.post(
+        "/api/internal/dungeonbuddy/v1/statblocks",
+        json=_create_payload(definition, "order-create"),
+        headers=headers,
+    )
+    assert created.status_code == 200
+    first = created.json()
+    statblock_id = first["statblock"]["statblock_id"]
+    revision_id = first["revision"]["revision_id"]
+
+    create_conflict = client.post(
+        "/api/internal/dungeonbuddy/v1/statblocks",
+        json=_create_payload(invalid, "order-create"),
+        headers=headers,
+    )
+    assert create_conflict.status_code == 409
+    assert create_conflict.json()["error"]["code"] == "idempotency_conflict"
+
+    append = client.post(
+        f"/api/internal/dungeonbuddy/v1/statblocks/{statblock_id}/revisions",
+        json={
+            **_create_payload(definition, "order-append"),
+            "parent_revision_id": revision_id,
+        },
+        headers=headers,
+    )
+    assert append.status_code == 200
+
+    append_conflict = client.post(
+        f"/api/internal/dungeonbuddy/v1/statblocks/{statblock_id}/revisions",
+        json={
+            **_create_payload(invalid, "order-append"),
+            "parent_revision_id": revision_id,
+        },
+        headers=headers,
+    )
+    assert append_conflict.status_code == 409
+    assert append_conflict.json()["error"]["code"] == "idempotency_conflict"
+
+
 def test_concurrent_same_key_create_and_competing_appends(resource_client) -> None:
     client, definition, _, _, _, headers = resource_client
 
