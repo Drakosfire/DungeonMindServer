@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import re
 from pathlib import Path
 
+from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
 from statblocks_v1.api.models import (
     AppendRevisionRequestV1,
     CreateStatblockRequestV1,
@@ -20,6 +22,7 @@ ROOT = Path(__file__).parents[2]
 ARTIFACT = ROOT / "openapi" / "dungeonbuddy-statblocks-v1.json"
 TYPESCRIPT = ROOT / "generated" / "dungeonbuddy-statblocks-v1" / "client.ts"
 FIXTURES = ROOT / "Docs" / "Design" / "fixtures" / "dungeonbuddy-statblock-v1-api"
+_TS_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _export_module():
@@ -35,12 +38,27 @@ def _export_module():
 
 def test_openapi_artifact_and_generated_types_are_current() -> None:
     exporter = _export_module()
-    expected = exporter.serialize_openapi(exporter.build_openapi())
+    schema = exporter.build_openapi()
+    expected_openapi = exporter.serialize_openapi(schema)
+    expected_typescript = exporter.render_typescript(schema)
 
-    assert ARTIFACT.read_text(encoding="utf-8") == expected
-    fingerprint = f"sha256:{hashlib.sha256(expected.encode()).hexdigest()}"
-    assert f"// Source fingerprint: {fingerprint}" in TYPESCRIPT.read_text(encoding="utf-8")
-    paths = json.loads(expected)["paths"]
+    assert ARTIFACT.read_text(encoding="utf-8") == expected_openapi
+    assert TYPESCRIPT.read_text(encoding="utf-8") == expected_typescript
+    fingerprint = f"sha256:{hashlib.sha256(expected_openapi.encode()).hexdigest()}"
+    assert f"// Source fingerprint: {fingerprint}" in expected_typescript
+    assert "export type " in expected_typescript
+    assert "-" not in {
+        line.split("export type ", 1)[1].split(" ", 1)[0]
+        for line in expected_typescript.splitlines()
+        if line.startswith("export type ")
+    }
+    assert " | unknown" not in expected_typescript
+    for line in expected_typescript.splitlines():
+        if line.startswith("export type "):
+            name = line.split("export type ", 1)[1].split(" ", 1)[0]
+            assert _TS_IDENT.match(name), name
+
+    paths = json.loads(expected_openapi)["paths"]
     operations = {
         operation["operationId"]
         for path in paths.values()
@@ -60,19 +78,29 @@ def test_openapi_artifact_and_generated_types_are_current() -> None:
     } <= operations
     assert any(
         name.startswith("AssetBindingV1")
-        for name in json.loads(expected)["components"]["schemas"]
+        for name in json.loads(expected_openapi)["components"]["schemas"]
     )
 
 
-def test_published_api_fixtures_validate_against_authoritative_models() -> None:
+def test_published_api_fixtures_match_live_route_semantics() -> None:
     load = lambda name: json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
     GenerateCandidateRequestV1.model_validate(load("generate-request.json"))
-    GeneratedStatblockCandidateV1.model_validate(load("candidate-response.json"))
+    candidate = GeneratedStatblockCandidateV1.model_validate(load("candidate-response.json"))
     ValidateDefinitionRequestV1.model_validate(load("validate-request.json"))
-    ValidationResponseV1.model_validate(load("validate-response.json"))
+    validate_response = ValidationResponseV1.model_validate(load("validate-response.json"))
     CreateStatblockRequestV1.model_validate(load("create-request.json"))
-    CreateStatblockResponseV1.model_validate(load("create-response.json"))
+    create_response = CreateStatblockResponseV1.model_validate(load("create-response.json"))
     AppendRevisionRequestV1.model_validate(load("append-request.json"))
-    StatblockRevisionResourceV1.model_validate(load("exact-revision-response.json"))
-    ErrorEnvelopeV1.model_validate(load("errors.json"))
+    revision = StatblockRevisionResourceV1.model_validate(load("exact-revision-response.json"))
+    error = ErrorEnvelopeV1.model_validate(load("errors.json"))
+
+    assert candidate.contract == CONTRACT_NAME
+    assert candidate.contract_version == CONTRACT_VERSION
+    assert candidate.validation_receipt.mode.value == "generation_candidate"
+    assert validate_response.validation_receipt.mode.value == "editor_preview"
+    assert revision.contract == CONTRACT_NAME
+    assert revision.contract_version == CONTRACT_VERSION
+    assert revision.validation_receipt.mode.value == "persistence"
+    assert create_response.revision.validation_receipt.mode.value == "persistence"
+    assert error.error.code == "validation_failed"

@@ -1,6 +1,6 @@
 # HANDOFF — PR19 Statblock v1 assets, OpenAPI, and consumer contract
 
-**Status:** READY AFTER PR18  
+**Status:** IN REVIEW — rebased onto merged PR18; contract publication sealed
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Coordinated consumer:** `Drakosfire/DungeonMindBuddy`  
 **Predecessor:** PR18 revision resource API  

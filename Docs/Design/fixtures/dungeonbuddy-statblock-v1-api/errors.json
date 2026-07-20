@@ -1,6 +1,6 @@
 {
   "error": {
-    "code": "definition_invalid",
-    "message": "The proposed statblock definition failed validation."
+    "code": "validation_failed",
+    "message": "Definition is not persistence-ready"
   }
 }

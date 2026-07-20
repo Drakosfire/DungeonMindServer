@@ -2032,12 +2032,12 @@
             "type": "string"
           },
           "contract": {
-            "default": "dungeonbuddy-statblock",
+            "default": "dungeonmind.dungeonbuddy-statblocks",
             "title": "Contract",
             "type": "string"
           },
           "contract_version": {
-            "default": "v1",
+            "default": "1.0.0",
             "title": "Contract Version",
             "type": "string"
           },
@@ -4818,12 +4818,12 @@
             "type": "string"
           },
           "contract": {
-            "default": "dungeonbuddy-statblock",
+            "default": "dungeonmind.dungeonbuddy-statblocks",
             "title": "Contract",
             "type": "string"
           },
           "contract_version": {
-            "default": "v1",
+            "default": "1.0.0",
             "title": "Contract Version",
             "type": "string"
           },

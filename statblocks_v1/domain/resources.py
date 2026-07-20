@@ -7,13 +7,14 @@ from typing import Any
 
 from pydantic import Field
 
+from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
 from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.primitives import StrictModel
 from statblocks_v1.domain.receipts import ValidationReceiptV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
-STATBLOCK_CONTRACT = "dungeonbuddy-statblock"
-STATBLOCK_CONTRACT_VERSION = "v1"
+STATBLOCK_CONTRACT = CONTRACT_NAME
+STATBLOCK_CONTRACT_VERSION = CONTRACT_VERSION
 
 
 class ResourceLocatorV1(StrictModel):
