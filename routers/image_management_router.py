@@ -23,6 +23,10 @@ from cardgenerator.utils.error_handler import ImageProcessingError
 # Auth
 from .auth_router import get_current_user
 from auth_service import User
+from security_limits.paid_budget import paid_budget_store
+from security_limits.input_limits import enforce_max_chars, clamp_num_images, MAX_PROMPT_CHARS
+from services.image_asset_registry import register_image_asset, get_asset_for_owner, delete_asset_record
+from cloudflare.handle_images import delete_cloudflare_image_by_id
 
 # GenerationEngine
 from generationengine import (
@@ -103,21 +107,36 @@ async def upload_single_image(
 ):
     """
     Upload a single image file to cloud storage.
-    Requires an authenticated session.
+    Registers a server-controlled opaque asset_id for later deletion.
     """
     try:
-        logger.info(f"Image upload request: {file.filename} user={getattr(current_user, 'email', None)}")
+        logger.info("Image upload request user_id=%s", current_user.user_id)
         
-        # Delegate to service layer
         result = await image_management_service.upload_single_image(file)
+        asset = register_image_asset(
+            owner_id=current_user.user_id,
+            provider="cloudflare_images",
+            object_key=result.provider_image_id or "",
+            canonical_url=result.url,
+            account_or_bucket="",
+            service="images",
+        )
         
         return {
             "url": result.url,
+            "asset_id": asset.asset_id,
             "success": result.success,
             "message": result.message
         }
         
+    except HTTPException:
+        raise
     except ImageProcessingError as e:
+        # Surface validation failures (400/413) that were wrapped by the service
+        detail = str(e)
+        if "not a recognized image" in detail.lower() or "exceeds maximum" in detail.lower():
+            code = 413 if "exceeds" in detail.lower() else 400
+            raise HTTPException(status_code=code, detail=detail)
         logger.error(f"Image upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
@@ -200,9 +219,15 @@ async def generate_image(
     Requires authentication - AI generation costs money and images need CDN storage.
     """
     try:
+        enforce_max_chars(request.prompt, field="prompt", limit=MAX_PROMPT_CHARS)
+        num_images = clamp_num_images(request.num_images)
+        paid_budget_store.consume(current_user.user_id, units=num_images)
         logger.info(
-            f"🎨 [ImageGenerate] user={current_user.email}, "
-            f"model={request.model}, prompt={request.prompt[:50]}..."
+            "ImageGenerate user_id=%s model=%s prompt_chars=%s num_images=%s",
+            current_user.user_id,
+            request.model,
+            len(request.prompt or ""),
+            num_images,
         )
         
         # Use shared model map
@@ -217,7 +242,7 @@ async def generate_image(
         ge_request = GEImageGenerationRequest(
             prompt=request.prompt,
             model=ge_model,
-            num_images=request.num_images,
+            num_images=num_images,
             size=ImageSize.SQUARE,  # Default 1024x1024
         )
         
@@ -454,85 +479,89 @@ async def get_image_library(
 
 @router.delete('/delete')
 async def delete_image(
-    image_url: str = Query(..., description="URL of the image to delete"),
-    service: str = Query("statblock", description="Service: statblock, card, pcg, map"),
+    asset_id: str = Query(..., description="Opaque server-issued asset ID"),
+    service: str = Query("statblock", description="Service hint for project cleanup"),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Delete an image from cloud storage AND from Firestore.
+    Delete an image by opaque asset_id from the server-controlled registry.
 
-    Ownership is verified against the caller's projects before any cloud delete.
+    User-supplied URLs and mutable project references never authorize deletion.
     """
     from firebase_admin import firestore
 
     try:
-        if not image_url.strip():
-            raise HTTPException(status_code=422, detail="Image URL cannot be empty")
+        if not asset_id.strip():
+            raise HTTPException(status_code=422, detail="asset_id is required")
 
         user_id = current_user.user_id
-        logger.info(
-            "ImageDelete request user_id=%s service=%s url_chars=%s",
-            user_id,
-            service,
-            len(image_url),
-        )
-
-        if not user_owns_image_url(user_id, image_url, service):
+        asset = get_asset_for_owner(asset_id, user_id)
+        if asset is None:
             raise HTTPException(
                 status_code=403,
-                detail="Image not found in your projects; delete denied",
+                detail="Asset not found or not owned by caller",
             )
 
-        result = await image_management_service.delete_image(image_url)
-        cloud_deleted = result.success
+        logger.info(
+            "ImageDelete asset_id=%s user_id=%s provider=%s",
+            asset_id,
+            user_id,
+            asset.provider,
+        )
 
+        cloud_deleted = False
+        if asset.provider == "cloudflare_images" and asset.object_key:
+            cloud_deleted = await delete_cloudflare_image_by_id(asset.object_key)
+        elif asset.canonical_url:
+            # Legacy R2 path using trusted key from registry only
+            result = await image_management_service.delete_image(asset.canonical_url)
+            cloud_deleted = result.success
+
+        delete_asset_record(asset_id)
+
+        # Best-effort remove URL refs from caller's projects
         firestore_deleted = False
         db = firestore.client()
         collection_name = SERVICE_COLLECTION_MAP.get(service, "statblock_projects")
         user_field = _owner_field_for_service(service)
+        image_url = asset.canonical_url
         query = db.collection(collection_name).where(user_field, "==", user_id)
-
-        projects_found = 0
         for doc in query.stream():
-            projects_found += 1
             project_data = doc.to_dict() or {}
-
             if service == "map":
-                if (
-                    project_data.get("base_image_url") == image_url
-                    or project_data.get("baseImageUrl") == image_url
+                if project_data.get("base_image_asset_id") == asset_id or (
+                    image_url
+                    and (
+                        project_data.get("base_image_url") == image_url
+                        or project_data.get("baseImageUrl") == image_url
+                    )
                 ):
                     doc.reference.update({
                         "base_image_url": None,
                         "baseImageUrl": None,
+                        "base_image_asset_id": None,
                     })
                     firestore_deleted = True
                 continue
-
             images = (
                 project_data.get("state", {})
                 .get("generatedContent", {})
                 .get("images", [])
             )
-            updated_images = [img for img in images if img.get("url") != image_url]
-            if len(updated_images) < len(images):
-                doc.reference.update({
-                    "state.generatedContent.images": updated_images
-                })
+            updated = [
+                img for img in images
+                if img.get("asset_id") != asset_id and img.get("url") != image_url
+            ]
+            if len(updated) < len(images):
+                doc.reference.update({"state.generatedContent.images": updated})
                 firestore_deleted = True
-
-        logger.info(
-            "ImageDelete scanned projects=%s cloud=%s firestore=%s",
-            projects_found,
-            cloud_deleted,
-            firestore_deleted,
-        )
 
         return {
             "success": True,
             "cloud_deleted": cloud_deleted,
             "firestore_deleted": firestore_deleted,
-            "message": f"Image deleted (cloud={cloud_deleted}, firestore={firestore_deleted})"
+            "asset_id": asset_id,
+            "message": f"Asset deleted (cloud={cloud_deleted}, firestore={firestore_deleted})",
         }
 
     except HTTPException:

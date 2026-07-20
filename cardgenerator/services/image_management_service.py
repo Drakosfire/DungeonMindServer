@@ -36,11 +36,21 @@ except ImportError:
 class ImageUploadResult:
     """Result of an image upload operation"""
     
-    def __init__(self, url: str, success: bool = True, message: Optional[str] = None, file_size: Optional[int] = None):
+    def __init__(
+        self,
+        url: str,
+        success: bool = True,
+        message: Optional[str] = None,
+        file_size: Optional[int] = None,
+        asset_id: Optional[str] = None,
+        provider_image_id: Optional[str] = None,
+    ):
         self.url = url
         self.success = success
         self.message = message or "Upload successful"
         self.file_size = file_size
+        self.asset_id = asset_id
+        self.provider_image_id = provider_image_id
 
 
 class ImageDeleteResult:
@@ -91,15 +101,20 @@ class ImageManagementService:
         try:
             logger.info(f"Uploading image: {file.filename}")
             
-            url = await upload_image_to_cloudflare(file)
+            from cloudflare.handle_images import upload_image_to_cloudflare_detailed
+            from fastapi import HTTPException
+            detailed = await upload_image_to_cloudflare_detailed(file)
             
-            logger.info(f"Successfully uploaded image to: {url}")
+            logger.info("Successfully uploaded image to Cloudflare Images")
             return ImageUploadResult(
-                url=url,
+                url=detailed.url,
                 success=True,
-                message=f"Image {file.filename} uploaded successfully"
+                message=f"Image {file.filename} uploaded successfully",
+                provider_image_id=detailed.provider_image_id,
             )
             
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Failed to upload image {file.filename}: {e}")
             raise ImageProcessingError(f"Failed to upload image: {str(e)}")

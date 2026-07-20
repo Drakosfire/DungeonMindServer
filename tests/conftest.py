@@ -20,6 +20,8 @@ os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,testserver,127.0.0.1")
 os.environ.setdefault("REACT_LANDING_URL", "http://localhost:3000")
 os.environ.setdefault("DUNGEONMIND_API_URL", "http://localhost:7860")
+os.environ.setdefault("FIREBASE_SKIP_INIT", "true")
+os.environ.setdefault("TRUST_PROXY", "false")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -27,6 +29,25 @@ logger.setLevel(logging.DEBUG)
 
 @pytest.fixture(scope="session")
 def test_app():
+    """
+    Build the FastAPI app with Firestore stubbed when credentials are absent
+    (CI / FIREBASE_SKIP_INIT), so security route tests can exercise auth gates.
+    """
+    from unittest.mock import MagicMock
+
+    if os.getenv("FIREBASE_SKIP_INIT", "").lower() in ("1", "true", "yes"):
+        import firestore.firebase_config as fc
+
+        stub = MagicMock(name="firestore_db_stub")
+        fc.db = stub
+        # Also patch modules that already imported db by reference where possible
+        try:
+            import firestore.firestore_utils as fu
+
+            fu.db = stub
+        except Exception:
+            pass
+
     from app import create_app
 
     logger.debug("Setting up test app via create_app()")

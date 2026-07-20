@@ -22,6 +22,8 @@ jobs:
       ALLOWED_HOSTS: localhost,testserver,127.0.0.1
       REACT_LANDING_URL: http://localhost:3000
       DUNGEONMIND_API_URL: http://localhost:7860
+      FIREBASE_SKIP_INIT: "true"
+      TRUST_PROXY: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4

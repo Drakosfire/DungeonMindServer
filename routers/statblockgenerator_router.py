@@ -85,6 +85,8 @@ async def generate_statblock(
     Generate a complete D&D 5e creature statblock from description.
     Public demo allowlist — hard IP/day quota. Authenticated users also counted.
     """
+    from security_limits.input_limits import enforce_max_chars, MAX_DESCRIPTION_CHARS
+    enforce_max_chars(request.description, field="description", limit=MAX_DESCRIPTION_CHARS)
     start_time = time.time()
     user_id = current_user.email if current_user else 'anonymous'
     
@@ -511,65 +513,36 @@ async def delete_image_from_project(
 
 @router.delete("/delete-image")
 async def delete_image(
-    image_url: str,
+    asset_id: str,
     current_user: User = Depends(get_current_user)
 ):
     """
-    Permanently delete an image from Cloudflare storage.
-    Ownership must be verified in the caller's statblock projects first.
+    Permanently delete an image by opaque asset_id from the server registry.
     """
     try:
-        from routers.image_management_router import user_owns_image_url
+        from services.image_asset_registry import get_asset_for_owner, delete_asset_record
+        from cloudflare.handle_images import delete_cloudflare_image_by_id
 
-        logger.info("Statblock delete-image for user_id=%s", current_user.user_id)
+        logger.info("Statblock delete-image asset_id=%s user_id=%s", asset_id, current_user.user_id)
 
-        if not user_owns_image_url(current_user.user_id, image_url, "statblock"):
+        asset = get_asset_for_owner(asset_id, current_user.user_id)
+        if asset is None:
             raise HTTPException(
                 status_code=403,
-                detail="Image not found in your projects; delete denied",
+                detail="Asset not found or not owned by caller",
             )
-        
-        # Extract Cloudflare image ID from URL
-        # Cloudflare URLs typically look like: https://imagedelivery.net/{account_hash}/{image_id}/{variant}
-        import re
-        
-        # Try to extract image ID from Cloudflare URL
-        match = re.search(r'/([a-zA-Z0-9-]+)/[^/]+$', image_url)
-        if not match:
-            logger.warning("Could not extract image ID from owned URL")
-            # Return success anyway (image may already be deleted or URL malformed)
-            return {
-                "success": True,
-                "message": "Image URL processed"
-            }
-        
-        image_id = match.group(1)
-        
-        # Delete from Cloudflare Images
-        cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
-        cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
-        
-        if not cloudflare_account_id or not cloudflare_api_token:
-            logger.error("Cloudflare credentials not configured")
-            raise HTTPException(status_code=500, detail="Image storage not configured")
-        
-        delete_url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1/{image_id}"
-        headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
-        
-        import httpx
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            cf_response = await client.delete(delete_url, headers=headers)
-            cf_result = cf_response.json()
-            
-            if cf_result.get("success"):
-                logger.info("Successfully deleted owned image from Cloudflare")
-            else:
-                logger.warning("Cloudflare deletion returned non-success for owned image")
-                # Don't fail if Cloudflare returns error (image may already be deleted)
-        
+
+        cloud_deleted = False
+        if asset.provider == "cloudflare_images" and asset.object_key:
+            cloud_deleted = await delete_cloudflare_image_by_id(asset.object_key)
+
+        delete_asset_record(asset_id)
+
         return {
             "success": True,
-            "message": "Image deleted successfully"
+            "cloud_deleted": cloud_deleted,
+            "asset_id": asset_id,
+            "message": "Image deleted successfully",
         }
         
     except HTTPException:

@@ -17,6 +17,10 @@ from PIL import Image
 # Auth
 from .auth_router import get_current_user
 from auth_service import User
+from security_limits.paid_budget import paid_budget_store
+from security_limits.input_limits import enforce_max_chars, MAX_PROMPT_CHARS, MAX_DESCRIPTION_CHARS
+from security_limits.image_bounds import open_image_bounded
+from services.image_asset_registry import owner_has_asset_url
 from security_limits.download_limits import (
     download_url_allowed as _download_url_allowed,
     fetch_allowlisted_bytes,
@@ -123,7 +127,13 @@ async def generate_map(
     
     Requires authentication.
     """
-    logger.info(f"🗺️ [MapGenerator] Generate request: prompt={request.prompt[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.prompt, field="prompt", limit=MAX_PROMPT_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator generate user_id=%s prompt_chars=%s",
+        current_user.user_id,
+        len(request.prompt or ""),
+    )
     
     start_time = time.time()
     
@@ -227,7 +237,13 @@ async def generate_masked_map(
     
     Implements TDD tests T178-T180.
     """
-    logger.info(f"🎭 [MapGenerator] Masked generation request: prompt={request.prompt[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.prompt, field="prompt", limit=MAX_PROMPT_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator masked generate user_id=%s prompt_chars=%s",
+        current_user.user_id,
+        len(request.prompt or ""),
+    )
     
     start_time = time.time()
     
@@ -330,7 +346,13 @@ async def generate_svg_mask(
     
     Requires authentication.
     """
-    logger.info(f"🎨 [MapGenerator] SVG mask generation: desc={request.description[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.description, field="description", limit=MAX_DESCRIPTION_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator svg-mask user_id=%s description_chars=%s",
+        current_user.user_id,
+        len(request.description or ""),
+    )
     
     # Lazy import to avoid requiring Cairo library at server startup
     try:
@@ -508,6 +530,12 @@ async def create_project(
         user_id = current_user.sub
         now = datetime.now()
         project_id = str(uuid.uuid4())
+
+        if request.base_image_url and not owner_has_asset_url(user_id, request.base_image_url):
+            raise HTTPException(
+                status_code=403,
+                detail="baseImageUrl must reference an image asset owned by you",
+            )
         
         # Build project with defaults
         grid_config = request.grid_config or DEFAULT_GRID_CONFIG
@@ -668,6 +696,11 @@ async def update_project(
         if request.name is not None:
             updates["name"] = request.name
         if request.base_image_url is not None:
+            if request.base_image_url and not owner_has_asset_url(user_id, request.base_image_url):
+                raise HTTPException(
+                    status_code=403,
+                    detail="baseImageUrl must reference an image asset owned by you",
+                )
             updates["base_image_url"] = request.base_image_url
         if request.grid_config is not None:
             updates["grid_config"] = request.grid_config.model_dump(by_alias=False)
@@ -855,7 +888,7 @@ async def export_map(
         )
         
         # Get image dimensions
-        base_image = Image.open(io.BytesIO(base_image_bytes))
+        base_image = open_image_bounded(base_image_bytes)
         width, height = base_image.size
         
         # Composite map export

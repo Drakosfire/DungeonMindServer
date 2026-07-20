@@ -9,4 +9,4 @@ __all__ = [
     'store_router',
     'lawyer_router',
     'get_current_user'
-] 
+]

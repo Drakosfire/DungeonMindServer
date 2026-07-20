@@ -12,6 +12,12 @@ from models.ruleslawyer_models import (
 )
 from dependencies import get_current_user, get_ruleslawyer_db
 from security_limits.demo_quota import require_demo_quota_ruleslawyer
+from security_limits.input_limits import (
+    enforce_max_chars,
+    MAX_CHAT_HISTORY_MESSAGES,
+    MAX_CHAT_MESSAGE_CHARS,
+    MAX_PROMPT_CHARS,
+)
 from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
@@ -270,6 +276,17 @@ async def query_rules(
 ):
     import time as time_module
     request_start_time = time_module.time()
+
+    enforce_max_chars(request.message, field="message", limit=MAX_PROMPT_CHARS)
+    if len(request.chatHistory or []) > MAX_CHAT_HISTORY_MESSAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"chatHistory cannot exceed {MAX_CHAT_HISTORY_MESSAGES} messages",
+        )
+    for i, msg in enumerate(request.chatHistory or []):
+        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
+        if content:
+            enforce_max_chars(str(content), field=f"chatHistory[{i}]", limit=MAX_CHAT_MESSAGE_CHARS)
     
     logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chatHistory)}")
     

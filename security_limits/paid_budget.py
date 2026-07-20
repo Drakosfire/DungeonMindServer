@@ -1,13 +1,15 @@
 """
 Per-user daily budgets for authenticated paid generation.
 
+Debit by cost units (e.g. number of images), not merely request count.
+
 In-memory only — document Redis follow-up for multi-instance.
 """
 
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Dict
 
@@ -32,26 +34,28 @@ class PaidBudgetStore:
         with self._lock:
             self._by_user.clear()
 
-    def consume(self, user_id: str) -> None:
+    def consume(self, user_id: str, units: int = 1) -> None:
+        if units < 1:
+            units = 1
         with self._lock:
             today = date.today()
             bucket = self._by_user.get(user_id)
             if bucket is None or bucket.day != today:
                 bucket = _UserCounters(day=today)
                 self._by_user[user_id] = bucket
-            if bucket.count >= self.daily_limit:
+            if bucket.count + units > self.daily_limit:
                 raise HTTPException(
                     status_code=429,
                     detail=(
-                        f"Daily generation budget exceeded ({self.daily_limit}/day). "
+                        f"Daily generation budget exceeded ({self.daily_limit} units/day). "
                         "Try again tomorrow."
                     ),
                 )
-            bucket.count += 1
+            bucket.count += units
 
 
 paid_budget_store = PaidBudgetStore()
 
 
-async def require_paid_budget(user_id: str) -> None:
-    paid_budget_store.consume(user_id)
+async def require_paid_budget(user_id: str, units: int = 1) -> None:
+    paid_budget_store.consume(user_id, units=units)

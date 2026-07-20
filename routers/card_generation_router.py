@@ -21,6 +21,7 @@ from routers.auth_router import get_current_user
 from auth_service import User
 from security_limits.demo_quota import require_demo_quota_card_item
 from security_limits.paid_budget import paid_budget_store
+from security_limits.input_limits import enforce_max_chars, clamp_num_images, MAX_PROMPT_CHARS
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def generate_item_description(
         
         if not request.userIdea:
             raise HTTPException(status_code=422, detail="User idea is required")
+        enforce_max_chars(request.userIdea, field="userIdea", limit=MAX_PROMPT_CHARS)
         
         logger.info(
             "Generating item description (idea_chars=%s session=%s)",
@@ -105,10 +107,11 @@ async def generate_core_images(
     """
     try:
         session, session_id = session_data
-        paid_budget_store.consume(current_user.user_id)
-        
         if not sdPrompt:
             raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
+        enforce_max_chars(sdPrompt, field="sdPrompt", limit=MAX_PROMPT_CHARS)
+        numImages = clamp_num_images(numImages)
+        paid_budget_store.consume(current_user.user_id, units=numImages)
         
         logger.info(
             "Generating %s core images (prompt_chars=%s session=%s user=%s)",
@@ -163,12 +166,14 @@ async def generate_card_images(
     """
     try:
         session, session_id = session_data
-        paid_budget_store.consume(current_user.user_id)
         
         if not template:
             raise HTTPException(status_code=422, detail="Template file is required")
         if not sdPrompt:
             raise HTTPException(status_code=422, detail="Stable Diffusion prompt is required")
+        enforce_max_chars(sdPrompt, field="sdPrompt", limit=MAX_PROMPT_CHARS)
+        numImages = clamp_num_images(numImages)
+        paid_budget_store.consume(current_user.user_id, units=numImages)
         
         logger.info(
             "Generating %s card images (prompt_chars=%s session=%s user=%s)",
