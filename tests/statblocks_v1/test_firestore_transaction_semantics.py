@@ -21,6 +21,8 @@ from statblocks_v1.domain.errors import (
 )
 from statblocks_v1.domain.receipts import ValidationMode
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     GeneratedStatblockCandidateV1,
     IdempotencyOutcomeV1,
     IdempotencyRecordV1,
@@ -127,6 +129,8 @@ def test_create_reconciles_exact_outcome_after_indeterminate_commit(load_fixture
     stored_revision = StatblockRevisionResourceV1(
         statblock_id=expected_statblock_id,
         revision_id=expected_revision_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         canonical_definition=canonical,
         definition_digest=digest,
@@ -241,6 +245,8 @@ def test_candidate_create_maps_client_failures_to_persistence_unavailable(load_f
     repository = FirestoreCandidateRepository(client, clock=_clock)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_fail001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -273,6 +279,8 @@ def test_firestore_dump_stringifies_asset_http_urls(load_fixture) -> None:
     )
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_urlencode1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate, validated_at=now
@@ -285,6 +293,8 @@ def test_firestore_dump_stringifies_asset_http_urls(load_fixture) -> None:
     revision = StatblockRevisionResourceV1(
         statblock_id="sb_urlencode1",
         revision_id="rev_urlencode1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         canonical_definition=str(canonicalize_definition(definition)),
         definition_digest=compute_definition_digest(definition),

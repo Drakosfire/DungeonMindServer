@@ -16,6 +16,8 @@ from statblocks_v1.domain.assets import AssetBindingV1
 from statblocks_v1.domain.profiles import RulesetRef
 from statblocks_v1.domain.receipts import ValidationReceiptV1
 from statblocks_v1.domain.resources import (
+    ContractNameV1,
+    ContractVersionV1,
     ExactRevisionLocatorV1,
     StatblockResourceV1,
     StatblockRevisionResourceV1,
@@ -43,8 +45,8 @@ class ErrorEnvelopeV1(StrictModel):
 
 class HealthResponseV1(StrictModel):
     status: str
-    contract: str
-    contract_version: str
+    contract: ContractNameV1
+    contract_version: ContractVersionV1
     capabilities: list[str] = Field(default_factory=list)
 
 

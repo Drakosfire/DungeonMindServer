@@ -17,7 +17,7 @@ from statblocks_v1.api.dependencies import (
 )
 from statblocks_v1.application.revisions import SERVICE_CREATED_BY, RevisionServiceV1
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -73,6 +73,8 @@ def _store_candidate(candidates, definition: dict, now: datetime, *, candidate_i
     model = StatblockDefinitionV1.model_validate(definition)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=model,
         validation_receipt=validate_definition(
             model, ValidationMode.generation_candidate, validated_at=now

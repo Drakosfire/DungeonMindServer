@@ -13,6 +13,8 @@ from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import StaleParentRevisionError, StatblockNotFoundError
 from statblocks_v1.domain.receipts import ValidationMode
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     AssetWarningCode,
     AssetWarningV1,
     ExactRevisionLocatorV1,
@@ -63,6 +65,8 @@ def test_dump_preserves_native_timestamps_for_ttl_fields(bruiser):
     expires = created + timedelta(hours=1)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_ttl001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=bruiser,
         validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
         created_at=created,
@@ -127,6 +131,8 @@ def test_firestore_candidate_ttl_timestamp_round_trip(firestore_client, bruiser)
     expires = created + timedelta(hours=2)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id=f"cand_fs{uuid.uuid4().hex[:10]}",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=bruiser,
         validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
         created_at=created,
@@ -153,6 +159,8 @@ def test_firestore_candidate_typed_contract_round_trip(firestore_client, bruiser
     candidate_id = f"cand_fs{uuid.uuid4().hex[:10]}"
     candidate = GeneratedStatblockCandidateV1(
         candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=bruiser,
         validation_receipt=validate_definition(
             bruiser, ValidationMode.generation_candidate, validated_at=created

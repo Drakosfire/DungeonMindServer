@@ -152,21 +152,26 @@ def export_fixture_pack() -> None:
     from datetime import datetime, timezone
 
     from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
-    from statblocks_v1.application.prompts import PROMPT_VERSION
-    from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
-    from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1
+    from statblocks_v1.api.models import GenerateCandidateRequestV1
+    from statblocks_v1.application.commands import CallerProvenanceV1, GenerateStatblockCommandV1
+    from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+    from statblocks_v1.application.provider import ProviderOutcomeV1
+    from statblocks_v1.application.settings import GenerationSettingsV1
+    from statblocks_v1.domain.assets import AssetBindingV1
     from statblocks_v1.domain.canonicalization import canonicalize_definition
     from statblocks_v1.domain.digests import compute_definition_digest
     from statblocks_v1.domain.errors import PersistenceValidationError
     from statblocks_v1.domain.receipts import ValidationMode
     from statblocks_v1.domain.resources import (
-        GeneratedStatblockCandidateV1,
-        GenerationReceiptV1,
+        STATBLOCK_CONTRACT,
+        STATBLOCK_CONTRACT_VERSION,
         StatblockResourceV1,
         StatblockRevisionResourceV1,
     )
     from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
     from statblocks_v1.domain.validation import validate_definition
+    from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
+    from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
 
     fixtures_root = ROOT / "Docs" / "Design" / "fixtures" / "dungeonbuddy-statblock-v1"
     definition = StatblockDefinitionV1.model_validate(
@@ -189,9 +194,6 @@ def export_fixture_pack() -> None:
             "role": "portrait",
         }
     )
-    candidate_receipt = validate_definition(
-        definition, ValidationMode.generation_candidate, validated_at=now
-    )
     preview_receipt = validate_definition(
         definition, ValidationMode.editor_preview, validated_at=now
     )
@@ -203,38 +205,58 @@ def export_fixture_pack() -> None:
     )
     assert not invalid_persistence_receipt.is_persistence_ready
     persistence_error = PersistenceValidationError(invalid_persistence_receipt)
-    compiled = compile_openai_definition_schema()
-    generation_receipt = GenerationReceiptV1(
-        request_id="fixture-generate-1",
-        provider="fixture",
-        model="fixture-model",
-        prompt_version=PROMPT_VERSION,
-        schema_version=compiled.compiler_version,
-        schema_fingerprint=compiled.fingerprint,
-        generated_at=now,
-        caller_scope="dungeonbuddy",
-        actor="fixture",
-        source_description_digest="sha256:" + ("a" * 64),
-        latency_ms=12,
+
+    # One possible live generate exchange: omit actor/asset_options so route defaults
+    # apply (no images; brief from description; digest computed from description).
+    generate_request = {
+        "request_id": "fixture-generate-1",
+        "ruleset": definition.ruleset.model_dump(mode="json"),
+        "source": {
+            "name_hint": "Ironhide Brute",
+            "description": "A brutal enforcer.",
+        },
+    }
+    request = GenerateCandidateRequestV1.model_validate(generate_request)
+    command = GenerateStatblockCommandV1(
+        request_id=request.request_id,
+        ruleset=request.ruleset,
+        source=request.source,
+        intent=request.intent,
+        context=request.context,
+        asset_options=request.asset_options,
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy", actor=request.actor),
     )
-    canonical = str(canonicalize_definition(definition))
-    digest = compute_definition_digest(definition)
-    candidate = GeneratedStatblockCandidateV1(
-        candidate_id="cand_fixture1",
-        definition=definition,
-        validation_receipt=candidate_receipt,
-        generation_receipt=generation_receipt,
-        asset_brief=AssetBriefV1(prompt="Ironhide Brute portrait"),
-        assets=[binding.asset],
-        created_at=now,
-        expires_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+    candidate_ttl_seconds = 86400
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(
+            ProviderOutcomeV1.succeeded(
+                definition.model_dump(mode="json"),
+                latency_ms=0,
+            )
+        ),
+        candidates=InMemoryCandidateRepository(clock=lambda: now),
+        settings=GenerationSettingsV1("fixture-model", 1.0, 0, candidate_ttl_seconds),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_fixture1",
     )
+    candidate = service.generate(command)
+    assert not isinstance(candidate, GenerationFailureV1)
     assert candidate.contract == CONTRACT_NAME
     assert candidate.contract_version == CONTRACT_VERSION
     assert candidate.generation_receipt is not None
+    assert candidate.generation_receipt.actor is None
+    assert candidate.generation_receipt.source_description_digest is not None
+    assert candidate.assets == []
+    assert candidate.asset_brief is not None
+    assert candidate.asset_brief.prompt == request.source.description
+
+    canonical = str(canonicalize_definition(definition))
+    digest = compute_definition_digest(definition)
     revision = StatblockRevisionResourceV1(
         statblock_id="sb_fixture1",
         revision_id="rev_fixture1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         canonical_definition=canonical,
         definition_digest=digest,
@@ -251,14 +273,7 @@ def export_fixture_pack() -> None:
         "asset_bindings": [binding.model_dump(mode="json")],
     }
     fixtures = {
-        "generate-request.json": {
-            "request_id": "fixture-generate-1",
-            "ruleset": definition.ruleset.model_dump(mode="json"),
-            "source": {
-                "name_hint": "Ironhide Brute",
-                "description": "A brutal enforcer.",
-            },
-        },
+        "generate-request.json": generate_request,
         "candidate-response.json": candidate.model_dump(mode="json"),
         "validate-request.json": {"definition": definition.model_dump(mode="json")},
         "validate-response.json": {

@@ -41,6 +41,8 @@ from statblocks_v1.domain.receipts import (
     ValidationStatus,
 )
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     AssetWarningCode,
     AssetWarningV1,
     ExactRevisionLocatorV1,
@@ -226,6 +228,8 @@ class GenerationServiceV1:
 
         candidate = GeneratedStatblockCandidateV1(
             candidate_id=self._candidate_id_factory(),
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=definition,
             validation_receipt=receipt,
             generation_receipt=GenerationReceiptV1(

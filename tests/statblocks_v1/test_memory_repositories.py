@@ -25,7 +25,7 @@ from statblocks_v1.domain.errors import (
     StatblockNotFoundError,
 )
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -281,6 +281,8 @@ def test_id_collisions_cannot_overwrite_history(load_fixture):
     candidate_repo = InMemoryCandidateRepository(clock=_clock)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_000001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -316,6 +318,8 @@ def test_candidate_expiration(load_fixture):
     created = _clock()
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_000001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -337,6 +341,8 @@ def test_concurrent_candidate_creates_are_atomic(load_fixture):
     def make_candidate(tag: str) -> GeneratedStatblockCandidateV1:
         return GeneratedStatblockCandidateV1(
             candidate_id="cand_shared1",
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=definition,
             validation_receipt=validate_definition(
                 definition, ValidationMode.generation_candidate

@@ -83,8 +83,8 @@ class GenerationReceiptV1(StrictModel):
 
 class GeneratedStatblockCandidateV1(StrictModel):
     candidate_id: str = Field(pattern=r"^cand_[a-z0-9]+$")
-    contract: ContractNameV1 = "dungeonmind.dungeonbuddy-statblocks"
-    contract_version: ContractVersionV1 = "1.0.0"
+    contract: ContractNameV1
+    contract_version: ContractVersionV1
     definition: StatblockDefinitionV1
     validation_receipt: ValidationReceiptV1
     generation_receipt: GenerationReceiptV1 | None = None
@@ -107,8 +107,8 @@ class StatblockRevisionResourceV1(StrictModel):
     statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
     revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
     parent_revision_id: str | None = Field(default=None, pattern=r"^rev_[a-z0-9]+$")
-    contract: ContractNameV1 = "dungeonmind.dungeonbuddy-statblocks"
-    contract_version: ContractVersionV1 = "1.0.0"
+    contract: ContractNameV1
+    contract_version: ContractVersionV1
     definition: StatblockDefinitionV1
     canonical_definition: str = Field(min_length=2)
     definition_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
