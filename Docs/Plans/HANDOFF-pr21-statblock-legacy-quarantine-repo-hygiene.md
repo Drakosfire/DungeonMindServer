@@ -197,7 +197,30 @@ PR21 is complete when:
 
 - **Consumer inventory:** `Docs/Design/AUDIT-statblock-legacy-consumers.md` confirms active LandingPage generation, project, image, validation, and CR consumers; active DungeonBuddy v2 consumers; and session routes with unknown current consumers.
 - **Files moved/removed:** v2 compatibility routes moved to `routers/statblock_v2_compatibility_router.py`; the legacy router retains app-facing paths. Removed tracked `dungeonmind.egg-info` metadata and historical `.VSCodeCounter` reports.
-- **Compatibility evidence:** focused route smoke tests preserve legacy paths and the effective legacy health payload; v2 route and auth tests exercise the unchanged URLs.
+- **Shared generator:** `statblockgenerator.runtime.get_statblock_generator()` is the single process factory used by both legacy and v2 routers so production import constructs one `StatBlockGenerator` / OpenAI client.
+- **Compatibility evidence:** focused route smoke tests preserve legacy paths and the effective legacy health payload; v2 route and auth tests exercise the unchanged URLs; production `app.py` mount smoke verifies both routers are registered once and share the same generator instance.
 - **Dependency/build review:** pytest remains duplicated across runtime, optional development, and dependency-group declarations. Moving it would rewrite the committed lockfile substantially with the available uv version, so this cleanup is deferred rather than introducing lockfile churn.
 - **Remaining debt:** `Docs/Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md` records startup, global-service, and synchronous Firestore concerns.
 - **Recommended next slice:** application-factory and startup-lifecycle modernization, followed by evidence-based legacy session disposition.
+
+### Verification commands and results
+
+```bash
+# Focused v1 lane (must stay green; no behavior change intended)
+./scripts/run_statblocks_v1_tests.sh
+# Result (2026-07-20): 207 passed, 8 skipped
+
+# Legacy + v2 + shared-runtime + production app mount smoke
+PYTHONPATH=. uv run pytest \
+  tests/statblockgenerator/test_legacy_route_smoke.py \
+  tests/statblockgenerator/test_statblock_runtime.py \
+  tests/statblockgenerator/test_production_app_mount_smoke.py \
+  tests/statblockgenerator/test_statblockgenerator_v2_routes.py \
+  tests/statblockgenerator/test_statblockgenerator_v2_auth.py \
+  -q
+# Result (2026-07-20): 22 passed
+
+# Artifact ignore check (also covered by production smoke)
+git check-ignore -v .VSCodeCounter/x dungeonmind.egg-info/PKG-INFO
+# Result: both paths matched by .gitignore (*.egg-info/, .VSCodeCounter/)
+```

@@ -24,7 +24,7 @@ from statblockgenerator.services.statblock_draft_adapter import (
     build_draft,
     build_generation_request,
 )
-from statblockgenerator.statblock_generator import StatBlockGenerator
+from statblockgenerator.runtime import get_statblock_generator
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ router = APIRouter(
     prefix="/api/statblockgenerator",
     tags=["statblockgenerator-v2-compatibility"],
 )
-statblock_generator = StatBlockGenerator()
+# Shared with the legacy app router — do not construct a second OpenAI client.
+statblock_generator = get_statblock_generator()
 
 
 @router.get("/v2/health", dependencies=[Depends(require_dungeonbuddy_internal_key)])

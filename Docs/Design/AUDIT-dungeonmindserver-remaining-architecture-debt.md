@@ -10,8 +10,17 @@
 2. `app.py` constructs `RulesLawyerService` globally. The declared `lifespan` function preloads embeddings but is not passed to `FastAPI(...)`, so its intended lifecycle behavior is currently unwired.
 3. The application mounts unrelated product routers in one global module. Focused bounded-context tests avoid importing it, but production startup still couples unrelated dependencies and credentials.
 4. Several legacy async route handlers call synchronous Firestore client methods directly. This can block the event loop under load.
-5. Legacy StatBlockGenerator retains global service construction and synchronous Firestore access; PR21 only separated its historical v2 routes to clarify ownership without altering response behavior.
-6. The server has no general application factory for isolated router composition, settings injection, or startup tests.
+5. Legacy StatBlockGenerator still constructs a process-global service and uses
+   synchronous Firestore access. PR21 introduced
+   ``statblockgenerator.runtime.get_statblock_generator`` so the legacy app router
+   and historical v2 compatibility router share one instance (one OpenAI client)
+   instead of constructing two at import time. Full DI/app-factory migration
+   remains deferred.
+6. The server has no general application factory for isolated router composition,
+   settings injection, or startup tests. PR21 added a production ``app.py`` mount
+   smoke under ``tests/statblockgenerator/test_production_app_mount_smoke.py``;
+   broader factory work remains a successor slice.
+
 
 ## Recommended successor slice
 

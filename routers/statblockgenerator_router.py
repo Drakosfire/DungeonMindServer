@@ -18,7 +18,7 @@ from .auth_router import get_current_user, get_current_user_optional
 from auth_service import User
 
 # Import StatBlock components
-from statblockgenerator.statblock_generator import StatBlockGenerator
+from statblockgenerator.runtime import get_statblock_generator
 from statblockgenerator.models.statblock_models import (
     CreatureGenerationRequest,
     StatBlockValidationRequest,
@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 # Initialize router
 router = APIRouter(prefix="/api/statblockgenerator", tags=["statblockgenerator"])
 
-# Global StatBlock generator instance
-statblock_generator = StatBlockGenerator()
+# Global StatBlock generator instance (shared with v2 compatibility routes)
+statblock_generator = get_statblock_generator()
 
 # Firestore collection names
 STATBLOCK_SESSIONS_COLLECTION = "statblock_sessions"
