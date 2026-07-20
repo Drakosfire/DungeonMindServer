@@ -6,6 +6,33 @@
 **Predecessor:** PR18 revision resource API  
 **Successor:** `HANDOFF-pr20-statblock-v1-production-hardening-launch.md`
 
+## PR18 predecessor completion notes
+
+- Resource operation IDs are `create_statblock_v1`,
+  `append_statblock_revision_v1`, `get_statblock_v1`,
+  `list_statblock_revisions_v1`, and `get_statblock_revision_v1`.
+- Create returns `{ statblock, revision }`; append and exact read return
+  `StatblockRevisionResourceV1`; list returns `{ revisions }` chronologically.
+  The durable locator is `statblock_id + revision_id`.
+- Write DTOs expose typed acceptance fields only (`change_summary`,
+  `accepted_through`, `actor`, `candidate_id`, `asset_bindings`). There is no
+  free-form caller `provenance` object. Server-owned `provenance.candidate`
+  audit evidence is attached on first write.
+- `created_by` is always the service identity (`dungeonbuddy`). Caller `actor`
+  is stored as provenance `accepted_by` only.
+- Candidate GET returns `410` once expired. Acceptance may still reference an
+  expired candidate while its server-owned record remains available. Same-key
+  create/append replay survives candidate TTL deletion because idempotency is
+  checked before `get_for_acceptance`.
+- PR18 extends the PR17 error map with `idempotency_conflict`,
+  `parent_revision_mismatch`, `stale_parent_revision`, immutable conflicts,
+  `ambiguous_request_payload`, `validation_failed` (with full receipt), and
+  `transaction_indeterminate`. Resource write/read OpenAPI declares the typed
+  failure statuses; no PUT/PATCH/DELETE revision routes exist.
+- Asset bindings are currently caller-supplied revision-envelope dictionaries;
+  they are excluded from the mechanics definition digest. PR19 replaces them
+  with the typed asset contract.
+
 ## 0. Mission
 
 Make the authoritative v1 route cleanly consumable by DungeonBuddy: complete typed asset-reference behavior, deterministic OpenAPI/schema publication, generated consumer types/client, and cross-repository contract tests.

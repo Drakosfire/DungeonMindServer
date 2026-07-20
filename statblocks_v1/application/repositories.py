@@ -61,9 +61,23 @@ def _normalize_request_payload(value: Any) -> Any:
     return value
 
 
+def _idempotency_provenance(provenance: Mapping[str, Any]) -> dict[str, Any]:
+    """Exclude server-owned candidate audit evidence from the request digest.
+
+    ``candidate_id`` is hashed separately. Replay must not require the live
+    candidate document after Firestore TTL deletion.
+    """
+
+    return {key: value for key, value in provenance.items() if key != "candidate"}
+
+
 class CandidateRepository(Protocol):
     def create(self, candidate: GeneratedStatblockCandidateV1) -> GeneratedStatblockCandidateV1: ...
     def get(self, candidate_id: str, *, now: datetime | None = None) -> GeneratedStatblockCandidateV1: ...
+
+    def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
+        """Load retained candidate audit data without applying workflow expiry."""
+        ...
 
 
 class StatblockRepository(Protocol):
@@ -137,7 +151,7 @@ class CreateStatblockCommand:
                         canonicalize_definition(self._definition)
                     ),
                     "created_by": created_by,
-                    "provenance": self._provenance,
+                    "provenance": _idempotency_provenance(self._provenance),
                     "asset_bindings": self._asset_bindings,
                     "candidate_id": candidate_id,
                 },
@@ -210,7 +224,7 @@ class AppendRevisionCommand:
                     "definition_canonical": str(
                         canonicalize_definition(self._definition)
                     ),
-                    "provenance": self._provenance,
+                    "provenance": _idempotency_provenance(self._provenance),
                     "asset_bindings": self._asset_bindings,
                     "candidate_id": candidate_id,
                 },

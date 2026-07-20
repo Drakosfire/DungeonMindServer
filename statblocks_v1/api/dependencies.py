@@ -27,6 +27,7 @@ from statblocks_v1.application.repositories import (
     CandidateRepository,
     StatblockPersistenceRepository,
 )
+from statblocks_v1.application.revisions import RevisionServiceV1
 from statblocks_v1.domain.errors import (
     InternalServiceMisconfiguredError,
     UnauthorizedInternalClientError,
@@ -45,6 +46,7 @@ Clock = Callable[[], datetime]
 _candidate_repository_factory: Callable[[], CandidateRepository] | None = None
 _persistence_repository_factory: Callable[[], StatblockPersistenceRepository] | None = None
 _generation_service_factory: Callable[[], GenerationServiceV1] | None = None
+_revision_service_factory: Callable[[], RevisionServiceV1] | None = None
 
 
 def configure_candidate_repository_factory(
@@ -66,6 +68,13 @@ def configure_generation_service_factory(
 ) -> None:
     global _generation_service_factory
     _generation_service_factory = factory
+
+
+def configure_revision_service_factory(
+    factory: Callable[[], RevisionServiceV1] | None,
+) -> None:
+    global _revision_service_factory
+    _revision_service_factory = factory
 
 
 async def require_internal_service_auth(
@@ -117,6 +126,17 @@ def get_generation_service() -> GenerationServiceV1:
             InternalServiceMisconfiguredError("Generation service is not configured"),
         )
     return _generation_service_factory()
+
+
+def get_revision_service() -> RevisionServiceV1:
+    if _revision_service_factory is not None:
+        return _revision_service_factory()
+    # Default composition uses already-configured repository factories.
+    return RevisionServiceV1(
+        persistence=get_persistence_repository(),
+        candidates=get_candidate_repository(),
+        clock=get_clock(),
+    )
 
 
 def get_validator() -> Validator:
