@@ -11,6 +11,7 @@ from statblocks_v1.application.repositories import (
     CreateStatblockCommand,
     compute_request_digest,
 )
+from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
@@ -24,7 +25,7 @@ from statblocks_v1.domain.errors import (
     StatblockNotFoundError,
 )
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -209,7 +210,19 @@ def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     expected_digest = compute_definition_digest(definition)
     repository = _repository()
     provenance = {"source": "test"}
-    assets = [{"asset_id": "img_1"}]
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    binding = AssetBindingV1(
+        asset=AssetRefV1(
+            asset_id="img_1",
+            provider_kind="cloudflare_images",
+            url="https://example.test/img_1.png",
+            mime_type="image/png",
+            created_at=now,
+        ),
+        role="portrait",
+    )
+    assets = [binding]
+    expected_bindings = [binding.model_copy(deep=True)]
     command = _create(
         definition,
         provenance=provenance,
@@ -220,10 +233,10 @@ def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     # Mutate the caller's originals and any returned property copies before/during create.
     definition.identity.name = "Mutated Source Definition"
     provenance["source"] = "mutated-source"
-    assets[0]["asset_id"] = "img_source_mutated"
+    assets[0].asset.asset_id = "img_source_mutated"
     command.definition.identity.name = "Mutated Property Copy"
     command.provenance["source"] = "mutated-property"
-    command.asset_bindings[0]["asset_id"] = "img_property_mutated"
+    command.asset_bindings[0].asset.asset_id = "img_property_mutated"
     with pytest.raises(AttributeError):
         command.created_by = "hijacked"
 
@@ -237,7 +250,7 @@ def test_caller_mutation_cannot_alter_stored_revision(load_fixture):
     stored = repository.get_revision(revision.statblock_id, revision.revision_id)
     assert stored.definition.identity.name == "Ironhide Brute"
     assert stored.provenance == {"source": "test"}
-    assert stored.asset_bindings == [{"asset_id": "img_1"}]
+    assert stored.asset_bindings == expected_bindings
     assert stored.canonical_definition == expected_canonical
     assert stored.definition_digest == expected_digest
     assert stored.validation_receipt.definition_digest == expected_digest
@@ -268,6 +281,8 @@ def test_id_collisions_cannot_overwrite_history(load_fixture):
     candidate_repo = InMemoryCandidateRepository(clock=_clock)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_000001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -303,6 +318,8 @@ def test_candidate_expiration(load_fixture):
     created = _clock()
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_000001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -324,13 +341,15 @@ def test_concurrent_candidate_creates_are_atomic(load_fixture):
     def make_candidate(tag: str) -> GeneratedStatblockCandidateV1:
         return GeneratedStatblockCandidateV1(
             candidate_id="cand_shared1",
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=definition,
             validation_receipt=validate_definition(
                 definition, ValidationMode.generation_candidate
             ),
             created_at=created,
             expires_at=created + timedelta(minutes=5),
-            asset_brief={"tag": tag},
+            asset_brief=AssetBriefV1(prompt=f"tag-{tag}"),
         )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -355,8 +374,8 @@ def test_concurrent_candidate_creates_are_atomic(load_fixture):
     }
     stored = repository.get("cand_shared1", now=created)
     assert stored.asset_brief == results[0].asset_brief
-    results[0].asset_brief["tag"] = "mutated"
-    assert repository.get("cand_shared1", now=created).asset_brief != {"tag": "mutated"}
+    results[0].asset_brief.prompt = "mutated"
+    assert repository.get("cand_shared1", now=created).asset_brief.prompt != "mutated"
 
 
 def test_digest_api_still_rejects_non_definition_inputs(load_fixture):

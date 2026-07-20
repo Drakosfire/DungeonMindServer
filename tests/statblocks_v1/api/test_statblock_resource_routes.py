@@ -17,7 +17,7 @@ from statblocks_v1.api.dependencies import (
 )
 from statblocks_v1.application.revisions import SERVICE_CREATED_BY, RevisionServiceV1
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -54,7 +54,16 @@ def _create_payload(definition: dict, key: str = "create-1", **extra) -> dict:
         "change_summary": "Accepted after DungeonBuddy review.",
         "actor": "user_123",
         "accepted_through": {"surface": "review_panel"},
-        "asset_bindings": [{"asset_id": "asset_123", "role": "portrait"}],
+        "asset_bindings": [{
+            "asset": {
+                "asset_id": "asset_123",
+                "provider_kind": "cloudflare_images",
+                "url": "https://imagedelivery.net/account/asset_123/public",
+                "mime_type": "image/png",
+                "created_at": "2026-01-01T00:00:00Z",
+            },
+            "role": "portrait",
+        }],
     }
     payload.update(extra)
     return payload
@@ -64,6 +73,8 @@ def _store_candidate(candidates, definition: dict, now: datetime, *, candidate_i
     model = StatblockDefinitionV1.model_validate(definition)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=model,
         validation_receipt=validate_definition(
             model, ValidationMode.generation_candidate, validated_at=now

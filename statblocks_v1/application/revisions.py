@@ -13,6 +13,7 @@ from statblocks_v1.application.repositories import (
     CreateStatblockCommand,
     StatblockPersistenceRepository,
 )
+from statblocks_v1.domain.assets import AssetBindingV1
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import IdempotencyConflictError, PersistenceValidationError
 from statblocks_v1.domain.receipts import ValidationMode
@@ -58,7 +59,7 @@ class RevisionServiceV1:
         change_summary: str,
         accepted_through: dict[str, Any] | None = None,
         actor: str | None = None,
-        asset_bindings: list[dict[str, Any]] | None = None,
+        asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
     ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
         client_provenance = _seal_client_provenance(
@@ -103,7 +104,7 @@ class RevisionServiceV1:
         change_summary: str,
         accepted_through: dict[str, Any] | None = None,
         actor: str | None = None,
-        asset_bindings: list[dict[str, Any]] | None = None,
+        asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
     ) -> StatblockRevisionResourceV1:
         client_provenance = _seal_client_provenance(

@@ -958,8 +958,8 @@ The response is another candidate, not a persisted revision.
 
 ```json
 {
-  "contract": "dungeonbuddy-statblock",
-  "contract_version": "v1",
+  "contract": "dungeonmind.dungeonbuddy-statblocks",
+  "contract_version": "1.0.0",
   "candidate_id": "cand_...",
   "definition": {},
   "validation_receipt": {

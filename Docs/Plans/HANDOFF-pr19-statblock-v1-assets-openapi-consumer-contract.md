@@ -1,6 +1,7 @@
 # HANDOFF — PR19 Statblock v1 assets, OpenAPI, and consumer contract
 
-**Status:** READY AFTER PR18  
+**Status:** IN REVIEW — rebased onto merged PR18; contract publication sealed;
+DungeonBuddy compile/smoke intentionally hard-gated to PR20
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Coordinated consumer:** `Drakosfire/DungeonMindBuddy`  
 **Predecessor:** PR18 revision resource API  
@@ -35,9 +36,9 @@
 
 ## 0. Mission
 
-Make the authoritative v1 route cleanly consumable by DungeonBuddy: complete typed asset-reference behavior, deterministic OpenAPI/schema publication, generated consumer types/client, and cross-repository contract tests.
+Make the authoritative v1 route cleanly consumable by DungeonBuddy: complete typed asset-reference behavior, deterministic OpenAPI/schema publication, generated consumer types/client, and server-owned cross-repository contract fixtures.
 
-DungeonMindServer remains the sole contract owner.
+DungeonMindServer remains the sole contract owner. Coordinated DungeonBuddy compile, fixture parse, projection, combat-seed, and `human_adjudicated` smoke are **intentionally deferred to PR20** (see §10–§11). This PR publishes the contract surface those proofs consume; it does not require a live DungeonBuddy checkout to merge.
 
 ## 1. Asset contract
 
@@ -135,7 +136,8 @@ Publish a small contract fixture pack containing:
 - exact-revision response;
 - typed error examples.
 
-DungeonBuddy should load these fixtures through generated types and prove:
+DungeonBuddy should load these fixtures through generated types and prove (in
+**PR20**, not as a PR19 merge gate):
 
 - candidate review data can be parsed;
 - exact revision locator is retained;
@@ -143,16 +145,21 @@ DungeonBuddy should load these fixtures through generated types and prove:
 - no Markdown is required;
 - unknown contract drift fails loudly.
 
+PR19’s obligation is to publish fixtures that validate against authoritative
+server models and match live route semantics so that PR20 smoke can run without
+re-deriving the contract.
+
 ## 7. Drift detection
 
-Add CI behavior that detects:
+Add CI behavior **in DungeonMindServer** that detects:
 
 - OpenAPI/schema changed without regenerated artifact;
-- generated DungeonBuddy types stale relative to authoritative fingerprint;
-- fixture no longer validates;
-- discriminator or enum change not reflected in consumer.
+- checked-in generated TypeScript stale relative to authoritative fingerprint;
+- fixture no longer validates against authoritative models;
+- discriminator or enum change not reflected in the published client.
 
-Avoid requiring a live DungeonBuddy checkout in every DungeonMindServer unit test if that makes CI fragile. A coordinated consumer PR or versioned artifact check is acceptable.
+Avoid requiring a live DungeonBuddy checkout in every DungeonMindServer unit test.
+Coordinated consumer compile/import smoke is owned by PR20.
 
 ## 8. Contract versioning
 
@@ -183,7 +190,7 @@ Coordinated DungeonBuddy files are determined in its PR, but the generated outpu
 
 ## 10. Testing requirements
 
-DungeonMindServer:
+DungeonMindServer (PR19 merge gate):
 
 - asset reference round-trip;
 - asset gateway fake and failure behavior;
@@ -191,12 +198,14 @@ DungeonMindServer:
 - deterministic OpenAPI export;
 - every fixture validates against authoritative models;
 - expected operation IDs and discriminators are present;
-- drift test fails on stale artifact.
+- drift test fails on stale artifact;
+- contract identity required/exact on candidate, revision, and health;
+- generate-request / candidate-response fixtures form one live generation exchange.
 
-DungeonBuddy coordinated smoke:
+DungeonBuddy coordinated smoke (**PR20 hard gate**, not required to merge PR19):
 
-- generated client/types compile;
-- fixtures parse;
+- generated client/types compile in DungeonBuddy;
+- fixtures parse through generated types;
 - candidate can be projected;
 - exact revision can seed combat minimums;
 - `human_adjudicated` mechanics remain renderable and non-automated.
@@ -205,17 +214,23 @@ DungeonBuddy coordinated smoke:
 
 PR19 is complete when:
 
-- DungeonMindServer publishes one deterministic v1 contract artifact;
-- DungeonBuddy consumes generated rather than handwritten canonical types;
+- DungeonMindServer publishes one deterministic v1 contract artifact and
+  generated TypeScript client with fingerprint drift detection;
 - asset references are typed and CDN-backed;
 - asset failure cannot invalidate otherwise valid mechanics without explicit policy;
-- cross-repo fixtures cover the full authoring/acceptance/replay loop;
-- contract drift is detected automatically;
+- cross-repo fixtures cover the full authoring/acceptance/replay loop and
+  validate against authoritative models with live route semantics;
+- contract identity is required exact literals on candidate, revision, and health;
 - no display or campaign image preference leaks into mechanics digest.
+
+PR19 is **not** blocked on DungeonBuddy importing or compiling the generated
+client. That coordinated consumer proof is intentionally hard-gated to PR20
+(`HANDOFF-pr20-statblock-v1-production-hardening-launch.md` §8 / §12 / §13).
 
 ## 12. Non-goals
 
 - no DungeonBuddy final UI design;
+- no DungeonBuddy compile/import smoke in this PR (owned by PR20);
 - no image editor;
 - no Threat graph write;
 - no legacy image migration;
@@ -230,5 +245,6 @@ Before merge, update PR20 with:
 - generated client command and output path;
 - final route operation IDs;
 - required asset environment settings;
-- cross-repo smoke command;
+- **ownership of the coordinated DungeonBuddy compile/smoke** (fixtures path,
+  fingerprint, projection/combat-seed/`human_adjudicated` proofs);
 - any pre-launch contract changes still pending.

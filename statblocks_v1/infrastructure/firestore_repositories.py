@@ -12,6 +12,8 @@ from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
 
+from pydantic import AnyUrl
+
 from statblocks_v1.application.repositories import AppendRevisionCommand, CreateStatblockCommand
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
@@ -27,6 +29,8 @@ from statblocks_v1.domain.errors import (
     TransactionIndeterminateError,
 )
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     GeneratedStatblockCandidateV1,
     IdempotencyOutcomeV1,
     IdempotencyRecordV1,
@@ -181,6 +185,8 @@ class FirestoreStatblockPersistenceRepository:
         revision = StatblockRevisionResourceV1(
             statblock_id=statblock_id,
             revision_id=revision_id,
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=stored_definition,
             canonical_definition=str(canonical),
             definition_digest=digest,
@@ -247,6 +253,8 @@ class FirestoreStatblockPersistenceRepository:
             statblock_id=command.statblock_id,
             revision_id=revision_id,
             parent_revision_id=command.parent_revision_id,
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=stored_definition,
             canonical_definition=str(canonical),
             definition_digest=digest,
@@ -449,6 +457,9 @@ def _firestore_encode(value: Any) -> Any:
         return value
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, AnyUrl) or type(value).__name__ == "Url":
+        # Pydantic HttpUrl dumps as Url under mode="python"; Firestore needs strings.
+        return str(value)
     if isinstance(value, dict):
         return {str(key): _firestore_encode(item) for key, item in value.items()}
     if isinstance(value, list):

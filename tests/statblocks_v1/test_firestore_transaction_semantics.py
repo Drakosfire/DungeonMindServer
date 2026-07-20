@@ -21,6 +21,8 @@ from statblocks_v1.domain.errors import (
 )
 from statblocks_v1.domain.receipts import ValidationMode
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     GeneratedStatblockCandidateV1,
     IdempotencyOutcomeV1,
     IdempotencyRecordV1,
@@ -127,6 +129,8 @@ def test_create_reconciles_exact_outcome_after_indeterminate_commit(load_fixture
     stored_revision = StatblockRevisionResourceV1(
         statblock_id=expected_statblock_id,
         revision_id=expected_revision_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         canonical_definition=canonical,
         definition_digest=digest,
@@ -241,6 +245,8 @@ def test_candidate_create_maps_client_failures_to_persistence_unavailable(load_f
     repository = FirestoreCandidateRepository(client, clock=_clock)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_fail001",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=definition,
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
@@ -251,3 +257,67 @@ def test_candidate_create_maps_client_failures_to_persistence_unavailable(load_f
 
     with pytest.raises(PersistenceUnavailableError):
         repository.create(candidate)
+
+
+def test_firestore_dump_stringifies_asset_http_urls(load_fixture) -> None:
+    """HttpUrl must become a plain string before Firestore sees the payload."""
+
+    from datetime import timezone
+
+    from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1, AssetRefV1
+    from statblocks_v1.infrastructure.firestore_repositories import _dump
+
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    asset = AssetRefV1(
+        asset_id="asset_url_encode",
+        provider_kind="cloudflare_images",
+        url="https://imagedelivery.net/account/asset_url_encode/public",
+        mime_type="image/png",
+        created_at=now,
+        variants=[{"name": "thumb", "url": "https://imagedelivery.net/account/asset_url_encode/thumb"}],
+    )
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id="cand_urlencode1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=validate_definition(
+            definition, ValidationMode.generation_candidate, validated_at=now
+        ),
+        asset_brief=AssetBriefV1(prompt="encode me"),
+        assets=[asset],
+        created_at=now,
+        expires_at=now,
+    )
+    revision = StatblockRevisionResourceV1(
+        statblock_id="sb_urlencode1",
+        revision_id="rev_urlencode1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        canonical_definition=str(canonicalize_definition(definition)),
+        definition_digest=compute_definition_digest(definition),
+        validation_receipt=validate_definition(
+            definition, ValidationMode.persistence, validated_at=now
+        ),
+        asset_bindings=[AssetBindingV1(asset=asset, role="portrait")],
+        created_at=now,
+    )
+
+    candidate_payload = _dump(candidate)
+    revision_payload = _dump(revision)
+
+    assert candidate_payload["assets"][0]["url"] == (
+        "https://imagedelivery.net/account/asset_url_encode/public"
+    )
+    assert isinstance(candidate_payload["assets"][0]["url"], str)
+    assert candidate_payload["assets"][0]["variants"][0]["url"] == (
+        "https://imagedelivery.net/account/asset_url_encode/thumb"
+    )
+    assert isinstance(candidate_payload["assets"][0]["variants"][0]["url"], str)
+    assert revision_payload["asset_bindings"][0]["asset"]["url"] == (
+        "https://imagedelivery.net/account/asset_url_encode/public"
+    )
+    assert isinstance(revision_payload["asset_bindings"][0]["asset"]["url"], str)
+    assert isinstance(candidate_payload["expires_at"], datetime)

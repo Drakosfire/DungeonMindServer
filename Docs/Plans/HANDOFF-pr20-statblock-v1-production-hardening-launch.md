@@ -6,6 +6,52 @@
 **Predecessor:** PR19 assets/OpenAPI/consumer contract  
 **Successor:** `HANDOFF-pr21-statblock-legacy-quarantine-repo-hygiene.md`
 
+## PR19 predecessor completion notes
+
+- The authoritative isolated artifact is
+  `openapi/dungeonbuddy-statblocks-v1.json` (schema fingerprint
+  `sha256:22ab847ac7197055ae1ef12c287d39a99cd720a8e03cd9856bfc3e3259e0cce2`).
+  Regenerate it, its fixtures, and the checked-in consumer client with
+  `PYTHONPATH=. uv run --isolated --no-project --with 'fastapi==0.115.6'
+  --with 'pydantic==2.7.4' --with 'httpx==0.28.1' --with 'starlette==0.41.3'
+  python scripts/export_dungeonbuddy_statblock_openapi.py`.
+- Resource envelopes and health publish the package contract identity as
+  **required** exact literals (`dungeonmind.dungeonbuddy-statblocks` / `1.0.0`),
+  matching the design header — not the obsolete `dungeonbuddy-statblock` / `v1`
+  pair. Missing or incorrect identities fail validation; OpenAPI marks both
+  fields required and the generated client exposes them without `?`.
+- The generated TypeScript contract/client is
+  `generated/dungeonbuddy-statblocks-v1/client.ts`. Component names with
+  OpenAPI hyphens are sanitized to valid identifiers (`AssetBindingV1_Input`),
+  `allOf` refs preserve enums (for example `Distance.unit` → `DistanceUnit`),
+  nullable branches render as `| null` (not `| unknown`), and the focused
+  lane exact-compares the client text to the exporter output. Consumer
+  projects must import these generated transport types rather than maintaining
+  copies.
+- Published API fixtures match live route semantics: the generate-request /
+  candidate-response pair is one deterministic generation-service exchange
+  (omitted actor/asset_options → null actor, no images, brief and source
+  digest derived from the request description); validate responses use
+  `editor_preview`; accepted revisions use `persistence`; and the public error
+  fixture uses `validation_failed` with the full persistence
+  receipt/`is_persistence_ready` details.
+- The final v1 resource operation IDs are `create_statblock_v1`,
+  `append_statblock_revision_v1`, `get_statblock_v1`,
+  `list_statblock_revisions_v1`, and `get_statblock_revision_v1`; candidate
+  operation IDs remain published in the same artifact.
+- Asset references are typed CDN-backed `AssetRefV1` values. Firestore encoding
+  stringifies `HttpUrl`/`Url` while preserving native datetime timestamps.
+  The optional `CloudflareAssetGateway` receives an injected pipeline callable
+  and requires it to return durable IDs and canonical URLs; PR20 owns
+  environment wiring, timeouts, and production failure telemetry. Asset
+  failures only warn and do not invalidate otherwise valid candidate mechanics.
+- A DungeonBuddy smoke should regenerate/import the checked-in client, parse
+  `Docs/Design/fixtures/dungeonbuddy-statblock-v1-api/`, and retain exact
+  `statblock_id + revision_id` locators before launch. **This coordinated
+  consumer compile/parse/projection/`human_adjudicated` proof is intentionally
+  owned by PR20** — PR19 publishes the contract artifact and fixtures but does
+  not require a live DungeonBuddy checkout to merge.
+
 ## 0. Mission
 
 Make the complete DungeonBuddy statblock v1 route safe and observable in the deployed DungeonMindServer environment, then prove the end-to-end authoring, acceptance, and exact-replay workflow from DungeonBuddy.

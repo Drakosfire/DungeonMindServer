@@ -26,6 +26,8 @@ from statblocks_v1.domain.errors import (
 )
 from statblocks_v1.domain.receipts import ValidationMode
 from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
     GeneratedStatblockCandidateV1,
     IdempotencyOutcomeV1,
     IdempotencyRecordV1,
@@ -176,6 +178,8 @@ class InMemoryStatblockPersistenceRepository:
             revision = StatblockRevisionResourceV1(
                 statblock_id=statblock_id,
                 revision_id=revision_id,
+                contract=STATBLOCK_CONTRACT,
+                contract_version=STATBLOCK_CONTRACT_VERSION,
                 definition=stored_definition,
                 canonical_definition=str(canonical),
                 definition_digest=digest,
@@ -238,6 +242,8 @@ class InMemoryStatblockPersistenceRepository:
                 statblock_id=command.statblock_id,
                 revision_id=revision_id,
                 parent_revision_id=command.parent_revision_id,
+                contract=STATBLOCK_CONTRACT,
+                contract_version=STATBLOCK_CONTRACT_VERSION,
                 definition=stored_definition,
                 canonical_definition=str(canonical),
                 definition_digest=digest,
