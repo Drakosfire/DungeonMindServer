@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from routers import statblockgenerator_router
+from routers import statblock_v2_compatibility_router, statblockgenerator_router
 from routers.internal_auth import (
     INTERNAL_KEY_ENV,
     INTERNAL_KEY_HEADER,
@@ -20,7 +20,7 @@ TEST_INTERNAL_KEY = "test-internal-key"
 
 def client():
     app = FastAPI()
-    app.include_router(statblockgenerator_router.router)
+    app.include_router(statblock_v2_compatibility_router.router)
     return TestClient(app)
 
 
@@ -124,7 +124,7 @@ def test_v2_health_missing_server_env_fails_closed(monkeypatch):
 def test_generate_draft_missing_header_does_not_call_generation(monkeypatch):
     monkeypatch.setenv(INTERNAL_KEY_ENV, TEST_INTERNAL_KEY)
     mock_generate = AsyncMock()
-    monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
+    monkeypatch.setattr(statblock_v2_compatibility_router.statblock_generator, "generate_creature", mock_generate)
 
     response = client().post("/api/statblockgenerator/v2/generate-draft", json=generate_payload())
 
@@ -135,7 +135,7 @@ def test_generate_draft_missing_header_does_not_call_generation(monkeypatch):
 def test_generate_draft_wrong_header_does_not_call_generation(monkeypatch):
     monkeypatch.setenv(INTERNAL_KEY_ENV, TEST_INTERNAL_KEY)
     mock_generate = AsyncMock()
-    monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
+    monkeypatch.setattr(statblock_v2_compatibility_router.statblock_generator, "generate_creature", mock_generate)
 
     response = client().post(
         "/api/statblockgenerator/v2/generate-draft",
@@ -158,7 +158,7 @@ def test_generate_draft_correct_header_reaches_generation(monkeypatch):
             },
         )
     )
-    monkeypatch.setattr(statblockgenerator_router.statblock_generator, "generate_creature", mock_generate)
+    monkeypatch.setattr(statblock_v2_compatibility_router.statblock_generator, "generate_creature", mock_generate)
 
     response = client().post(
         "/api/statblockgenerator/v2/generate-draft",
@@ -174,7 +174,7 @@ def test_generate_draft_correct_header_reaches_generation(monkeypatch):
 def test_render_draft_missing_header_does_not_render(monkeypatch):
     monkeypatch.setenv(INTERNAL_KEY_ENV, TEST_INTERNAL_KEY)
     mock_build_draft = Mock()
-    monkeypatch.setattr(statblockgenerator_router, "build_draft", mock_build_draft)
+    monkeypatch.setattr(statblock_v2_compatibility_router, "build_draft", mock_build_draft)
 
     response = client().post("/api/statblockgenerator/v2/render-draft", json=render_payload())
 
@@ -186,7 +186,7 @@ def test_render_draft_missing_header_does_not_render(monkeypatch):
 def test_render_draft_wrong_header_does_not_render(monkeypatch):
     monkeypatch.setenv(INTERNAL_KEY_ENV, TEST_INTERNAL_KEY)
     mock_build_draft = Mock()
-    monkeypatch.setattr(statblockgenerator_router, "build_draft", mock_build_draft)
+    monkeypatch.setattr(statblock_v2_compatibility_router, "build_draft", mock_build_draft)
 
     response = client().post(
         "/api/statblockgenerator/v2/render-draft",

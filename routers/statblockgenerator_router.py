@@ -1,5 +1,9 @@
-"""
-FastAPI router for StatBlock Generator API endpoints
+"""Legacy StatBlock Generator app routes.
+
+This module preserves the LandingPage generator, project, session, validation,
+and image routes. DungeonBuddy's authoritative statblock v1 contract lives in
+``statblocks_v1``. Historical command-board v2 routes live in
+``routers.statblock_v2_compatibility_router``.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
@@ -11,11 +15,10 @@ import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
-from .internal_auth import require_dungeonbuddy_internal_key
 from auth_service import User
 
 # Import StatBlock components
-from statblockgenerator.statblock_generator import StatBlockGenerator
+from statblockgenerator.runtime import get_statblock_generator
 from statblockgenerator.models.statblock_models import (
     CreatureGenerationRequest,
     StatBlockValidationRequest,
@@ -35,19 +38,6 @@ import os
 import fal_client
 from openai import OpenAI
 from cloudflare.handle_images import upload_image_to_cloudflare
-from fastapi.responses import JSONResponse
-
-from statblockgenerator.models.command_board_contract_models import (
-    ContractError,
-    DraftIntent,
-    StatBlockDraftRenderRequest,
-    StatBlockDraftRequest,
-    StatBlockDraftResponse,
-)
-from statblockgenerator.services.statblock_draft_adapter import (
-    build_draft,
-    build_generation_request,
-)
 
 # NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
@@ -59,8 +49,8 @@ logger = logging.getLogger(__name__)
 # Initialize router
 router = APIRouter(prefix="/api/statblockgenerator", tags=["statblockgenerator"])
 
-# Global StatBlock generator instance
-statblock_generator = StatBlockGenerator()
+# Global StatBlock generator instance (shared with v2 compatibility routes)
+statblock_generator = get_statblock_generator()
 
 # Firestore collection names
 STATBLOCK_SESSIONS_COLLECTION = "statblock_sessions"
@@ -81,111 +71,6 @@ async def health_check():
         "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
         "fal_configured": bool(os.getenv("FAL_KEY"))
     }
-
-
-@router.get("/v2/health", dependencies=[Depends(require_dungeonbuddy_internal_key)])
-async def v2_health_check():
-    """Canonical health check for the command-board draft v2 contract."""
-    return {
-        "status": "ok",
-        "service": "statblockgenerator",
-        "contract": "command_board_draft_v2",
-        "version": "0.1.0",
-        "generator_ready": statblock_generator is not None,
-        "openai_configured": bool(os.getenv("OPENAI_API_KEY")),
-        "supports": ["generate-draft", "render-draft"],
-        "timestamp": datetime.now().isoformat(),
-    }
-
-
-@router.post(
-    "/v2/generate-draft",
-    response_model=StatBlockDraftResponse,
-    dependencies=[Depends(require_dungeonbuddy_internal_key)],
-)
-async def generate_statblock_draft(request: StatBlockDraftRequest):
-    """Generate a command-board-ready statblock draft without persisting it."""
-    if request.mode in {"generate_from_source_statblock", "revise_existing", "render_existing"}:
-        response = StatBlockDraftResponse(
-            success=False,
-            error=ContractError(
-                code="not_implemented",
-                message=f"Mode '{request.mode}' is accepted by the contract but not implemented in this v2 slice.",
-                details={"mode": request.mode},
-            ),
-        )
-        return JSONResponse(status_code=501, content=response.model_dump(mode="json"))
-
-    try:
-        generation_request = build_generation_request(request)
-        success, result = await statblock_generator.generate_creature(generation_request)
-
-        if not success:
-            response = StatBlockDraftResponse(
-                success=False,
-                error=ContractError(
-                    code="generation_failed",
-                    message=result.get("error", "Generation failed"),
-                    details={k: v for k, v in result.items() if k != "error"},
-                ),
-            )
-            return JSONResponse(status_code=400, content=response.model_dump(mode="json"))
-
-        draft = build_draft(
-            request=request,
-            statblock_data=result.get("statblock", result),
-            generation_info=result.get("generation_info", {}),
-        )
-        return StatBlockDraftResponse(success=True, draft=draft)
-
-    except Exception as exc:
-        logger.error(f"v2 draft generation failed: {str(exc)}")
-        response = StatBlockDraftResponse(
-            success=False,
-            error=ContractError(
-                code="draft_adapter_failed",
-                message="Draft generation failed while adapting generator output.",
-                details={"error": str(exc)},
-            ),
-        )
-        return JSONResponse(status_code=500, content=response.model_dump(mode="json"))
-
-
-@router.post(
-    "/v2/render-draft",
-    response_model=StatBlockDraftResponse,
-    dependencies=[Depends(require_dungeonbuddy_internal_key)],
-)
-async def render_statblock_draft(request: StatBlockDraftRenderRequest):
-    """Render an existing statblock into the command-board draft envelope."""
-    try:
-        adapter_request = StatBlockDraftRequest(
-            request_id=request.request_id,
-            mode="render_existing",
-            intent=DraftIntent(summary=f"Render existing statblock: {request.statblock.name}"),
-            source_statblock=request.statblock,
-            source_refs=request.source_refs,
-            output_options=request.output_options,
-        )
-        draft = build_draft(
-            request=adapter_request,
-            statblock_data=request.statblock,
-            generation_info={"source": "render-draft", "generated": False},
-            generator="statblock_draft_adapter.render_existing",
-        )
-        return StatBlockDraftResponse(success=True, draft=draft)
-
-    except Exception as exc:
-        logger.error(f"v2 draft rendering failed: {str(exc)}")
-        response = StatBlockDraftResponse(
-            success=False,
-            error=ContractError(
-                code="draft_render_failed",
-                message="Draft rendering failed while adapting the provided statblock.",
-                details={"error": str(exc)},
-            ),
-        )
-        return JSONResponse(status_code=500, content=response.model_dump(mode="json"))
 
 
 @router.post("/generate-statblock")
@@ -947,15 +832,3 @@ async def load_session(
         logger.error(f"Error loading session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Health check endpoint
-@router.get("/health")
-async def health_check():
-    """
-    Health check for StatBlock Generator
-    """
-    return {
-        "status": "healthy",
-        "service": "StatBlock Generator",
-        "version": "1.0.0",
-        "timestamp": datetime.now().isoformat()
-    }

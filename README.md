@@ -1,16 +1,16 @@
 # DungeonMind - TTRPG Support Platform
 
-DungeonMind is a platform designed to support tabletop role-playing game (TTRPG) players, game masters, and content creators. By leveraging a modular microservices architecture and powerful AI-driven tools, DungeonMind provides a seamless experience for creative TTRPG world-building and gameplay enhancement.
+DungeonMind is a platform designed to support tabletop role-playing game (TTRPG) players, game masters, and content creators. This repository contains the modular FastAPI application that provides backend capabilities within the larger multi-container DungeonMind product.
 
 ## Project Overview
 
-DungeonMind is built with a **microservices architecture** that integrates several independent tools for TTRPG management. Key services include an interactive Rules-As-Guide (RAG) system, custom card generator, stat block creator, and store generator, along with a professional landing page to showcase these capabilities. This project highlights Alan Meigs' advanced skills in **React**, **FastAPI**, **NGINX**, **Docker**, and **generative AI technologies**.
+DungeonMind combines a FastAPI backend application with separate product containers and infrastructure. Within this server, the Rules-As-Guide system, card generator, statblock tools, and store features are modular routes and packages—not independently deployed backend microservices.
 
 ## Key Features
 
-- **Professional Landing Page**: A React-based landing page, served as a separate microservice, introduces the DungeonMind platform and demonstrates the tools available to users.
+- **Professional Landing Page**: A separate React product container introduces the DungeonMind platform and its tools.
 - **API Server**: Built with FastAPI, the API server handles backend logic and supports all the TTRPG tools with a RESTful architecture.
-- **StoreGenerator Service**: A standalone service that enables users to create and manage in-game shops and stores for their campaigns, served as an independent microservice.
+- **StoreGenerator Module**: Backend routes and packages for creating and managing in-game shops and stores.
 - **AI-Enhanced Tools**:
    - **Rules Lawyer**: An interactive Rules-As-Guide (RAG) system that provides in-context rule guidance for smoother gameplay.
    - **Card Generator**: Customizable TTRPG cards for characters, items, or spells, enhancing game immersion.
@@ -27,18 +27,18 @@ DungeonMind serves as a showcase for a modular, scalable TTRPG support platform,
 
 ## Architecture
 
-DungeonMind is structured as multiple microservices, each serving a distinct function:
+DungeonMind is deployed as a multi-container product. This repository is one modular FastAPI application within that product:
 
 - **Hostinger**: Domain and VPS.
 - **Frontend Service**: Hosts the React-based landing page, showcasing the platform and handling user interactions.
-- **DungeonMindAPI Server**: Manages backend logic, data processing, and serves as the central data API for all front-end interactions.
-- **StoreGenerator Service**: A specialized service dedicated to generating and managing in-game shops and stores, isolated for independent scaling and functionality.
+- **DungeonMindAPI Server**: Manages backend logic, data processing, and serves the central API through modular routers and packages.
+- **StoreGenerator Module**: A feature module within the API server, not an independently deployed backend service.
 - **Reverse Proxy and Security**: NGINX handles routing and load balancing between services, while Cloudflare provides additional security, caching, and SSL/TLS support.
 - **Cloudflare**: Providing caching, security, and DNS services.
 
 ## Deployment
 
-DungeonMind uses Docker for containerization, with each service running in its own container. NGINX acts as a reverse proxy to route traffic to the appropriate service, while Cloudflare manages DNS, SSL, and caching. The architecture allows for smooth scaling of individual services as user demand increases.
+DungeonMind uses Docker for the product's containers. NGINX routes requests between product containers, while Cloudflare provides DNS, TLS, caching, and security services. This FastAPI application is deployed as one backend container; modular feature packages can be extracted only when a real deployment need justifies it.
 
 ## Future Plans
 

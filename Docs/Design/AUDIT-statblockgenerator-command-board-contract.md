@@ -1,5 +1,10 @@
 # AUDIT: StatBlockGenerator producer contract for DungeonBuddy command-board integration
 
+> **Historical / superseded for DungeonBuddy:** This audit records the predecessor v2
+> command-board contract. DungeonBuddy's active authority is
+> `Docs/Design/DESIGN-dungeonbuddy-statblock-contract-v1.md`; retain this document as
+> compatibility and migration evidence for the still-mounted v2 routes.
+
 ## Purpose
 
 This audit captures the current StatBlockGenerator producer surface and the contract gaps that matter before DungeonBuddy treats it as a command-board dependency. It is intentionally documentation + fixtures + gap analysis only: no API rewrite, no DungeonBuddy client, no corpus promotion, and no generator workflow UI changes are included in this PR.

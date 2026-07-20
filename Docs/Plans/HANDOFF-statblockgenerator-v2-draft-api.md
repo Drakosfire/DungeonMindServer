@@ -1,5 +1,10 @@
 # HANDOFF — StatBlockGenerator v2 draft API
 
+> **Historical / superseded for DungeonBuddy:** This implementation handoff is complete
+> predecessor evidence. The active authority is
+> `Docs/Design/DESIGN-dungeonbuddy-statblock-contract-v1.md`; v2 remains mounted only
+> for confirmed compatibility consumers.
+
 **Created:** 2026-06-08  
 **Repo:** `Drakosfire/DungeonMindServer`  
 **Target base branch:** `main`  
