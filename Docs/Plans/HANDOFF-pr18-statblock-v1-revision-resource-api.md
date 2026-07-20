@@ -15,8 +15,9 @@
   keep FastAPI `{"detail": ...}`.
 - Generation failure kinds from final PR16 map explicitly (`ruleset_mismatch`,
   `source_digest_mismatch`, `invalid_request`, `revision_not_found`,
-  `statblock_not_found`, provider outcomes). Unknown kinds fail closed as
-  `500 generation_failed`, never a false `provider_unavailable`.
+  `statblock_not_found`, `persistence_unavailable` → 503, provider outcomes).
+  Unknown kinds fail closed as `500 generation_failed`, never a false
+  `provider_unavailable`.
 - Revision uses `ExactRevisionLocatorV1(statblock_id, revision_id)`. Production
   wiring in `app.py` injects `PersistenceDefinitionResolver` over
   `FirestoreStatblockPersistenceRepository`. Exactly one of `source_definition` /

@@ -57,6 +57,11 @@ _GENERATION_FAILURE_POLICY: dict[str, tuple[int, str, str]] = {
     ),
     "invalid_request": (422, "invalid_request", "Revision request is invalid"),
     "source_unavailable": (503, "source_unavailable", "Revision source is unavailable"),
+    "persistence_unavailable": (
+        503,
+        "persistence_unavailable",
+        "Persistence is unavailable",
+    ),
     "revision_not_found": (404, "revision_not_found", "Revision was not found"),
     "statblock_not_found": (404, "statblock_not_found", "Statblock was not found"),
 }

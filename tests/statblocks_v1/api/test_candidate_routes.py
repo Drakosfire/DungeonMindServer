@@ -19,7 +19,7 @@ from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutc
 from statblocks_v1.application.repositories import CreateStatblockCommand
 from statblocks_v1.application.resolvers import PersistenceDefinitionResolver
 from statblocks_v1.application.settings import GenerationSettingsV1
-from statblocks_v1.domain.errors import RevisionNotFoundError
+from statblocks_v1.domain.errors import PersistenceUnavailableError, RevisionNotFoundError
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -304,6 +304,33 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
     assert response.json()["error"]["code"] == "revision_not_found"
 
 
+def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
+    client, _, headers, *_ = api_client
+
+    class UnavailableResolver:
+        def resolve(self, locator):
+            raise PersistenceUnavailableError()
+
+    client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
+        provider=FakeDefinitionProvider({}),
+        candidates=InMemoryCandidateRepository(),
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        definition_resolver=UnavailableResolver(),
+    )
+    response = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json={
+            "request_id": "revise-persistence-down",
+            "ruleset": {"system": "dnd5e", "edition": "2024"},
+            "revision_instructions": ["noop"],
+            "source_locator": {"statblock_id": "sb_persist01", "revision_id": "rev_persist01"},
+        },
+        headers=headers,
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "persistence_unavailable"
+
+
 def test_validate_and_openapi_models(api_client, load_fixture) -> None:
     client, _, headers, *_ = api_client
     definition = load_fixture("simple_bruiser")
@@ -331,10 +358,15 @@ def test_validate_and_openapi_models(api_client, load_fixture) -> None:
     assert "ErrorEnvelopeV1" in components
     assert "GeneratedStatblockCandidateV1" in components
     assert "422" in generate["responses"]
+    assert "500" in generate["responses"]
+    assert "503" in generate["responses"]
     assert "404" in paths["/api/internal/dungeonbuddy/v1/statblock-candidates/{candidate_id}"]["get"][
         "responses"
     ]
+    assert "404" in revise["responses"]
     assert "422" in revise["responses"]
+    assert "500" in revise["responses"]
+    assert "503" in revise["responses"]
 
 
 class _LegacyEchoBody(BaseModel):

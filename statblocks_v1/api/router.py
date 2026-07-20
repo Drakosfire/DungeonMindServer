@@ -41,7 +41,9 @@ _AUTH_ERROR_RESPONSES = {
     403: {"model": ErrorEnvelopeV1, "description": "Invalid internal API key"},
     503: {
         "model": ErrorEnvelopeV1,
-        "description": "Internal service misconfigured",
+        "description": (
+            "Internal service misconfigured, provider unavailable, or persistence unavailable"
+        ),
     },
 }
 
@@ -49,7 +51,19 @@ _CANDIDATE_ERROR_RESPONSES = {
     **_AUTH_ERROR_RESPONSES,
     422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
     429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
+    500: {
+        "model": ErrorEnvelopeV1,
+        "description": "Unexpected generation failure (fail-closed unknown outcome)",
+    },
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
+}
+
+_REVISE_ERROR_RESPONSES = {
+    **_CANDIDATE_ERROR_RESPONSES,
+    404: {
+        "model": ErrorEnvelopeV1,
+        "description": "Source statblock or revision not found",
+    },
 }
 
 _CANDIDATE_READ_ERROR_RESPONSES = {
@@ -119,7 +133,7 @@ async def generate_candidate(
 @router.post(
     "/statblock-candidates:revise",
     response_model=GeneratedStatblockCandidateV1,
-    responses=_CANDIDATE_ERROR_RESPONSES,
+    responses=_REVISE_ERROR_RESPONSES,
     operation_id="revise_statblock_candidate_v1",
 )
 async def revise_candidate(
