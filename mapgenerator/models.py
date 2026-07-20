@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_limits.image_bounds import MAX_DATA_URI_CHARS
+
 
 # =============================================================================
 # CORE ENTITIES
@@ -158,13 +160,13 @@ class GenerateMaskedMapRequest(BaseModel):
         ...,
         alias="maskBase64",
         description="Base64-encoded PNG mask",
-        max_length=14_000_000,  # ~10 MiB decoded + data-URI overhead
+        max_length=MAX_DATA_URI_CHARS,
     )
     base_image_base64: str = Field(
         ...,
         alias="baseImageBase64",
         description="Base64-encoded PNG base image",
-        max_length=14_000_000,
+        max_length=MAX_DATA_URI_CHARS,
     )
     style_options: Optional[dict] = Field(None, alias="styleOptions", description="Optional style configuration")
     mode: Literal["inpaint", "edit"] = Field(

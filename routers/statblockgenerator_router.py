@@ -40,7 +40,6 @@ import os
 import fal_client
 from openai import OpenAI
 from cloudflare.handle_images import (
-    upload_image_to_cloudflare,
     upload_image_to_cloudflare_detailed,
     delete_cloudflare_image_by_id,
 )
@@ -49,6 +48,7 @@ from services.image_asset_registry import (
     get_asset_for_owner,
     delete_asset_record,
 )
+from security_limits.image_validation import read_upload_limited, as_upload_file
 
 # NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
@@ -199,25 +199,26 @@ async def upload_images(
         
         for idx, image_file in enumerate(images):
             try:
-                # Validate file type
-                if not image_file.content_type or not image_file.content_type.startswith('image/'):
-                    logger.warning(f"Skipping non-image file: {image_file.filename}")
-                    continue
+                # Bounded read + magic sniff BEFORE any full in-memory accept
+                try:
+                    content, sniffed_mime = await read_upload_limited(image_file)
+                except HTTPException as size_err:
+                    if size_err.status_code in (400, 413):
+                        logger.warning(
+                            "Skipping invalid/oversized upload %s: %s",
+                            image_file.filename,
+                            size_err.detail,
+                        )
+                        continue
+                    raise
+
+                bounded = as_upload_file(
+                    content,
+                    filename=image_file.filename or f"upload_{idx}.bin",
+                    mime=sniffed_mime,
+                )
                 
-                # Validate file size (max 10MB) - Python 3.10 compatible
-                content = await image_file.read()
-                file_size = len(content)
-                
-                if file_size > 10 * 1024 * 1024:  # 10MB
-                    logger.warning(f"Skipping oversized file: {image_file.filename} ({file_size} bytes)")
-                    continue
-                
-                # Recreate UploadFile for upload_image_to_cloudflare
-                from io import BytesIO
-                image_file.file = BytesIO(content)
-                await image_file.seek(0)
-                
-                detailed = await upload_image_to_cloudflare_detailed(image_file)
+                detailed = await upload_image_to_cloudflare_detailed(bounded)
                 asset = register_cloudflare_url_asset(
                     owner_id=current_user.user_id,
                     canonical_url=detailed.url,

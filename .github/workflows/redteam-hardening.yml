@@ -24,6 +24,7 @@ jobs:
       DUNGEONMIND_API_URL: http://localhost:7860
       FIREBASE_SKIP_INIT: "true"
       TRUST_PROXY: "false"
+      SERVICE_ACCOUNT_PATH: /tmp/missing-sa.json
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -32,4 +33,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen || uv sync
       - name: Run red-team hardening tests
-        run: uv run pytest -q tests/test_redteam_hardening.py
+        run: >
+          uv run pytest -q
+          tests/test_redteam_hardening.py
+          tests/test_ruleslawyer_router.py

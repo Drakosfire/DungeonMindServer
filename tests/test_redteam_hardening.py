@@ -163,7 +163,6 @@ def test_delete_requires_registry_asset_not_project_url(test_client):
     from routers.auth_router import get_current_user
     from auth_service import User
     from routers import image_management_router as imr
-    from services import image_asset_registry as registry
 
     async def _user_a():
         return User(sub="user-a", email="a@example.com", name="A")
@@ -181,8 +180,8 @@ def test_delete_requires_registry_asset_not_project_url(test_client):
     )
     assert resp.status_code in (422, 400)
 
-    # Forged: attacker has no registry row
-    with patch.object(registry, "get_asset_for_owner", return_value=None):
+    # Patch the router-local binding (not the registry module)
+    with patch.object(imr, "get_asset_for_owner", return_value=None):
         resp2 = test_client.delete(
             "/api/images/delete",
             params={"asset_id": "not-owned-asset", "service": "map"},
@@ -335,7 +334,7 @@ def test_open_image_bounded_checks_size_before_load(monkeypatch):
 def test_create_map_project_unowned_url_returns_403_not_500(test_client):
     from routers.auth_router import get_current_user
     from auth_service import User
-    from services import image_asset_registry as registry
+    from routers import map_router as map_router_mod
 
     async def _user():
         return User(sub="user-a", email="a@example.com", name="A")
@@ -343,7 +342,8 @@ def test_create_map_project_unowned_url_returns_403_not_500(test_client):
     app = test_client.app
     app.dependency_overrides[get_current_user] = _user
     try:
-        with patch.object(registry, "get_owned_asset_by_url", return_value=None):
+        # Patch the router-local binding (not the registry module)
+        with patch.object(map_router_mod, "get_owned_asset_by_url", return_value=None):
             resp = test_client.post(
                 "/api/mapgenerator/projects",
                 json={
@@ -355,6 +355,57 @@ def test_create_map_project_unowned_url_returns_403_not_500(test_client):
         assert "owned" in resp.json()["detail"].lower()
     finally:
         app.dependency_overrides.clear()
+
+
+def test_request_body_content_length_rejected():
+    """App-level body limit rejects oversized Content-Length (nginx also sets 10M)."""
+    from security_limits.request_limits import (
+        MAX_REQUEST_BODY_BYTES,
+        limit_request_body_middleware,
+    )
+    from fastapi import Request
+    from starlette.responses import Response
+    import asyncio
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "path": "/api/images/upload",
+        "raw_path": b"/api/images/upload",
+        "root_path": "",
+        "scheme": "http",
+        "query_string": b"",
+        "headers": [(b"content-length", str(MAX_REQUEST_BODY_BYTES + 1).encode())],
+        "client": ("127.0.0.1", 12345),
+        "server": ("test", 80),
+    }
+    req = Request(scope)
+
+    async def _next(_request):
+        return Response(status_code=200)
+
+    resp = asyncio.run(limit_request_body_middleware(req, _next))
+    assert resp.status_code == 413
+
+
+def test_upload_validation_runs_before_cloudflare_credentials(monkeypatch):
+    """Malformed bytes must 400 even when Cloudflare env is absent."""
+    import cloudflare.handle_images as cf
+    from fastapi import UploadFile, HTTPException
+    import io
+    import asyncio
+
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_IMAGES_API_TOKEN", raising=False)
+
+    upload = UploadFile(filename="x.bin", file=io.BytesIO(b"not-an-image-payload"))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(cf.upload_image_to_cloudflare_detailed(upload))
+    assert exc.value.status_code == 400
+    assert "image" in str(exc.value.detail).lower()
 
 
 def test_cloudflare_image_id_from_url():
