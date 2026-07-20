@@ -169,10 +169,11 @@ add_session_middleware(app)
 # Add the middleware with the appropriate allowed hosts (this used to be first)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
-# Reject oversized bodies early (matches nginx client_max_body_size 10M on dungeonmind.net)
-from security_limits.request_limits import limit_request_body_middleware
+# Count streamed body bytes (chunked + Content-Length); matches nginx 10M.
+# Backend must remain loopback-only (127.0.0.1:7860) so Nginx is the edge.
+from security_limits.request_limits import MaxBodySizeASGIMiddleware, MAX_REQUEST_BODY_BYTES
 
-app.middleware("http")(limit_request_body_middleware)
+app.add_middleware(MaxBodySizeASGIMiddleware, max_body_size=MAX_REQUEST_BODY_BYTES)
 
 
 @app.middleware("http")

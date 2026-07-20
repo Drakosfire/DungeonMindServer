@@ -361,11 +361,22 @@ def test_request_body_content_length_rejected():
     """App-level body limit rejects oversized Content-Length (nginx also sets 10M)."""
     from security_limits.request_limits import (
         MAX_REQUEST_BODY_BYTES,
-        limit_request_body_middleware,
+        MaxBodySizeASGIMiddleware,
     )
-    from fastapi import Request
-    from starlette.responses import Response
     import asyncio
+    import json
+
+    sent: list[dict] = []
+
+    async def _app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def _send(message):
+        sent.append(message)
 
     scope = {
         "type": "http",
@@ -381,13 +392,74 @@ def test_request_body_content_length_rejected():
         "client": ("127.0.0.1", 12345),
         "server": ("test", 80),
     }
-    req = Request(scope)
+    mw = MaxBodySizeASGIMiddleware(_app, max_body_size=MAX_REQUEST_BODY_BYTES)
+    asyncio.run(mw(scope, _receive, _send))
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 413
 
-    async def _next(_request):
-        return Response(status_code=200)
 
-    resp = asyncio.run(limit_request_body_middleware(req, _next))
-    assert resp.status_code == 413
+def test_request_body_chunked_stream_rejected():
+    """Chunked bodies without Content-Length are still counted and capped."""
+    from security_limits.request_limits import MaxBodySizeASGIMiddleware
+    import asyncio
+
+    sent: list[dict] = []
+    chunks = [b"x" * 1000, b"y" * 1000, b"z" * 1000]
+    idx = {"i": 0}
+
+    async def _app(scope, receive, send):
+        # Drain body the way FastAPI/Starlette would
+        while True:
+            message = await receive()
+            if message["type"] != "http.request":
+                continue
+            if not message.get("more_body", False):
+                break
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"ok"})
+
+    async def _receive():
+        i = idx["i"]
+        if i >= len(chunks):
+            return {"type": "http.request", "body": b"", "more_body": False}
+        body = chunks[i]
+        idx["i"] = i + 1
+        return {
+            "type": "http.request",
+            "body": body,
+            "more_body": i + 1 < len(chunks),
+        }
+
+    async def _send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "path": "/api/mapgenerator/generate-masked",
+        "raw_path": b"/api/mapgenerator/generate-masked",
+        "root_path": "",
+        "scheme": "http",
+        "query_string": b"",
+        "headers": [(b"transfer-encoding", b"chunked")],  # no content-length
+        "client": ("127.0.0.1", 12345),
+        "server": ("test", 80),
+    }
+    # Cap at 1500 bytes so the second/third chunk trips the limit
+    mw = MaxBodySizeASGIMiddleware(_app, max_body_size=1500)
+    asyncio.run(mw(scope, _receive, _send))
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 413
+
+
+def test_deploy_scripts_bind_api_to_loopback():
+    """Production deploy scripts must not publish 7860 on all interfaces."""
+    for name in ("deploy.sh", "deploylocal.sh"):
+        text = (REPO_ROOT / name).read_text()
+        assert "127.0.0.1:7860:7860" in text, name
+        assert "-p 7860:7860" not in text, name
 
 
 def test_upload_validation_runs_before_cloudflare_credentials(monkeypatch):
