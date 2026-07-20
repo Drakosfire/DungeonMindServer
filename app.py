@@ -25,13 +25,14 @@ else:
     load_dotenv('.env.development', override=True)
     logger.info(f"Development environment detected.")
 
-# Debug logging for environment variables
-logger.info(f"EXTERNAL_MESSAGE_API_KEY present: {bool(os.getenv('EXTERNAL_MESSAGE_API_KEY'))}")
-logger.info(f"EXTERNAL_MESSAGE_API_KEY value: {'*' * len(os.getenv('EXTERNAL_MESSAGE_API_KEY', '')) if os.getenv('EXTERNAL_MESSAGE_API_KEY') else 'None'}")
-logger.info(f"EXTERNAL_SMS_ENDPOINT present: {bool(os.getenv('EXTERNAL_SMS_ENDPOINT'))}")
-logger.info(f"EXTERNAL_SMS_ENDPOINT value: {os.getenv('EXTERNAL_SMS_ENDPOINT', 'None')}")
-logger.info(f"TWILIO_ACCOUNT_SID present: {bool(os.getenv('TWILIO_ACCOUNT_SID'))}")
-logger.info(f"TWILIO_AUTH_TOKEN present: {bool(os.getenv('TWILIO_AUTH_TOKEN'))}")
+# Presence-only startup checks (never log secret values, lengths, or endpoints)
+logger.debug(
+    "SMS/Twilio env configured: external_key=%s external_endpoint=%s twilio_sid=%s twilio_token=%s",
+    bool(os.getenv("EXTERNAL_MESSAGE_API_KEY")),
+    bool(os.getenv("EXTERNAL_SMS_ENDPOINT")),
+    bool(os.getenv("TWILIO_ACCOUNT_SID")),
+    bool(os.getenv("TWILIO_AUTH_TOKEN")),
+)
 
 # Import routers AFTER loading the environment variables
 from routers import (
@@ -295,11 +296,15 @@ app.include_router(
     tags=["Player Character Generator"]
 )
 
-# Include Demo router for testing GenerationDrawerEngine
-app.include_router(
-    demo_router,
-    tags=["Demo/Testing"]
-)
+# Demo router is opt-in only (never mounted in production by default).
+_demo_enabled = os.getenv("DEMO_ROUTER_ENABLED", "false").lower() == "true"
+if env != "production" and _demo_enabled:
+    app.include_router(
+        demo_router,
+        tags=["Demo/Testing"]
+    )
+elif env == "production" and _demo_enabled:
+    logger.warning("DEMO_ROUTER_ENABLED ignored in production")
 
 # Include MapGenerator router
 app.include_router(

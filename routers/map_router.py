@@ -943,27 +943,48 @@ async def export_map(request: ExportMapRequest):
 
 
 # =============================================================================
-# DOWNLOAD PROXY (for CORS bypass)
+# DOWNLOAD PROXY (for CORS bypass) — allowlisted hosts only
 # =============================================================================
 
+_DOWNLOAD_ALLOWED_HOST_SUFFIXES = (
+    "imagedelivery.net",
+    "r2.cloudflarestorage.com",
+    "cloudflarestorage.com",
+)
+
+
+def _download_url_allowed(url: str) -> bool:
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return any(host == suffix or host.endswith("." + suffix) for suffix in _DOWNLOAD_ALLOWED_HOST_SUFFIXES)
+
+
 @router.get("/download")
-async def download_proxy(url: str, filename: Optional[str] = None):
+async def download_proxy(
+    url: str,
+    filename: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
     """
-    Proxy endpoint for downloading images from R2.
-    
-    Bypasses CORS by fetching server-side and streaming to client.
-    Used for exporting maps where the R2 presigned URL can't be fetched
-    directly from the browser.
-    
-    Args:
-        url: The R2 presigned URL to fetch
-        filename: Optional filename for Content-Disposition header
+    Proxy endpoint for downloading images from allowlisted CDN/R2 hosts.
+
+    Requires authentication. Rejects non-HTTPS and non-allowlisted hosts (SSRF).
     """
-    logger.info("📥 [MapGenerator] Download proxy request")
+    logger.info("📥 [MapGenerator] Download proxy request user=%s", getattr(current_user, "email", None))
     
     try:
         # Decode URL if it was URL-encoded
         decoded_url = unquote(url)
+
+        if not _download_url_allowed(decoded_url):
+            raise HTTPException(
+                status_code=400,
+                detail="Download URL host is not allowlisted",
+            )
         
         # Normalize Cloudflare Images URLs: /full -> /Full (case-sensitive)
         # The lowercase /full variant returns 403, must use /Full for 1024x1024
@@ -996,6 +1017,8 @@ async def download_proxy(url: str, filename: Optional[str] = None):
                 headers=headers
             )
             
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
         logger.error(f"❌ [MapGenerator] Download proxy HTTP error: {str(e)}")
         raise HTTPException(

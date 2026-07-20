@@ -97,14 +97,16 @@ class ImageGenerateResponse(BaseModel):
     error: Optional[str] = None
 
 @router.post('/upload')
-async def upload_single_image(file: UploadFile = File(...)):
+async def upload_single_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     """
-    Upload a single image file to cloud storage
-    
-    Simple, focused endpoint for image uploads
+    Upload a single image file to cloud storage.
+    Requires an authenticated session.
     """
     try:
-        logger.info(f"Image upload request: {file.filename}")
+        logger.info(f"Image upload request: {file.filename} user={getattr(current_user, 'email', None)}")
         
         # Delegate to service layer
         result = await image_management_service.upload_single_image(file)
@@ -123,11 +125,13 @@ async def upload_single_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @router.post('/upload-bulk')
-async def upload_multiple_images(request: BulkUploadRequest):
+async def upload_multiple_images(
+    request: BulkUploadRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
-    Upload multiple images to permanent storage
-    
-    Used for batch uploading generated images
+    Upload multiple images to permanent storage.
+    Requires an authenticated session.
     """
     try:
         # Validate input
@@ -136,7 +140,10 @@ async def upload_multiple_images(request: BulkUploadRequest):
         if len(request.image_urls) > 20:
             raise HTTPException(status_code=422, detail="Maximum 20 images per batch")
         
-        logger.info(f"Bulk upload request: {len(request.image_urls)} images")
+        logger.info(
+            f"Bulk upload request: {len(request.image_urls)} images "
+            f"user={getattr(current_user, 'email', None)}"
+        )
         
         # Delegate to service layer
         result = await image_management_service.upload_generated_images(request.image_urls)

@@ -174,12 +174,15 @@ async def render_card_text_compat(
 # ============================================================================
 
 @router.post('/upload-image')
-async def upload_image_compat(file: UploadFile = File(...)):
+async def upload_image_compat(
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+):
     """
     COMPATIBILITY: Redirect old upload-image to new endpoint
     """
     logger.info("🔄 Compatibility redirect: /upload-image -> /images/upload")
-    return await upload_single_image(file)
+    return await upload_single_image(file, current_user)
 
 # ============================================================================
 # ASSET COMPATIBILITY

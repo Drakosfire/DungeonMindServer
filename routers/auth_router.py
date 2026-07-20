@@ -138,35 +138,6 @@ async def get_current_user_optional(request: Request) -> User | None:
 async def protected_route(current_user: User = Depends(get_current_user)):
     return {"message": "This is a protected route", "user": current_user.dict()}
 
-@router.get('/debug-config')
-async def debug_config():
-    """
-    Debug endpoint to check environment configuration
-    """
-    return {
-        "environment": os.environ.get('ENVIRONMENT', 'not-set'),
-        "dungeonmind_api_url": os.environ.get('DUNGEONMIND_API_URL', 'not-set'),
-        "react_landing_url": os.environ.get('REACT_LANDING_URL', 'not-set'),
-        "google_client_id": "set" if os.environ.get('GOOGLE_CLIENT_ID') else "not-set",
-        "google_client_secret": "set" if os.environ.get('GOOGLE_CLIENT_SECRET') else "not-set",
-        "session_secret_key": "set" if os.environ.get('SESSION_SECRET_KEY') else "not-set",
-    }
-
-@router.get('/debug-session')
-async def debug_session(request: Request):
-    """
-    Debug endpoint to check session and cookie status
-    """
-    return {
-        "session_data": dict(request.session) if request.session else {},
-        "cookies": dict(request.cookies),
-        "headers": dict(request.headers),
-        "url": str(request.url),
-        "method": request.method,
-        "has_user_in_session": 'user' in (request.session or {}),
-        "session_keys": list(request.session.keys()) if request.session else [],
-    }
-
 @router.get('/current-user')
 async def get_current_user_endpoint(request: Request):
     """
