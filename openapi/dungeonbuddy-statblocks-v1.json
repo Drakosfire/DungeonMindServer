@@ -3178,6 +3178,58 @@
         "title": "RangeProfile",
         "type": "object"
       },
+      "ReadinessResponseV1": {
+        "additionalProperties": false,
+        "description": "Authenticated readiness payload (200 ready or 503 not_ready).",
+        "properties": {
+          "contract": {
+            "const": "dungeonmind.dungeonbuddy-statblocks",
+            "enum": [
+              "dungeonmind.dungeonbuddy-statblocks"
+            ],
+            "title": "Contract",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "generation_enabled": {
+            "default": false,
+            "title": "Generation Enabled",
+            "type": "boolean"
+          },
+          "read_routes_enabled": {
+            "default": false,
+            "title": "Read Routes Enabled",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "contract"
+        ],
+        "title": "ReadinessResponseV1",
+        "type": "object"
+      },
       "RechargeRange": {
         "additionalProperties": false,
         "description": "Inclusive d6 recharge window (provider-safe object; not a tuple/array).",
@@ -6113,10 +6165,12 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponseV1"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Configuration is ready"
           },
           "401": {
             "content": {
@@ -6152,11 +6206,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                  "$ref": "#/components/schemas/ReadinessResponseV1"
                 }
               }
             },
-            "description": "Internal service misconfigured"
+            "description": "Configuration is not ready"
           }
         },
         "summary": "Readiness",

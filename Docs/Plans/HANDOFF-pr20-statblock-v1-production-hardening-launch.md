@@ -1,6 +1,6 @@
 # HANDOFF — PR20 Statblock v1 production hardening and launch
 
-**Status:** IN REVIEW — rebased onto merged PR19 / main  
+**Status:** IN REVIEW — rebased onto merged PR19; launch trust boundaries sealed  
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Coordinated consumer:** `Drakosfire/DungeonMindBuddy`  
 **Predecessor:** PR19 assets/OpenAPI/consumer contract  

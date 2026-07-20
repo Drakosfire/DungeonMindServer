@@ -59,12 +59,15 @@ from firestore.firebase_config import db as dungeonbuddy_statblocks_v1_db
 from statblocks_v1.api import dependencies as dungeonbuddy_statblocks_v1_dependencies
 from statblocks_v1.api.health import health_router as dungeonbuddy_statblocks_v1_health_router
 from statblocks_v1.api.health import liveness_router as dungeonbuddy_statblocks_v1_liveness_router
+from statblocks_v1.api.health import configure_composition_probe as configure_statblocks_v1_composition_probe
 from statblocks_v1.api.http_errors import register_error_handlers as register_statblocks_v1_error_handlers
 from statblocks_v1.api.router import router as dungeonbuddy_statblocks_v1_router
+from statblocks_v1.config import StatblocksV1Settings as DungeonBuddyStatblocksV1Settings
 from statblocks_v1.infrastructure.runtime import (
     build_candidate_repository as build_statblocks_v1_candidate_repository,
     build_generation_service as build_statblocks_v1_generation_service,
     build_persistence_repository as build_statblocks_v1_persistence_repository,
+    probe_production_composition as probe_statblocks_v1_composition,
 )
 from statblocks_v1.observability import request_observability as statblocks_v1_request_observability
 
@@ -236,6 +239,19 @@ dungeonbuddy_statblocks_v1_dependencies.configure_persistence_repository_factory
 dungeonbuddy_statblocks_v1_dependencies.configure_generation_service_factory(
     lambda: build_statblocks_v1_generation_service(client=dungeonbuddy_statblocks_v1_db)
 )
+
+
+def _statblocks_v1_composition_probe(settings: DungeonBuddyStatblocksV1Settings) -> list[str]:
+    errors = probe_statblocks_v1_composition(
+        settings,
+        client=dungeonbuddy_statblocks_v1_db,
+        factories_configured=True,
+    )
+    # Asset gateway stays opt-in; when enabled without a pipeline, readiness fails closed.
+    return errors
+
+
+configure_statblocks_v1_composition_probe(_statblocks_v1_composition_probe)
 app.middleware("http")(statblocks_v1_request_observability)
 app.include_router(dungeonbuddy_statblocks_v1_liveness_router)
 app.include_router(dungeonbuddy_statblocks_v1_health_router)

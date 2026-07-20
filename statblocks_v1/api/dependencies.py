@@ -126,6 +126,30 @@ async def require_generation_enabled() -> None:
         )
 
 
+async def require_persistence_enabled() -> None:
+    """Fail persistence/read routes closed when Firestore or read policy disables them."""
+    try:
+        settings = StatblocksV1Settings.from_environment()
+    except ConfigurationError:
+        raise StatblockV1HTTPError(503, InternalServiceMisconfiguredError()) from None
+    if not settings.firestore_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "persistence_disabled",
+                "Statblock persistence is disabled",
+            ),
+        )
+    if not settings.feature_enabled and not settings.allow_reads_when_disabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "reads_disabled",
+                "Statblock reads are disabled while generation is offline",
+            ),
+        )
+
+
 def get_candidate_repository() -> CandidateRepository:
     if _candidate_repository_factory is None:
         raise StatblockV1HTTPError(

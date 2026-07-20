@@ -15,10 +15,13 @@ def test_safe_fields_redacts_payloads_and_keys() -> None:
         prompt="private",
         definition={"name": "secret"},
         api_key="key",
+        description="campaign-private",
     ) == {"request_id": "req_1"}
 
 
-def test_request_log_has_correlation_and_no_body(caplog, auth_headers, monkeypatch) -> None:
+def test_request_log_has_correlation_outcome_and_no_secrets(
+    caplog, auth_headers, monkeypatch
+) -> None:
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers[INTERNAL_KEY_HEADER])
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     caplog.set_level(logging.INFO, logger="statblocks_v1")
@@ -30,6 +33,23 @@ def test_request_log_has_correlation_and_no_body(caplog, auth_headers, monkeypat
     assert response.headers[REQUEST_ID_HEADER] == "req_private"
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "req_private" in messages
-    assert "campaign-private-description" not in messages
-    assert auth_headers[INTERNAL_KEY_HEADER] not in messages
+    assert "outcome_code" in messages
     assert "test-openai-key" not in messages
+    assert auth_headers[INTERNAL_KEY_HEADER] not in messages
+
+
+def test_error_outcome_code_is_bound(caplog, auth_headers, monkeypatch) -> None:
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers[INTERNAL_KEY_HEADER])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("STATBLOCKS_V1_FEATURE_ENABLED", "false")
+    caplog.set_level(logging.INFO, logger="statblocks_v1")
+    response = TestClient(create_test_app()).post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        headers={**auth_headers, REQUEST_ID_HEADER: "req_disabled"},
+        json={"not": "valid"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "generation_disabled"
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "generation_disabled" in messages
+    assert "req_disabled" in messages

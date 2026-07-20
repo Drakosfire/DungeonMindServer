@@ -50,6 +50,17 @@ class HealthResponseV1(StrictModel):
     capabilities: list[str] = Field(default_factory=list)
 
 
+class ReadinessResponseV1(StrictModel):
+    """Authenticated readiness payload (200 ready or 503 not_ready)."""
+
+    status: str
+    contract: ContractNameV1
+    generation_enabled: bool = False
+    read_routes_enabled: bool = False
+    errors: list[str] = Field(default_factory=list)
+    detail: str | None = None
+
+
 class GenerateCandidateRequestV1(StrictModel):
     request_id: str = Field(min_length=1)
     ruleset: RulesetRef
