@@ -100,6 +100,26 @@ def test_firestore_create_round_trip_and_create_replay(firestore_client, bruiser
     assert loaded.definition_digest == first.definition_digest
 
 
+def test_firestore_restart_replay_returns_identical_revision(firestore_client, bruiser):
+    """Recreate the repository instance to prove durable idempotency survives process restart."""
+    key = f"fs-restart-{uuid.uuid4().hex[:8]}"
+    first_repo = FirestoreStatblockPersistenceRepository(firestore_client)
+    command = CreateStatblockCommand(
+        caller_scope="dungeonbuddy",
+        idempotency_key=key,
+        definition=bruiser,
+        created_by="dungeonbuddy",
+        provenance={"change_summary": "restart proof"},
+    )
+    _, first = first_repo.create_statblock(command)
+
+    restarted = FirestoreStatblockPersistenceRepository(firestore_client)
+    _, replay = restarted.create_statblock(command)
+    exact = restarted.get_revision(first.statblock_id, first.revision_id)
+    assert replay.model_dump(mode="json") == first.model_dump(mode="json")
+    assert exact.model_dump(mode="json") == first.model_dump(mode="json")
+
+
 def test_firestore_candidate_ttl_timestamp_round_trip(firestore_client, bruiser):
     repository = FirestoreCandidateRepository(firestore_client)
     created = datetime(2026, 1, 1, tzinfo=timezone.utc)

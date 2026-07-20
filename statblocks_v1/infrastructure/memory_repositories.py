@@ -76,6 +76,14 @@ class InMemoryCandidateRepository:
                 raise CandidateExpiredError(candidate_id)
             return _copy(candidate)
 
+    def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
+        """Expiry blocks candidate workflow reads, never durable audit acceptance."""
+        with self._lock:
+            candidate = self._candidates.get(candidate_id)
+            if candidate is None:
+                raise CandidateNotFoundError(candidate_id)
+            return _copy(candidate)
+
 
 class InMemoryStatblockPersistenceRepository:
     """One lock models the atomicity expected from the Firestore implementation."""
@@ -286,11 +294,11 @@ class InMemoryStatblockPersistenceRepository:
 def _persistence_material(definition: StatblockDefinitionV1):
     receipt = validate_definition(definition, ValidationMode.persistence)
     if not receipt.is_persistence_ready:
-        raise PersistenceValidationError()
+        raise PersistenceValidationError(receipt)
     canonical = canonicalize_definition(definition)
     digest = compute_definition_digest(definition)
     if receipt.definition_digest != digest:
-        raise PersistenceValidationError()
+        raise PersistenceValidationError(receipt)
     return canonical, digest, receipt
 
 

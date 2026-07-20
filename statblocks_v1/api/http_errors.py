@@ -19,13 +19,21 @@ from fastapi.responses import JSONResponse
 from statblocks_v1.api.models import ErrorDetailV1, ErrorEnvelopeV1
 from statblocks_v1.application.generation import GenerationFailureV1
 from statblocks_v1.domain.errors import (
+    AmbiguousRequestPayloadError,
     CandidateExpiredError,
     CandidateNotFoundError,
+    IdempotencyConflictError,
+    ImmutableResourceConflictError,
+    ImmutableRevisionConflictError,
     InternalServiceMisconfiguredError,
+    ParentRevisionMismatchError,
     PersistenceUnavailableError,
+    PersistenceValidationError,
     RevisionNotFoundError,
+    StaleParentRevisionError,
     StatblockNotFoundError,
     StatblockV1Error,
+    TransactionIndeterminateError,
     UnauthorizedInternalClientError,
 )
 
@@ -38,7 +46,15 @@ _DOMAIN_STATUS: dict[type[StatblockV1Error], int] = {
     CandidateExpiredError: 410,
     StatblockNotFoundError: 404,
     RevisionNotFoundError: 404,
+    IdempotencyConflictError: 409,
+    ParentRevisionMismatchError: 409,
+    StaleParentRevisionError: 409,
+    ImmutableResourceConflictError: 409,
+    ImmutableRevisionConflictError: 409,
+    AmbiguousRequestPayloadError: 422,
+    PersistenceValidationError: 422,
     PersistenceUnavailableError: 503,
+    TransactionIndeterminateError: 503,
 }
 
 # Final PR16 GenerationFailureV1.kind → (status, public code, message)

@@ -116,8 +116,18 @@ class AmbiguousRequestPayloadError(StatblockV1Error):
 
 
 class PersistenceValidationError(StatblockV1Error):
-    def __init__(self) -> None:
-        super().__init__("validation_failed", "Definition is not persistence-ready")
+    def __init__(self, receipt: Any | None = None) -> None:
+        details = None
+        if receipt is not None:
+            details = {
+                "validation_receipt": receipt.model_dump(mode="json"),
+                "is_persistence_ready": receipt.is_persistence_ready,
+            }
+        super().__init__(
+            "validation_failed",
+            "Definition is not persistence-ready",
+            details,
+        )
 
 
 class PersistenceUnavailableError(StatblockV1Error):

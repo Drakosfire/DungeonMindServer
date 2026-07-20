@@ -14,14 +14,20 @@ from statblocks_v1.api.dependencies import (
     get_candidate_repository,
     get_clock,
     get_generation_service,
+    get_persistence_repository,
+    get_revision_service,
     get_validator,
     require_internal_service_auth,
 )
 from statblocks_v1.api.http_errors import raise_for_generation_failure
 from statblocks_v1.api.models import (
+    AppendRevisionRequestV1,
+    CreateStatblockRequestV1,
+    CreateStatblockResponseV1,
     ErrorEnvelopeV1,
     GenerateCandidateRequestV1,
     HealthResponseV1,
+    RevisionListResponseV1,
     ReviseCandidateRequestV1,
     ValidateDefinitionRequestV1,
     ValidationResponseV1,
@@ -32,9 +38,17 @@ from statblocks_v1.application.commands import (
     ReviseStatblockCommandV1,
 )
 from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
-from statblocks_v1.application.repositories import CandidateRepository
+from statblocks_v1.application.repositories import (
+    CandidateRepository,
+    StatblockPersistenceRepository,
+)
+from statblocks_v1.application.revisions import RevisionServiceV1
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import (
+    GeneratedStatblockCandidateV1,
+    StatblockResourceV1,
+    StatblockRevisionResourceV1,
+)
 
 _AUTH_ERROR_RESPONSES = {
     401: {"model": ErrorEnvelopeV1, "description": "Missing internal API key"},
@@ -77,6 +91,29 @@ _VALIDATE_ERROR_RESPONSES = {
     422: {"model": ErrorEnvelopeV1, "description": "Invalid request"},
 }
 
+_RESOURCE_WRITE_ERROR_RESPONSES = {
+    **_AUTH_ERROR_RESPONSES,
+    404: {
+        "model": ErrorEnvelopeV1,
+        "description": "Statblock, revision, or acceptance candidate not found",
+    },
+    409: {
+        "model": ErrorEnvelopeV1,
+        "description": (
+            "Idempotency conflict, parent mismatch, stale parent, or immutable ID conflict"
+        ),
+    },
+    422: {
+        "model": ErrorEnvelopeV1,
+        "description": "Request validation or persistence-mode validation failed",
+    },
+}
+
+_RESOURCE_READ_ERROR_RESPONSES = {
+    **_AUTH_ERROR_RESPONSES,
+    404: {"model": ErrorEnvelopeV1, "description": "Statblock or revision not found"},
+}
+
 router = APIRouter(
     prefix="/api/internal/dungeonbuddy/v1",
     tags=["DungeonBuddy Statblocks v1"],
@@ -91,7 +128,7 @@ router = APIRouter(
     responses=_AUTH_ERROR_RESPONSES,
 )
 async def health() -> HealthResponseV1:
-    """Advertise the candidate workflow currently available to DungeonBuddy."""
+    """Advertise the candidate and acceptance workflow available to DungeonBuddy."""
     return HealthResponseV1(
         status="available",
         contract=CONTRACT_NAME,
@@ -101,6 +138,11 @@ async def health() -> HealthResponseV1:
             "candidate_revise",
             "definition_validate",
             "candidate_read",
+            "statblock_create",
+            "statblock_revision_append",
+            "statblock_read",
+            "statblock_revision_list",
+            "statblock_revision_read",
         ],
     )
 
@@ -191,3 +233,103 @@ async def get_candidate(
     clock: Annotated[Clock, Depends(get_clock)],
 ) -> GeneratedStatblockCandidateV1:
     return await asyncio.to_thread(candidates.get, candidate_id, now=clock())
+
+
+@router.post(
+    "/statblocks",
+    response_model=CreateStatblockResponseV1,
+    responses=_RESOURCE_WRITE_ERROR_RESPONSES,
+    operation_id="create_statblock_v1",
+)
+async def create_statblock(
+    request: CreateStatblockRequestV1,
+    service: Annotated[RevisionServiceV1, Depends(get_revision_service)],
+) -> CreateStatblockResponseV1:
+    statblock, revision = await asyncio.to_thread(
+        service.create,
+        idempotency_key=request.idempotency_key,
+        definition=request.definition,
+        change_summary=request.change_summary,
+        accepted_through=request.accepted_through,
+        actor=request.actor,
+        asset_bindings=request.asset_bindings,
+        candidate_id=request.candidate_id,
+    )
+    return CreateStatblockResponseV1(statblock=statblock, revision=revision)
+
+
+@router.post(
+    "/statblocks/{statblock_id}/revisions",
+    response_model=StatblockRevisionResourceV1,
+    responses=_RESOURCE_WRITE_ERROR_RESPONSES,
+    operation_id="append_statblock_revision_v1",
+)
+async def append_revision(
+    statblock_id: str,
+    request: AppendRevisionRequestV1,
+    service: Annotated[RevisionServiceV1, Depends(get_revision_service)],
+) -> StatblockRevisionResourceV1:
+    return await asyncio.to_thread(
+        service.append,
+        statblock_id=statblock_id,
+        parent_revision_id=request.parent_revision_id,
+        idempotency_key=request.idempotency_key,
+        definition=request.definition,
+        change_summary=request.change_summary,
+        accepted_through=request.accepted_through,
+        actor=request.actor,
+        asset_bindings=request.asset_bindings,
+        candidate_id=request.candidate_id,
+    )
+
+
+@router.get(
+    "/statblocks/{statblock_id}",
+    response_model=StatblockResourceV1,
+    responses=_RESOURCE_READ_ERROR_RESPONSES,
+    operation_id="get_statblock_v1",
+)
+async def get_statblock(
+    statblock_id: str,
+    persistence: Annotated[
+        StatblockPersistenceRepository, Depends(get_persistence_repository)
+    ],
+) -> StatblockResourceV1:
+    return await asyncio.to_thread(persistence.get, statblock_id)
+
+
+@router.get(
+    "/statblocks/{statblock_id}/revisions",
+    response_model=RevisionListResponseV1,
+    responses=_RESOURCE_READ_ERROR_RESPONSES,
+    operation_id="list_statblock_revisions_v1",
+)
+async def list_revisions(
+    statblock_id: str,
+    persistence: Annotated[
+        StatblockPersistenceRepository, Depends(get_persistence_repository)
+    ],
+) -> RevisionListResponseV1:
+    revisions = await asyncio.to_thread(persistence.list_for_statblock, statblock_id)
+    return RevisionListResponseV1(
+        revisions=sorted(
+            revisions, key=lambda revision: (revision.created_at, revision.revision_id)
+        )
+    )
+
+
+@router.get(
+    "/statblocks/{statblock_id}/revisions/{revision_id}",
+    response_model=StatblockRevisionResourceV1,
+    responses=_RESOURCE_READ_ERROR_RESPONSES,
+    operation_id="get_statblock_revision_v1",
+)
+async def get_revision(
+    statblock_id: str,
+    revision_id: str,
+    persistence: Annotated[
+        StatblockPersistenceRepository, Depends(get_persistence_repository)
+    ],
+) -> StatblockRevisionResourceV1:
+    """Resolve exactly the locator supplied by the caller; never select latest."""
+    return await asyncio.to_thread(persistence.get_revision, statblock_id, revision_id)

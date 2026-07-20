@@ -74,6 +74,16 @@ class FirestoreCandidateRepository:
             raise CandidateExpiredError(candidate_id)
         return candidate
 
+    def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
+        """Read retained candidate audit data without applying workflow expiry."""
+        try:
+            snapshot = self._client.collection(CANDIDATES_COLLECTION).document(candidate_id).get()
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
+        if not snapshot.exists:
+            raise CandidateNotFoundError(candidate_id)
+        return GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+
 
 class FirestoreStatblockPersistenceRepository:
     """Atomic create/append adapter using Firestore read-write transactions."""

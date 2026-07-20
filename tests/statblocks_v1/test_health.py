@@ -99,6 +99,11 @@ def test_health_returns_available_capabilities(client: TestClient, auth_headers:
             "candidate_revise",
             "definition_validate",
             "candidate_read",
+            "statblock_create",
+            "statblock_revision_append",
+            "statblock_read",
+            "statblock_revision_list",
+            "statblock_revision_read",
         ],
     }
 

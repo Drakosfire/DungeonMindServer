@@ -14,7 +14,11 @@ from statblocks_v1.application.commands import (
 )
 from statblocks_v1.domain.profiles import RulesetRef
 from statblocks_v1.domain.receipts import ValidationReceiptV1
-from statblocks_v1.domain.resources import ExactRevisionLocatorV1
+from statblocks_v1.domain.resources import (
+    ExactRevisionLocatorV1,
+    StatblockResourceV1,
+    StatblockRevisionResourceV1,
+)
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 
@@ -80,3 +84,43 @@ class ValidateDefinitionRequestV1(StrictModel):
 class ValidationResponseV1(StrictModel):
     validation_receipt: ValidationReceiptV1
     definition_digest: str
+
+
+class CreateStatblockRequestV1(StrictModel):
+    """Accept a reviewed definition into a new logical statblock + first revision.
+
+    Free-form ``provenance`` is intentionally absent: callers may supply typed
+    acceptance metadata only. Server-owned candidate audit evidence is attached
+    when ``candidate_id`` is present. ``actor`` is provenance data, not
+    authenticated ownership of ``created_by``.
+    """
+
+    idempotency_key: str = Field(min_length=1)
+    definition: StatblockDefinitionV1
+    candidate_id: str | None = Field(default=None, pattern=r"^cand_[a-z0-9]+$")
+    change_summary: str = Field(min_length=1)
+    actor: str | None = None
+    accepted_through: dict[str, Any] = Field(default_factory=dict)
+    asset_bindings: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AppendRevisionRequestV1(StrictModel):
+    """Append an immutable revision under compare-and-swap parent semantics."""
+
+    idempotency_key: str = Field(min_length=1)
+    parent_revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
+    definition: StatblockDefinitionV1
+    candidate_id: str | None = Field(default=None, pattern=r"^cand_[a-z0-9]+$")
+    change_summary: str = Field(min_length=1)
+    actor: str | None = None
+    accepted_through: dict[str, Any] = Field(default_factory=dict)
+    asset_bindings: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CreateStatblockResponseV1(StrictModel):
+    statblock: StatblockResourceV1
+    revision: StatblockRevisionResourceV1
+
+
+class RevisionListResponseV1(StrictModel):
+    revisions: list[StatblockRevisionResourceV1]

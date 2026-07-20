@@ -1,6 +1,6 @@
 # HANDOFF — PR18 Statblock v1 revision resource API
 
-**Status:** READY AFTER PR17  
+**Status:** IN REVIEW — rebased onto merged PR17; acceptance trust boundaries sealed  
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Predecessors:** PR14 trust core, PR15 repositories, PR17 router/error boundary  
 **Successor:** `HANDOFF-pr19-statblock-v1-assets-openapi-consumer-contract.md`
@@ -26,15 +26,15 @@
   only. **Candidate idempotency is deferred** (not implemented) so PR15
   statblock/revision idempotency outcomes remain untouched. Do not assume
   request-id replay for candidates.
-- Candidate lookup is `CandidateRepository.get(candidate_id, now=...)`; async
-  routes call synchronous repositories and generation through `asyncio.to_thread`.
+- Candidate lookup is `CandidateRepository.get(candidate_id, now=...)`; acceptance
+  uses `get_for_acceptance` (ignores workflow expiry, still 404 when missing).
+  Async routes call synchronous repositories through `asyncio.to_thread`.
 - OpenAPI operations: `generate_statblock_candidate_v1`,
   `revise_statblock_candidate_v1`, `validate_statblock_definition_v1`,
   `get_statblock_candidate_v1`. ErrorEnvelopeV1 is declared on failure statuses.
-  No accepted-resource routes exist yet.
-- Tests override `get_generation_service`, `get_candidate_repository`, and
-  `get_clock` with `FakeDefinitionProvider`, `InMemoryCandidateRepository` /
-  `InMemoryStatblockPersistenceRepository`, and deterministic clocks.
+  No accepted-resource routes existed yet before PR18.
+- Tests override `get_generation_service`, `get_candidate_repository`,
+  `get_persistence_repository`, `get_revision_service`, and `get_clock`.
 
 ## 0. Mission
 
@@ -130,6 +130,17 @@ A revision returned immediately after create/append and the same revision return
 - identical provenance and asset bindings;
 - no dependency on current prompt, model, renderer, or latest revision.
 
+Candidate-linked acceptance must also replay after the source candidate document is
+gone (TTL deletion). Idempotency is consulted **before** `get_for_acceptance`, and
+server-owned `provenance.candidate` audit evidence is excluded from the request
+digest (`candidate_id` remains in the digest).
+
+Idempotency is also consulted **before** semantic persistence validation.
+Validation and candidate lookup run only when the key is genuinely new, so a
+changed-but-invalid retry yields `409 idempotency_conflict` rather than
+`422 validation_failed`, and exact replay survives future validator-policy
+changes.
+
 Add a full exact-replay test.
 
 ## 6. Idempotency
@@ -141,9 +152,11 @@ Required behavior:
 ```text
 same key + same canonical request
   → return original resource outcome
+    (consult idempotency before persistence validation)
 
 same key + changed definition, parent, or operation metadata
   → 409 typed idempotency conflict
+    (even when the changed payload would fail persistence validation)
 
 concurrent same-key requests
   → one revision only
@@ -155,12 +168,22 @@ No client-supplied revision ID.
 
 When `candidate_id` is supplied:
 
-- load the server-owned candidate;
-- reject missing/expired candidate only according to documented acceptance policy;
-- record source candidate ID, source definition digest, generation receipt locator/snapshot, and whether accepted definition changed;
-- never replace the submitted accepted definition with candidate content.
+- load the server-owned candidate via `get_for_acceptance`;
+- reject missing candidates with `404 candidate_not_found` on first write;
+- record source candidate ID, source definition digest, generation receipt
+  locator/snapshot, and whether accepted definition changed under
+  `provenance.candidate` (server-owned; never caller-supplied);
+- never replace the submitted accepted definition with candidate content;
+- never accept a free-form caller `provenance` object on the public DTO.
 
-Decide explicitly whether an expired candidate can still be accepted if its record remains available. Recommended: expiration prevents new candidate reads/generation workflow but does not erase server audit data immediately; acceptance policy should be documented and tested.
+Expired candidates may still be accepted while their record remains available.
+Workflow candidate GET returns `410` once expired. After TTL deletes the record,
+same-key acceptance replay returns the original revision without requiring the
+candidate document.
+
+`actor` is acceptance provenance (`accepted_by`) only. Logical-statblock
+`created_by` is the authenticated service identity (`dungeonbuddy`), not the
+caller-asserted actor.
 
 ## 8. Validation failures
 
@@ -249,9 +272,11 @@ PR18 is complete when:
 Before merge, update PR19 with:
 
 - exact OpenAPI operation IDs;
-- final resource/request models;
+- final resource/request models (no free-form provenance spoof surface);
 - asset-binding model;
 - revision locator format;
 - pagination behavior;
-- candidate acceptance/expiration policy;
+- candidate acceptance/expiration policy and same-key replay after TTL;
+- `created_by` = service identity; `actor` = provenance only;
+- PR18 error catalog extension (idempotency/parent/stale/validation/indeterminate);
 - cross-repo fixture suitable for DungeonBuddy client generation.
