@@ -47,7 +47,10 @@
   failures only warn and do not invalidate otherwise valid candidate mechanics.
 - A DungeonBuddy smoke should regenerate/import the checked-in client, parse
   `Docs/Design/fixtures/dungeonbuddy-statblock-v1-api/`, and retain exact
-  `statblock_id + revision_id` locators before launch.
+  `statblock_id + revision_id` locators before launch. **This coordinated
+  consumer compile/parse/projection/`human_adjudicated` proof is intentionally
+  owned by PR20** — PR19 publishes the contract artifact and fixtures but does
+  not require a live DungeonBuddy checkout to merge.
 
 ## 0. Mission
 
