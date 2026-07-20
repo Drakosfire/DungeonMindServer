@@ -237,6 +237,9 @@
         "kind": {
           "const": "attack",
           "default": "attack",
+          "enum": [
+            "attack"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -499,6 +502,9 @@
         "kind": {
           "const": "composite",
           "default": "composite",
+          "enum": [
+            "composite"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -539,6 +545,9 @@
         "kind": {
           "const": "condition",
           "default": "condition",
+          "enum": [
+            "condition"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -672,6 +681,9 @@
         "kind": {
           "const": "damage",
           "default": "damage",
+          "enum": [
+            "damage"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -806,6 +818,9 @@
         "kind": {
           "const": "disable_elements",
           "default": "disable_elements",
+          "enum": [
+            "disable_elements"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -820,7 +835,11 @@
       "additionalProperties": false,
       "properties": {
         "unit": {
-          "$ref": "#/$defs/DistanceUnit",
+          "allOf": [
+            {
+              "$ref": "#/$defs/DistanceUnit"
+            }
+          ],
           "default": "feet"
         },
         "value": {
@@ -836,6 +855,7 @@
       "type": "object"
     },
     "DistanceUnit": {
+      "const": "feet",
       "enum": [
         "feet"
       ],
@@ -930,6 +950,9 @@
         "kind": {
           "const": "enable_elements",
           "default": "enable_elements",
+          "enum": [
+            "enable_elements"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -946,6 +969,9 @@
         "kind": {
           "const": "enter_phase",
           "default": "enter_phase",
+          "enum": [
+            "enter_phase"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -975,6 +1001,9 @@
         "kind": {
           "const": "forced_movement",
           "default": "forced_movement",
+          "enum": [
+            "forced_movement"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -995,6 +1024,9 @@
         "kind": {
           "const": "healing",
           "default": "healing",
+          "enum": [
+            "healing"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -1071,6 +1103,9 @@
         "kind": {
           "const": "human_adjudicated",
           "default": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -1094,6 +1129,9 @@
         "kind": {
           "const": "human_adjudicated",
           "default": "human_adjudicated",
+          "enum": [
+            "human_adjudicated"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -1187,6 +1225,9 @@
         "kind": {
           "const": "movement",
           "default": "movement",
+          "enum": [
+            "movement"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -1274,6 +1315,9 @@
         "kind": {
           "const": "multiattack",
           "default": "multiattack",
+          "enum": [
+            "multiattack"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -1359,6 +1403,9 @@
         "kind": {
           "const": "passive",
           "default": "passive",
+          "enum": [
+            "passive"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -1438,6 +1485,9 @@
         "kind": {
           "const": "phase_transition",
           "default": "phase_transition",
+          "enum": [
+            "phase_transition"
+          ],
           "title": "Kind",
           "type": "string"
         }
@@ -1537,6 +1587,9 @@
         "kind": {
           "const": "resource_change",
           "default": "resource_change",
+          "enum": [
+            "resource_change"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -1782,6 +1835,7 @@
       "type": "object"
     },
     "RulesetSystem": {
+      "const": "dnd5e",
       "enum": [
         "dnd5e"
       ],
@@ -1855,6 +1909,9 @@
         "kind": {
           "const": "save_effect",
           "default": "save_effect",
+          "enum": [
+            "save_effect"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -2238,6 +2295,9 @@
         "kind": {
           "const": "spellcasting",
           "default": "spellcasting",
+          "enum": [
+            "spellcasting"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -2279,6 +2339,9 @@
         "kind": {
           "const": "stat_modifier",
           "default": "stat_modifier",
+          "enum": [
+            "stat_modifier"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -2352,6 +2415,9 @@
         "kind": {
           "const": "summon",
           "default": "summon",
+          "enum": [
+            "summon"
+          ],
           "title": "Kind",
           "type": "string"
         }
