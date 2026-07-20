@@ -5,6 +5,37 @@
 **Predecessors:** PR14 trust core, PR15 repositories, PR17 router/error boundary  
 **Successor:** `HANDOFF-pr19-statblock-v1-assets-openapi-consumer-contract.md`
 
+## PR17 predecessor completion notes
+
+- The v1 route prefix is `/api/internal/dungeonbuddy/v1`; all routes use
+  `require_internal_service_auth` and the `X-DungeonBuddy-Internal-Key` shared key.
+- Errors use top-level `{ "error": { "code", "message", "details"? } }` via the
+  existing `StatblockV1HTTPError` / `register_error_handlers` seam. Request
+  validation is path-scoped: only v1 paths get the typed envelope; legacy routes
+  keep FastAPI `{"detail": ...}`.
+- Generation failure kinds from final PR16 map explicitly (`ruleset_mismatch`,
+  `source_digest_mismatch`, `invalid_request`, `revision_not_found`,
+  `statblock_not_found`, `persistence_unavailable` → 503, provider outcomes).
+  Unknown kinds fail closed as `500 generation_failed`, never a false
+  `provider_unavailable`.
+- Revision uses `ExactRevisionLocatorV1(statblock_id, revision_id)`. Production
+  wiring in `app.py` injects `PersistenceDefinitionResolver` over
+  `FirestoreStatblockPersistenceRepository`. Exactly one of `source_definition` /
+  `source_locator` is enforced on the request DTO (422 `invalid_request`).
+- Candidate generate/revise treat `request_id` as correlation/receipt metadata
+  only. **Candidate idempotency is deferred** (not implemented) so PR15
+  statblock/revision idempotency outcomes remain untouched. Do not assume
+  request-id replay for candidates.
+- Candidate lookup is `CandidateRepository.get(candidate_id, now=...)`; async
+  routes call synchronous repositories and generation through `asyncio.to_thread`.
+- OpenAPI operations: `generate_statblock_candidate_v1`,
+  `revise_statblock_candidate_v1`, `validate_statblock_definition_v1`,
+  `get_statblock_candidate_v1`. ErrorEnvelopeV1 is declared on failure statuses.
+  No accepted-resource routes exist yet.
+- Tests override `get_generation_service`, `get_candidate_repository`, and
+  `get_clock` with `FakeDefinitionProvider`, `InMemoryCandidateRepository` /
+  `InMemoryStatblockPersistenceRepository`, and deterministic clocks.
+
 ## 0. Mission
 
 Expose authoritative logical-statblock and immutable-revision resources through the DungeonBuddy v1 router.

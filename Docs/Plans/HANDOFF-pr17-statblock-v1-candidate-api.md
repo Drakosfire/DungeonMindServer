@@ -1,6 +1,7 @@
 # HANDOFF — PR17 Statblock v1 candidate API
 
-**Status:** READY AFTER PR15 AND PR16  
+**Status:** IN REVIEW — rebased onto merged PR16; candidate idempotency deferred  
+
 **Target repository:** `Drakosfire/DungeonMindServer`  
 **Predecessors:** repository persistence and generation service  
 **Successor:** `HANDOFF-pr18-statblock-v1-revision-resource-api.md`
@@ -15,8 +16,9 @@
 - Candidates expire at `expires_at` (also the Firestore TTL field). Collections are
   `dungeonbuddy_statblock_candidates_v1`, `dungeonbuddy_statblocks_v1/revisions`,
   and `dungeonbuddy_statblock_idempotency_v1`.
-- Reuse `compute_request_digest(operation, payload)` for request replay: it includes
-  operation parameters rather than using only the mechanics definition digest.
+- PR15 `compute_request_digest(operation, payload)` and idempotency records apply to
+  logical-statblock create/append only. Candidate generate/revise do **not** use
+  that path in PR17 (see §9).
 
 ## PR16 predecessor completion notes
 
@@ -187,15 +189,19 @@ Route tests must replace all external dependencies with fake or in-memory implem
 
 ## 9. Idempotency and retries
 
-Generation and revision requests should accept stable request IDs. Decide and document whether they are idempotent operations.
+**Decision (PR17): candidate idempotency is deferred.**
 
-Recommended:
+Generation and revision accept `request_id` as correlation / generation-receipt
+metadata only. They are **not** idempotent operations in this PR:
 
-- same caller + request ID + same request returns the same candidate;
-- same request ID with different request body returns conflict;
-- provider invocation is not repeated after a successful stored result.
+- identical `request_id` values may produce distinct candidates;
+- there is no candidate-level replay, conflict, or provider-once reservation;
+- PR15 create/append idempotency (`IdempotencyOutcomeV1` for
+  `statblock_id`/`revision_id`) is unchanged and must not be overloaded for
+  candidates.
 
-Use the PR15 idempotency service if implemented for candidate commands; do not invent a separate route-local cache.
+A later PR may add a candidate-specific durable reservation protocol; until then
+callers must not assume request-id replay.
 
 ## 10. Suggested files
 
@@ -217,16 +223,20 @@ Required route tests:
 
 - health capabilities;
 - generate success with fake provider;
-- revise success from definition and exact revision source;
+- revise success from definition and exact revision source (inline + locator);
+- invalid revision source combinations (neither / both) → typed 422;
 - validate success/warnings/failure;
 - candidate exact read;
 - candidate expired/not found;
 - missing/wrong/correct authentication;
-- request ID replay;
-- conflicting request ID reuse;
-- provider refusal, timeout, and malformed output mapping;
+- distinct generates with different `request_id` yield distinct candidates
+  (idempotency deferred — no replay/conflict claims);
+- provider refusal, timeout, malformed output, ruleset mismatch, and
+  source-digest mismatch mapping (not false `provider_unavailable`);
+- missing revision / missing statblock typed codes;
+- legacy routes retain FastAPI `{"detail": ...}` validation envelopes;
 - no Markdown or `combat_defaults` in response;
-- OpenAPI paths and response models exist.
+- OpenAPI paths and `ErrorEnvelopeV1` failure response models exist.
 
 No route test may require OpenAI or Firestore credentials.
 
@@ -253,11 +263,12 @@ PR17 is complete when:
 
 ## 14. Successor handoff
 
-Before merge, update PR18 with:
+PR18 predecessor notes already record:
 
 - final route prefix and auth dependency;
-- API error envelope and status policy;
-- request ID/idempotency behavior;
-- candidate lookup/service signatures;
-- OpenAPI path names;
-- route-test app factory and dependency overrides.
+- path-scoped API error envelope and status policy;
+- `request_id` as correlation only (candidate idempotency deferred);
+- candidate lookup/service signatures and exact-revision wiring;
+- OpenAPI operation IDs and `ErrorEnvelopeV1` failure models;
+- route-test dependency overrides (`get_generation_service`,
+  `get_candidate_repository`, `get_clock`).

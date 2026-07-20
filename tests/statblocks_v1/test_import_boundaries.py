@@ -251,6 +251,7 @@ def test_infrastructure_depends_only_on_domain_and_application() -> None:
 
 def test_api_depends_on_domain_application_fastapi_and_auth_constants() -> None:
     allowed_roots = STDLIB_AND_TYPING_ROOTS | {
+        "asyncio",
         "pydantic",
         "fastapi",
         "statblocks_v1",
