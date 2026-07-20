@@ -25,8 +25,13 @@ from .auth_router import get_current_user
 from auth_service import User
 from security_limits.paid_budget import paid_budget_store
 from security_limits.input_limits import enforce_max_chars, clamp_num_images, MAX_PROMPT_CHARS
-from services.image_asset_registry import register_image_asset, get_asset_for_owner, delete_asset_record
-from cloudflare.handle_images import delete_cloudflare_image_by_id
+from services.image_asset_registry import (
+    register_image_asset,
+    register_cloudflare_url_asset,
+    get_asset_for_owner,
+    delete_asset_record,
+)
+from cloudflare.handle_images import delete_cloudflare_image_by_id, upload_image_to_cloudflare_detailed
 
 # GenerationEngine
 from generationengine import (
@@ -73,6 +78,7 @@ class GeneratedImage(BaseModel):
     """Single generated image (snake_case to match frontend contract)."""
     id: str
     url: str
+    asset_id: Optional[str] = None
     prompt: str
     created_at: str  # snake_case for API contract
 
@@ -149,7 +155,7 @@ async def upload_multiple_images(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Upload multiple images to permanent storage.
+    Upload multiple images to permanent storage and register asset ids.
     Requires an authenticated session.
     """
     try:
@@ -160,21 +166,55 @@ async def upload_multiple_images(
             raise HTTPException(status_code=422, detail="Maximum 20 images per batch")
         
         logger.info(
-            f"Bulk upload request: {len(request.image_urls)} images "
-            f"user={getattr(current_user, 'email', None)}"
+            "Bulk upload request: %s images user_id=%s",
+            len(request.image_urls),
+            current_user.user_id,
         )
         
-        # Delegate to service layer
-        result = await image_management_service.upload_generated_images(request.image_urls)
+        uploaded_images = []
+        success_count = 0
+        failure_count = 0
+
+        for i, url in enumerate(request.image_urls):
+            try:
+                detailed = await upload_image_to_cloudflare_detailed(url)
+                asset = register_cloudflare_url_asset(
+                    owner_id=current_user.user_id,
+                    canonical_url=detailed.url,
+                    provider_image_id=detailed.provider_image_id,
+                    account_or_bucket=detailed.account_id,
+                    service="images",
+                )
+                uploaded_images.append({
+                    "original_url": url,
+                    "permanent_url": detailed.url,
+                    "url": detailed.url,
+                    "asset_id": asset.asset_id,
+                    "id": asset.asset_id,
+                    "status": "success",
+                })
+                success_count += 1
+            except Exception as e:
+                logger.error("Bulk upload item failed: %s", type(e).__name__)
+                failure_count += 1
+                uploaded_images.append({
+                    "original_url": url,
+                    "permanent_url": url,
+                    "id": f"uploaded-{i}",
+                    "status": "failed",
+                    "error": str(e),
+                })
         
         return {
-            "uploaded_images": result.uploaded_images,
-            "total_count": result.total_count,
-            "success_count": result.success_count,
-            "failure_count": result.failure_count,
-            "success": result.success_count > 0
+            "uploaded_images": uploaded_images,
+            "total_count": len(request.image_urls),
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "success": success_count > 0
         }
         
+    except HTTPException:
+        raise
     except ImageProcessingError as e:
         logger.error(f"Bulk upload failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -262,9 +302,15 @@ async def generate_image(
         generated_images: List[GeneratedImage] = []
         if response.images:
             for idx, img_result in enumerate(response.images):
+                asset = register_cloudflare_url_asset(
+                    owner_id=current_user.user_id,
+                    canonical_url=img_result.url,
+                    service="images",
+                )
                 generated_images.append(GeneratedImage(
-                    id=f"img_{datetime.now().timestamp()}_{idx}",
+                    id=asset.asset_id,
                     url=img_result.url,
+                    asset_id=asset.asset_id,
                     prompt=request.prompt,
                     created_at=datetime.now().isoformat()
                 ))

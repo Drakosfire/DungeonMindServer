@@ -150,7 +150,23 @@ class DemoQuotaDependency:
         request.state.demo_quota_ip = identity  # middleware release key
 
 
-require_demo_quota_statblock = DemoQuotaDependency(FAMILY_STATBLOCK_GENERATE)
-require_demo_quota_card_item = DemoQuotaDependency(FAMILY_CARD_GENERATE_ITEM)
-require_demo_quota_ruleslawyer = DemoQuotaDependency(FAMILY_RULESLAWYER_QUERY)
-require_demo_quota_pcg_preferences = DemoQuotaDependency(FAMILY_PCG_PREFERENCES)
+def _make_demo_quota_dep(family: str):
+    """
+    Plain async function dependencies (not class __call__).
+
+    FastAPI 0.115+ can mis-parse class-based __call__(self, request) and treat
+    ``request`` as a required query parameter (HTTP 422).
+    """
+
+    async def _dep(request: Request) -> None:
+        identity = demo_quota_identity(request)
+        demo_quota_store.admit(identity, family)
+        request.state.demo_quota_ip = identity
+
+    return _dep
+
+
+require_demo_quota_statblock = _make_demo_quota_dep(FAMILY_STATBLOCK_GENERATE)
+require_demo_quota_card_item = _make_demo_quota_dep(FAMILY_CARD_GENERATE_ITEM)
+require_demo_quota_ruleslawyer = _make_demo_quota_dep(FAMILY_RULESLAWYER_QUERY)
+require_demo_quota_pcg_preferences = _make_demo_quota_dep(FAMILY_PCG_PREFERENCES)

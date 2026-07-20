@@ -1,5 +1,6 @@
 import json
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -123,20 +124,67 @@ def test_rulebook_list_endpoint():
     assert payload["rulebooks"][0]["id"] == "DnD_PHB_55"
 
 
-def test_rulebook_refresh_endpoint():
+def test_rulebook_refresh_endpoint(monkeypatch):
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "test-internal-key")
     registry = FakeRegistry()
     app = build_app(registry=registry)
     client = TestClient(app)
 
-    response = client.post("/api/ruleslawyer/rulebooks/refresh", json={
+    unauth = client.post("/api/ruleslawyer/rulebooks/refresh", json={
         "rulebookIds": ["DnD_PHB_55"],
         "reason": "unit-test"
     })
+    assert unauth.status_code in (401, 403)
+
+    response = client.post(
+        "/api/ruleslawyer/rulebooks/refresh",
+        json={"rulebookIds": ["DnD_PHB_55"], "reason": "unit-test"},
+        headers={"X-DungeonBuddy-Internal-Key": "test-internal-key"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "accepted"
     assert payload["refreshedRulebooks"] == ["DnD_PHB_55"]
+
+
+def test_loadembeddings_rejects_path_traversal(monkeypatch):
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "test-internal-key")
+    from routers.ruleslawyer_router import _resolve_under_ruleslawyer_data_dir
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        _resolve_under_ruleslawyer_data_dir("folder/../../outside.csv")
+    assert exc.value.status_code == 400
+
+    app = build_app()
+    client = TestClient(app)
+    resp = client.post(
+        "/api/ruleslawyer/loadembeddings",
+        json={
+            "embedding": "evil",
+            "embeddings_file_path": "folder/../../outside.csv",
+            "enhanced_json_path": "ok.json",
+        },
+        headers={"X-DungeonBuddy-Internal-Key": "test-internal-key"},
+    )
+    assert resp.status_code == 400
+    assert "escapes" in resp.json()["detail"].lower() or "path" in resp.json()["detail"].lower()
+
+
+def test_loadembeddings_requires_internal_key(monkeypatch):
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "test-internal-key")
+    app = build_app()
+    client = TestClient(app)
+    resp = client.post(
+        "/api/ruleslawyer/loadembeddings",
+        json={
+            "embedding": "x",
+            "embeddings_file_path": "a.csv",
+            "enhanced_json_path": "b.json",
+        },
+    )
+    assert resp.status_code in (401, 403)
 
 
 def test_saved_rules_list_and_save():

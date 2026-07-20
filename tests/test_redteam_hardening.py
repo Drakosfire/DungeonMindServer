@@ -267,3 +267,102 @@ def test_production_surface_and_auth_gates(test_client, monkeypatch):
     )
     assert sms_keyed.status_code in (200, 500)
     assert sms_keyed.status_code not in (401, 403)
+
+
+def test_ruleslawyer_control_endpoints_require_internal_key(test_client, monkeypatch):
+    monkeypatch.setenv(INTERNAL_KEY_ENV, "rl-internal-key")
+    client = test_client
+
+    refresh = client.post(
+        "/api/ruleslawyer/rulebooks/refresh",
+        json={"rulebookIds": ["x"], "reason": "test"},
+    )
+    assert refresh.status_code in (401, 403)
+
+    load = client.post(
+        "/api/ruleslawyer/loadembeddings",
+        json={
+            "embedding": "x",
+            "embeddings_file_path": "a.csv",
+            "enhanced_json_path": "b.json",
+        },
+    )
+    assert load.status_code in (401, 403)
+
+
+def test_ruleslawyer_path_traversal_rejected():
+    from routers.ruleslawyer_router import _resolve_under_ruleslawyer_data_dir
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        _resolve_under_ruleslawyer_data_dir("../../etc/passwd")
+    assert exc.value.status_code == 400
+
+
+def test_decode_data_uri_bounded_rejects_oversized_and_bad_b64():
+    from security_limits.image_bounds import decode_data_uri_bounded, MAX_DATA_URI_CHARS
+
+    with pytest.raises(Exception) as exc:
+        decode_data_uri_bounded("not-a-data-uri", field="maskBase64")
+    assert exc.value.status_code == 400
+
+    huge = "data:image/png;base64," + ("A" * (MAX_DATA_URI_CHARS + 1))
+    with pytest.raises(Exception) as exc2:
+        decode_data_uri_bounded(huge, field="maskBase64")
+    assert exc2.value.status_code == 413
+
+
+def test_open_image_bounded_checks_size_before_load(monkeypatch):
+    """Regression: dimension reject must happen before img.load()."""
+    load_called = {"n": 0}
+
+    class FakeImg:
+        size = (20000, 20000)
+
+        def load(self):
+            load_called["n"] += 1
+            return None
+
+    monkeypatch.setattr(
+        "security_limits.image_bounds.Image.open", lambda *_a, **_k: FakeImg()
+    )
+    with pytest.raises(Exception) as exc:
+        open_image_bounded(b"fakepng")
+    assert exc.value.status_code == 413
+    assert load_called["n"] == 0
+
+
+def test_create_map_project_unowned_url_returns_403_not_500(test_client):
+    from routers.auth_router import get_current_user
+    from auth_service import User
+    from services import image_asset_registry as registry
+
+    async def _user():
+        return User(sub="user-a", email="a@example.com", name="A")
+
+    app = test_client.app
+    app.dependency_overrides[get_current_user] = _user
+    try:
+        with patch.object(registry, "get_owned_asset_by_url", return_value=None):
+            resp = test_client.post(
+                "/api/mapgenerator/projects",
+                json={
+                    "name": "Forged",
+                    "baseImageUrl": "https://imagedelivery.net/acct/victim/public",
+                },
+            )
+        assert resp.status_code == 403
+        assert "owned" in resp.json()["detail"].lower()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cloudflare_image_id_from_url():
+    from services.image_asset_registry import cloudflare_image_id_from_url
+
+    assert (
+        cloudflare_image_id_from_url(
+            "https://imagedelivery.net/acctHash/img-uuid-123/public"
+        )
+        == "img-uuid-123"
+    )

@@ -12,10 +12,25 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 IMAGE_ASSETS_COLLECTION = "image_assets"
+
+
+def cloudflare_image_id_from_url(url: str) -> str:
+    """
+    Extract Cloudflare Images id from imagedelivery.net URL.
+    Path form: /{account_hash}/{image_id}/{variant}
+    """
+    if not url:
+        return ""
+    path = urlparse(url).path.strip("/")
+    parts = [p for p in path.split("/") if p]
+    if len(parts) >= 2:
+        return parts[1]
+    return ""
 
 
 @dataclass
@@ -103,13 +118,10 @@ def delete_asset_record(asset_id: str) -> None:
     _db().collection(IMAGE_ASSETS_COLLECTION).document(asset_id).delete()
 
 
-def owner_has_asset_url(owner_id: str, url: str) -> bool:
-    """
-    True only if a registry row for this owner already holds this URL.
-    Used to reject forging foreign CDN URLs into map projects.
-    """
+def get_owned_asset_by_url(owner_id: str, url: str) -> Optional[ImageAssetRecord]:
+    """Return the owner's registry row for this canonical URL, if any."""
     if not url:
-        return True  # empty allowed
+        return None
     query = (
         _db()
         .collection(IMAGE_ASSETS_COLLECTION)
@@ -117,4 +129,46 @@ def owner_has_asset_url(owner_id: str, url: str) -> bool:
         .where("canonical_url", "==", url)
         .limit(1)
     )
-    return any(True for _ in query.stream())
+    for doc in query.stream():
+        data: dict[str, Any] = doc.to_dict() or {}
+        return ImageAssetRecord(
+            asset_id=data.get("asset_id", doc.id),
+            owner_id=data["owner_id"],
+            provider=data.get("provider", ""),
+            object_key=data.get("object_key", ""),
+            canonical_url=data.get("canonical_url", ""),
+            account_or_bucket=data.get("account_or_bucket", ""),
+            created_at=data.get("created_at", ""),
+            service=data.get("service", ""),
+        )
+    return None
+
+
+def owner_has_asset_url(owner_id: str, url: str) -> bool:
+    """
+    True only if a registry row for this owner already holds this URL.
+    Used to reject forging foreign CDN URLs into map projects.
+    """
+    if not url:
+        return True  # empty allowed
+    return get_owned_asset_by_url(owner_id, url) is not None
+
+
+def register_cloudflare_url_asset(
+    *,
+    owner_id: str,
+    canonical_url: str,
+    provider_image_id: str = "",
+    account_or_bucket: str = "",
+    service: str = "",
+) -> ImageAssetRecord:
+    """Register a Cloudflare Images URL (GenerationEngine / upload producers)."""
+    object_key = provider_image_id or cloudflare_image_id_from_url(canonical_url)
+    return register_image_asset(
+        owner_id=owner_id,
+        provider="cloudflare_images",
+        object_key=object_key,
+        canonical_url=canonical_url,
+        account_or_bucket=account_or_bucket,
+        service=service,
+    )

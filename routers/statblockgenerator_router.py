@@ -39,7 +39,16 @@ from google.cloud import firestore
 import os
 import fal_client
 from openai import OpenAI
-from cloudflare.handle_images import upload_image_to_cloudflare
+from cloudflare.handle_images import (
+    upload_image_to_cloudflare,
+    upload_image_to_cloudflare_detailed,
+    delete_cloudflare_image_by_id,
+)
+from services.image_asset_registry import (
+    register_cloudflare_url_asset,
+    get_asset_for_owner,
+    delete_asset_record,
+)
 
 # NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
@@ -126,7 +135,7 @@ async def upload_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload user's own creature image to Cloudflare R2
+    Upload user's own creature image to Cloudflare Images and register asset_id.
     Requires authentication for CDN storage and project association
     """
     try:
@@ -136,17 +145,23 @@ async def upload_image(
         if not image_data:
             raise HTTPException(status_code=400, detail="Image data required")
         
-        logger.info(f"Uploading creature image for user: {current_user.email}")
+        logger.info("Uploading creature image user_id=%s", current_user.user_id)
         
-        # Upload to Cloudflare R2 (reuse existing upload function)
-        # upload_image_to_cloudflare takes 1 arg (UploadFile) and returns URL string
-        cloudflare_url = await upload_image_to_cloudflare(image_data)
+        detailed = await upload_image_to_cloudflare_detailed(image_data)
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=detailed.url,
+            provider_image_id=detailed.provider_image_id,
+            account_or_bucket=detailed.account_id,
+            service="statblock",
+        )
         
         return {
             "success": True,
             "data": {
-                "id": f"upload_{datetime.now().timestamp()}",
-                "url": cloudflare_url,
+                "id": asset.asset_id,
+                "asset_id": asset.asset_id,
+                "url": detailed.url,
                 "prompt": "Uploaded image",
                 "created_at": datetime.now().isoformat()
             }
@@ -164,7 +179,7 @@ async def upload_images(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload multiple user images to Cloudflare R2
+    Upload multiple user images to Cloudflare Images and register asset ids.
     
     **REQUIRES AUTHENTICATION** - Login required to upload images.
     Guests can still use AI image generation.
@@ -172,9 +187,7 @@ async def upload_images(
     Images are stored permanently and associated with user account.
     """
     try:
-        user_email = current_user.email
-        
-        logger.info(f"Uploading {len(images)} image(s) for user: {user_email}")
+        logger.info("Uploading %s image(s) user_id=%s", len(images), current_user.user_id)
         
         if len(images) == 0:
             raise HTTPException(status_code=400, detail="No images provided")
@@ -204,13 +217,19 @@ async def upload_images(
                 image_file.file = BytesIO(content)
                 await image_file.seek(0)
                 
-                # Upload to Cloudflare
-                cloudflare_url = await upload_image_to_cloudflare(image_file)
+                detailed = await upload_image_to_cloudflare_detailed(image_file)
+                asset = register_cloudflare_url_asset(
+                    owner_id=current_user.user_id,
+                    canonical_url=detailed.url,
+                    provider_image_id=detailed.provider_image_id,
+                    account_or_bucket=detailed.account_id,
+                    service="statblock",
+                )
                 
-                timestamp = datetime.now().timestamp()
                 uploaded_images.append({
-                    "id": f"upload_{timestamp}_{idx}_{user_email[:8]}",
-                    "url": cloudflare_url,
+                    "id": asset.asset_id,
+                    "asset_id": asset.asset_id,
+                    "url": detailed.url,
                     "filename": image_file.filename,
                     "prompt": f"Uploaded: {image_file.filename}",
                     "timestamp": datetime.now().isoformat()
@@ -520,9 +539,6 @@ async def delete_image(
     Permanently delete an image by opaque asset_id from the server registry.
     """
     try:
-        from services.image_asset_registry import get_asset_for_owner, delete_asset_record
-        from cloudflare.handle_images import delete_cloudflare_image_by_id
-
         logger.info("Statblock delete-image asset_id=%s user_id=%s", asset_id, current_user.user_id)
 
         asset = get_asset_for_owner(asset_id, current_user.user_id)

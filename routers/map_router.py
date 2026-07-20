@@ -20,7 +20,11 @@ from auth_service import User
 from security_limits.paid_budget import paid_budget_store
 from security_limits.input_limits import enforce_max_chars, MAX_PROMPT_CHARS, MAX_DESCRIPTION_CHARS
 from security_limits.image_bounds import open_image_bounded
-from services.image_asset_registry import owner_has_asset_url
+from services.image_asset_registry import (
+    get_asset_for_owner,
+    get_owned_asset_by_url,
+    register_cloudflare_url_asset,
+)
 from security_limits.download_limits import (
     download_url_allowed as _download_url_allowed,
     fetch_allowlisted_bytes,
@@ -198,9 +202,16 @@ async def generate_map(
         image = response.images[0]
         
         logger.info(f"✅ [MapGenerator] Generation complete: {generation_time:.2f}s, size={image.width}x{image.height}")
+
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=image.url,
+            service="map",
+        )
         
         return GenerateMapResponse(
             imageUrl=image.url,
+            assetId=asset.asset_id,
             width=image.width,
             height=image.height,
             generationTime=generation_time,
@@ -295,10 +306,17 @@ async def generate_masked_map(
         
         generation_time = time.time() - start_time
         
-        logger.info(f"✅ [MapGenerator] Masked generation complete: {generation_time:.2f}s, image_url={image_url}")
+        logger.info(f"✅ [MapGenerator] Masked generation complete: {generation_time:.2f}s")
+
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=image_url,
+            service="map",
+        )
         
         return GenerateMapResponse(
             imageUrl=image_url,
+            assetId=asset.asset_id,
             width=1024,  # TODO: Get actual dimensions from inpainting result
             height=1024,
             generationTime=generation_time,
@@ -523,6 +541,7 @@ async def create_project(
     Create a new map project.
     
     Requires authentication.
+    Prefer baseImageAssetId; legacy baseImageUrl must already be in the caller's registry.
     """
     logger.info(f"➕ [MapGenerator] Create project: name={request.name}, user={current_user.sub}")
     
@@ -531,10 +550,31 @@ async def create_project(
         now = datetime.now()
         project_id = str(uuid.uuid4())
 
-        if request.base_image_url and not owner_has_asset_url(user_id, request.base_image_url):
+        base_image_url = ""
+        base_image_asset_id = None
+
+        if request.base_image_asset_id:
+            asset = get_asset_for_owner(request.base_image_asset_id, user_id)
+            if not asset:
+                raise HTTPException(
+                    status_code=403,
+                    detail="baseImageAssetId must reference an image asset owned by you",
+                )
+            base_image_url = asset.canonical_url
+            base_image_asset_id = asset.asset_id
+        elif request.base_image_url:
+            owned = get_owned_asset_by_url(user_id, request.base_image_url)
+            if not owned:
+                raise HTTPException(
+                    status_code=403,
+                    detail="baseImageUrl must reference an image asset owned by you",
+                )
+            base_image_url = owned.canonical_url
+            base_image_asset_id = owned.asset_id
+        else:
             raise HTTPException(
-                status_code=403,
-                detail="baseImageUrl must reference an image asset owned by you",
+                status_code=422,
+                detail="baseImageAssetId or baseImageUrl is required",
             )
         
         # Build project with defaults
@@ -543,7 +583,7 @@ async def create_project(
         project = MapProject(
             id=project_id,
             name=request.name,
-            base_image_url=request.base_image_url,
+            base_image_url=base_image_url,
             grid_config=grid_config,
             labels=[],
             scale_metadata=request.scale_metadata,
@@ -557,7 +597,8 @@ async def create_project(
         project_dict = {
             "id": project_id,
             "name": request.name,
-            "base_image_url": request.base_image_url or "",
+            "base_image_url": base_image_url,
+            "base_image_asset_id": base_image_asset_id,
             "grid_config": grid_config.model_dump(by_alias=False),  # Store as snake_case
             "labels": [],
             "generated_images": [],  # Initialize empty gallery
@@ -572,6 +613,8 @@ async def create_project(
         
         return project
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ [MapGenerator] Error creating project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
@@ -695,13 +738,32 @@ async def update_project(
         updates = {}
         if request.name is not None:
             updates["name"] = request.name
-        if request.base_image_url is not None:
-            if request.base_image_url and not owner_has_asset_url(user_id, request.base_image_url):
-                raise HTTPException(
-                    status_code=403,
-                    detail="baseImageUrl must reference an image asset owned by you",
-                )
-            updates["base_image_url"] = request.base_image_url
+        if request.base_image_asset_id is not None:
+            if request.base_image_asset_id:
+                asset = get_asset_for_owner(request.base_image_asset_id, user_id)
+                if not asset:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="baseImageAssetId must reference an image asset owned by you",
+                    )
+                updates["base_image_url"] = asset.canonical_url
+                updates["base_image_asset_id"] = asset.asset_id
+            else:
+                updates["base_image_url"] = ""
+                updates["base_image_asset_id"] = None
+        elif request.base_image_url is not None:
+            if request.base_image_url:
+                owned = get_owned_asset_by_url(user_id, request.base_image_url)
+                if not owned:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="baseImageUrl must reference an image asset owned by you",
+                    )
+                updates["base_image_url"] = owned.canonical_url
+                updates["base_image_asset_id"] = owned.asset_id
+            else:
+                updates["base_image_url"] = ""
+                updates["base_image_asset_id"] = None
         if request.grid_config is not None:
             updates["grid_config"] = request.grid_config.model_dump(by_alias=False)
         if request.labels is not None:
