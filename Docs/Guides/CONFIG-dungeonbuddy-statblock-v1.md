@@ -20,6 +20,9 @@ old key; this version accepts one active key at a time.
 | `STATBLOCKS_V1_IDEMPOTENCY_COLLECTION` | `dungeonbuddy_statblock_idempotency_v1` | Idempotency records |
 | `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED` | `false` | Enables optional asset pipeline wiring |
 | `STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS` | `20` | Asset pipeline timeout policy |
+| `FAL_KEY` | required when assets enabled | fal.ai credential for text-to-image |
+| `CLOUDFLARE_ACCOUNT_ID` | required when assets enabled | Cloudflare Images account |
+| `CLOUDFLARE_IMAGES_API_TOKEN` | required when assets enabled | Cloudflare Images upload token |
 | `STATBLOCKS_V1_FEATURE_ENABLED` | `true` | Enables candidate generation/revision |
 | `STATBLOCKS_V1_ALLOW_READS_WHEN_DISABLED` | `true` | Keeps persisted reads available during a generation rollback |
 | `STATBLOCKS_V1_STRUCTURED_LOGGING` | `true` | Enables structured v1 telemetry policy |
@@ -42,3 +45,9 @@ The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore
 transactions use the client transaction behavior; callers retry writes with the
 same idempotency key and reconcile the returned locator after a timeout.
+
+`STATBLOCKS_V1_ASSET_GATEWAY_ENABLED=true` only marks assets ready when
+`FAL_KEY`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_IMAGES_API_TOKEN` are set.
+The production pipeline treats `AssetBriefV1.prompt` as generation intent
+(authored description / name), runs text-to-image, then uploads the result to
+Cloudflare Images for a durable `asset_id` + CDN URL.

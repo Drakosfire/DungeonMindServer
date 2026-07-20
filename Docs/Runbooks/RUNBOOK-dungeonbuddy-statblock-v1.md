@@ -35,12 +35,11 @@ offline smoke:
 uv run python scripts/smoke_dungeonbuddy_statblock_v1.py
 ```
 
-The smoke compiles `generated/dungeonbuddy-statblocks-v1/client.ts`, parses the
-published API fixtures plus `human_adjudicated`, then exercises generate →
-candidate read → validate → create → exact revision read → append → list →
-reread first revision → combat minimums. Idempotency keys are unique per run.
-It uses `TestClient`, in-memory repositories, and a fake provider by default and
-writes no external state.
+The smoke runs the DungeonBuddy vitest consumer proof (vendored TypeScript
+client + fixture parse + combat minimums), then exercises generate → candidate
+read → validate → create → exact revision read → append → list → reread first
+revision. Idempotency keys are unique per run. It uses `TestClient`, in-memory
+repositories, and a fake provider by default and writes no external state.
 
 A remote smoke is deliberately opt-in because it creates a disposable
 statblock. Always use unique keys (the script already does):
@@ -67,9 +66,21 @@ request with the identical idempotency key. The returned result is the original
 outcome; a different request with that key is a `409 idempotency_conflict`.
 
 Settings are operational: `STATBLOCKS_V1_FIRESTORE_ENABLED=false` blocks
-persistence construction; `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED=true` requires an
-injected asset pipeline at composition time; provider timeout/retry/TTL come
-from settings into `GenerationServiceV1`; log level is applied to the v1 logger.
+persistence construction; `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED=true` requires
+`FAL_KEY`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_IMAGES_API_TOKEN` so the
+production pipeline can turn `AssetBriefV1.prompt` (prose intent) into a durable
+CDN asset. Without those credentials the composition probe reports
+`asset_gateway_pipeline_unconfigured` and generation is not advertised.
+Provider timeout/retry/TTL come from settings into `GenerationServiceV1`; log
+level is applied to the v1 logger.
+
+## Merge order with DungeonBuddy
+
+Land the coordinated consumer proof on DungeonBuddy `main` before merging this
+launch PR (or merge them in one atomic window). Default Server smoke invokes
+DungeonBuddy vitest at
+`apps/live-control-ui/src/contracts/dungeonbuddy-statblocks-v1/`, which must
+exist on the sibling checkout.
 
 Rollback generation by setting `STATBLOCKS_V1_FEATURE_ENABLED=false` while
 keeping Firestore and `STATBLOCKS_V1_ALLOW_READS_WHEN_DISABLED=true`, then

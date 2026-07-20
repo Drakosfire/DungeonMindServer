@@ -65,6 +65,7 @@ from statblocks_v1.api.router import router as dungeonbuddy_statblocks_v1_router
 from statblocks_v1.config import StatblocksV1Settings as DungeonBuddyStatblocksV1Settings
 from statblocks_v1.infrastructure.production_asset_pipeline import (
     generate_assets as dungeonbuddy_statblocks_v1_asset_pipeline,
+    production_asset_credentials_ready as dungeonbuddy_statblocks_v1_assets_ready,
 )
 from statblocks_v1.infrastructure.runtime import (
     build_candidate_repository as build_statblocks_v1_candidate_repository,
@@ -234,7 +235,13 @@ app.include_router(
 # Include DungeonBuddy statblock v1 router (candidate workflow).
 # Wire factories from app.py so api never imports infrastructure.
 register_statblocks_v1_error_handlers(app)
-configure_statblocks_v1_asset_pipeline(dungeonbuddy_statblocks_v1_asset_pipeline)
+# Only advertise/inject the asset pipeline when generation + CDN credentials exist.
+_statblocks_v1_asset_pipeline = (
+    dungeonbuddy_statblocks_v1_asset_pipeline
+    if dungeonbuddy_statblocks_v1_assets_ready()
+    else None
+)
+configure_statblocks_v1_asset_pipeline(_statblocks_v1_asset_pipeline)
 dungeonbuddy_statblocks_v1_dependencies.configure_candidate_repository_factory(
     lambda: build_statblocks_v1_candidate_repository(dungeonbuddy_statblocks_v1_db)
 )
@@ -244,7 +251,7 @@ dungeonbuddy_statblocks_v1_dependencies.configure_persistence_repository_factory
 dungeonbuddy_statblocks_v1_dependencies.configure_generation_service_factory(
     lambda: build_statblocks_v1_generation_service(
         client=dungeonbuddy_statblocks_v1_db,
-        asset_pipeline=dungeonbuddy_statblocks_v1_asset_pipeline,
+        asset_pipeline=_statblocks_v1_asset_pipeline,
     )
 )
 

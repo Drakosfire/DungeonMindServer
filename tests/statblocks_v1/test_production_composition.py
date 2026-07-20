@@ -125,6 +125,18 @@ def test_composition_probe_reports_missing_asset_pipeline(monkeypatch) -> None:
     )
 
 
+def test_credentials_gate_keeps_pipeline_unconfigured_without_secrets(monkeypatch) -> None:
+    from statblocks_v1.infrastructure.production_asset_pipeline import (
+        production_asset_credentials_ready,
+    )
+
+    monkeypatch.delenv("FAL_KEY", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_ACCOUNT_ID", raising=False)
+    monkeypatch.delenv("CLOUDFLARE_IMAGES_API_TOKEN", raising=False)
+    assert production_asset_credentials_ready() is False
+
+
+
 def test_asset_timeout_does_not_block_on_hung_pipeline(monkeypatch) -> None:
     import time
 

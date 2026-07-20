@@ -36,9 +36,19 @@ def _payload(request_id: str) -> dict[str, object]:
 
 
 def run_dungeonbuddy_contract_proof() -> None:
-    """Require the coordinated DungeonBuddy consumer compile/parse/projection proof."""
+    """Require the coordinated DungeonBuddy consumer compile/parse/projection proof.
+
+    Merge order: land DungeonBuddy consumer proof on main before relying on this
+    smoke against a sibling checkout (see RUNBOOK merge-order section).
+    """
     if not BUDDY_UI.is_dir():
         raise SystemExit(f"DungeonBuddy live-control-ui missing at {BUDDY_UI}")
+    contract_test = BUDDY_UI / BUDDY_CONTRACT_TEST
+    if not contract_test.is_file():
+        raise SystemExit(
+            f"DungeonBuddy consumer proof missing at {contract_test}. "
+            "Merge DungeonMindBuddy PR #377 (or successor) to main before Server PR20 smoke."
+        )
     completed = subprocess.run(
         ["npm", "test", "--", BUDDY_CONTRACT_TEST],
         cwd=BUDDY_UI,
