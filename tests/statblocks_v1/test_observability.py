@@ -53,3 +53,24 @@ def test_error_outcome_code_is_bound(caplog, auth_headers, monkeypatch) -> None:
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "generation_disabled" in messages
     assert "req_disabled" in messages
+
+
+def test_structured_logging_false_disables_request_telemetry(
+    caplog, auth_headers, monkeypatch
+) -> None:
+    from statblocks_v1.config import StatblocksV1Settings
+    from statblocks_v1.infrastructure.runtime import apply_logging_settings
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers[INTERNAL_KEY_HEADER])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("STATBLOCKS_V1_STRUCTURED_LOGGING", "false")
+    apply_logging_settings(StatblocksV1Settings.from_environment())
+    caplog.set_level(logging.INFO)
+    response = TestClient(create_test_app()).get(
+        "/api/internal/dungeonbuddy/v1/statblocks/health",
+        headers={**auth_headers, REQUEST_ID_HEADER: "req_silent"},
+    )
+    assert response.status_code == 200
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "statblocks_v1_request" not in messages
+    assert "req_silent" not in messages

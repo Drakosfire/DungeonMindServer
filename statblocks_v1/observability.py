@@ -13,6 +13,8 @@ REQUEST_ID_HEADER = "X-Request-ID"
 V1_PATH_PREFIX = "/api/internal/dungeonbuddy/v1"
 logger = logging.getLogger("statblocks_v1")
 
+_telemetry_enabled = True
+
 _FORBIDDEN = frozenset(
     {
         "api_key",
@@ -25,6 +27,22 @@ _FORBIDDEN = frozenset(
         "source_description",
     }
 )
+
+
+def apply_telemetry_settings(structured_logging: bool, log_level: str) -> None:
+    """Honor STATBLOCKS_V1_STRUCTURED_LOGGING and LOG_LEVEL for the v1 logger."""
+    global _telemetry_enabled
+    _telemetry_enabled = structured_logging
+    level = getattr(logging, log_level, logging.INFO)
+    logger.setLevel(level if structured_logging else logging.CRITICAL)
+    logger.propagate = structured_logging
+    if not structured_logging:
+        logger.handlers.clear()
+        return
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s %(message)s"))
+        logger.addHandler(handler)
 
 
 def safe_fields(**fields: object) -> dict[str, object]:
@@ -49,6 +67,8 @@ def bind_outcome(request: Request, outcome_code: str, **fields: object) -> None:
 
 def log_operation(operation: str, **fields: object) -> None:
     """Emit an operation-scoped structured log line (no payloads/secrets)."""
+    if not _telemetry_enabled:
+        return
     logger.info("statblocks_v1_operation %s", safe_fields(operation=operation, **fields))
 
 
@@ -65,18 +85,21 @@ async def request_observability(
     try:
         response = await call_next(request)
     except Exception:
-        logger.exception(
-            "statblocks_v1_request %s",
-            safe_fields(
-                request_id=request_id,
-                route=request.url.path,
-                method=request.method,
-                outcome_code="unhandled_error",
-                latency_ms=int((time.monotonic() - started) * 1000),
-            ),
-        )
+        if _telemetry_enabled:
+            logger.exception(
+                "statblocks_v1_request %s",
+                safe_fields(
+                    request_id=request_id,
+                    route=request.url.path,
+                    method=request.method,
+                    outcome_code="unhandled_error",
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                ),
+            )
         raise
     response.headers[REQUEST_ID_HEADER] = request_id
+    if not _telemetry_enabled:
+        return response
     bound: Mapping[str, Any] = getattr(request.state, "statblocks_v1_fields", {})
     outcome = bound.get("outcome_code")
     if outcome is None:

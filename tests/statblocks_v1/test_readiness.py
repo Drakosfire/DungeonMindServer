@@ -86,3 +86,36 @@ def test_readiness_openapi_declares_typed_payload(client: TestClient) -> None:
         "ReadinessResponseV1"
     )
     assert "ReadinessResponseV1" in schema["components"]["schemas"]
+
+
+def test_capabilities_omit_generation_when_firestore_disabled(
+    monkeypatch, auth_headers
+) -> None:
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers[INTERNAL_KEY_HEADER])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("STATBLOCKS_V1_FIRESTORE_ENABLED", "false")
+    response = TestClient(create_test_app()).get(PREFIX, headers=auth_headers)
+    body = response.json()
+    assert "candidate_generate" not in body["capabilities"]
+    assert "statblock_read" not in body["capabilities"]
+
+
+def test_assets_enabled_without_pipeline_closes_generation(
+    monkeypatch, auth_headers
+) -> None:
+    from statblocks_v1.application.composition_state import set_asset_pipeline_ready
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers[INTERNAL_KEY_HEADER])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
+    set_asset_pipeline_ready(False)
+    client = TestClient(create_test_app())
+    capability = client.get(PREFIX, headers=auth_headers)
+    generation = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        headers=auth_headers,
+        json={"not": "a valid body"},
+    )
+    assert "candidate_generate" not in capability.json()["capabilities"]
+    assert generation.status_code == 503
+    assert generation.json()["error"]["code"] == "internal_service_misconfigured"

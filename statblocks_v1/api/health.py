@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
 from statblocks_v1.api.dependencies import require_internal_service_auth
 from statblocks_v1.api.models import ErrorEnvelopeV1, HealthResponseV1, ReadinessResponseV1
+from statblocks_v1.application.composition_state import generation_available
 from statblocks_v1.config import ConfigurationError, StatblocksV1Settings
 
 CAPABILITIES = (
@@ -85,8 +86,12 @@ def _capabilities(settings: StatblocksV1Settings | None) -> list[str]:
     if settings is None:
         return []
     capabilities = list(CAPABILITIES)
-    generation_ok = settings.feature_enabled and bool(settings.openai_api_key)
-    if not generation_ok:
+    if not generation_available(
+        feature_enabled=settings.feature_enabled,
+        openai_api_key=settings.openai_api_key,
+        firestore_enabled=settings.firestore_enabled,
+        asset_gateway_enabled=settings.asset_gateway_enabled,
+    ):
         capabilities = [c for c in capabilities if c not in GENERATION_CAPABILITIES]
     reads_ok = settings.firestore_enabled and (
         settings.feature_enabled or settings.allow_reads_when_disabled
@@ -115,7 +120,6 @@ def evaluate_readiness(settings: StatblocksV1Settings) -> ReadinessResponseV1:
         errors.append("contract_artifact_missing")
     if _composition_probe is not None:
         errors.extend(_composition_probe(settings))
-    # Deduplicate while preserving order.
     seen: set[str] = set()
     ordered: list[str] = []
     for error in errors:
@@ -125,7 +129,15 @@ def evaluate_readiness(settings: StatblocksV1Settings) -> ReadinessResponseV1:
     return ReadinessResponseV1(
         status="ready" if not ordered else "not_ready",
         contract=CONTRACT_NAME,
-        generation_enabled=bool(settings.feature_enabled and settings.openai_api_key),
+        generation_enabled=(
+            generation_available(
+                feature_enabled=settings.feature_enabled,
+                openai_api_key=settings.openai_api_key,
+                firestore_enabled=settings.firestore_enabled,
+                asset_gateway_enabled=settings.asset_gateway_enabled,
+            )
+            and not ordered
+        ),
         read_routes_enabled=_read_routes_enabled(settings),
         errors=ordered,
     )

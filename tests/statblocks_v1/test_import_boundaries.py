@@ -66,8 +66,9 @@ PACKAGE_SUPPORT_MODULES = frozenset(
 
 # Relative path under infrastructure/ → allowed repo-owned import roots.
 # Empty in PR12; later adapters opt in explicitly (e.g. firestore client wrap).
-INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {}
-
+INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {
+    "production_asset_pipeline.py": frozenset({"cloudflare"}),
+}
 
 def _repo_owned_package_roots() -> frozenset[str]:
     """Top-level Python packages/modules owned by this repository (not third-party)."""

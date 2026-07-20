@@ -108,6 +108,11 @@ async def require_generation_enabled() -> None:
         settings = StatblocksV1Settings.from_environment()
     except ConfigurationError:
         raise StatblockV1HTTPError(503, InternalServiceMisconfiguredError()) from None
+    from statblocks_v1.application.composition_state import (
+        asset_pipeline_ready,
+        generation_available,
+    )
+
     if not settings.feature_enabled:
         raise StatblockV1HTTPError(
             503,
@@ -123,6 +128,31 @@ async def require_generation_enabled() -> None:
                 "provider_not_configured",
                 "Statblock generation is not configured",
             ),
+        )
+    if not settings.firestore_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "generation_requires_firestore",
+                "Statblock generation requires Firestore persistence",
+            ),
+        )
+    if settings.asset_gateway_enabled and not asset_pipeline_ready():
+        raise StatblockV1HTTPError(
+            503,
+            InternalServiceMisconfiguredError(
+                "Statblock asset gateway is enabled but no pipeline is configured"
+            ),
+        )
+    if not generation_available(
+        feature_enabled=settings.feature_enabled,
+        openai_api_key=settings.openai_api_key,
+        firestore_enabled=settings.firestore_enabled,
+        asset_gateway_enabled=settings.asset_gateway_enabled,
+    ):
+        raise StatblockV1HTTPError(
+            503,
+            InternalServiceMisconfiguredError("Statblock generation is not available"),
         )
 
 

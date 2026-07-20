@@ -4,9 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,10 +13,11 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "Docs/Design/fixtures/dungeonbuddy-statblock-v1/simple_bruiser.json"
-HUMAN_FIXTURE = ROOT / "Docs/Design/fixtures/dungeonbuddy-statblock-v1/human_adjudicated.json"
-API_FIXTURES = ROOT / "Docs/Design/fixtures/dungeonbuddy-statblock-v1-api"
-CLIENT_TS = ROOT / "generated/dungeonbuddy-statblocks-v1/client.ts"
 PREFIX = "/api/internal/dungeonbuddy/v1"
+BUDDY_UI = ROOT.parent / "DungeonMindBuddy" / "apps" / "live-control-ui"
+BUDDY_CONTRACT_TEST = (
+    "src/contracts/dungeonbuddy-statblocks-v1/dungeonbuddyStatblockV1Contract.test.ts"
+)
 
 
 def _unique(prefix: str) -> str:
@@ -36,104 +35,22 @@ def _payload(request_id: str) -> dict[str, object]:
     }
 
 
-def compile_generated_client() -> None:
-    buddy_tsc = (
-        ROOT.parent
-        / "DungeonMindBuddy"
-        / "apps"
-        / "live-control-ui"
-        / "node_modules"
-        / "typescript"
-        / "bin"
-        / "tsc"
+def run_dungeonbuddy_contract_proof() -> None:
+    """Require the coordinated DungeonBuddy consumer compile/parse/projection proof."""
+    if not BUDDY_UI.is_dir():
+        raise SystemExit(f"DungeonBuddy live-control-ui missing at {BUDDY_UI}")
+    completed = subprocess.run(
+        ["npm", "test", "--", BUDDY_CONTRACT_TEST],
+        cwd=BUDDY_UI,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    tsc = str(buddy_tsc) if buddy_tsc.is_file() else shutil.which("tsc")
-    if tsc is None and shutil.which("npx") is None:
-        raise SystemExit("tsc or npx is required to compile the generated TypeScript client")
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        (tmp_path / "client.ts").write_text(CLIENT_TS.read_text(encoding="utf-8"), encoding="utf-8")
-        (tmp_path / "tsconfig.json").write_text(
-            json.dumps(
-                {
-                    "compilerOptions": {
-                        "target": "ES2022",
-                        "module": "ESNext",
-                        "moduleResolution": "bundler",
-                        "strict": True,
-                        "noEmit": True,
-                        "skipLibCheck": True,
-                        "lib": ["ES2022", "DOM"],
-                    },
-                    "files": ["client.ts"],
-                }
-            ),
-            encoding="utf-8",
-        )
-        command = (
-            [tsc, "--project", "tsconfig.json"]
-            if tsc is not None
-            else ["npx", "--yes", "-p", "typescript@5.6.3", "tsc", "--project", "tsconfig.json"]
-        )
-        completed = subprocess.run(
-            command,
-            cwd=tmp_path,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise SystemExit(completed.stdout + completed.stderr)
-
-
-def parse_api_fixtures_and_human_adjudicated() -> dict[str, object]:
-    from statblocks_v1.api.models import (
-        CreateStatblockRequestV1,
-        CreateStatblockResponseV1,
-        ErrorEnvelopeV1,
-        GenerateCandidateRequestV1,
-        ValidationResponseV1,
-    )
-    from statblocks_v1.application.projection import combat_minimums
-    from statblocks_v1.domain.resources import (
-        GeneratedStatblockCandidateV1,
-        StatblockRevisionResourceV1,
-    )
-    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
-
-    GenerateCandidateRequestV1.model_validate_json(
-        (API_FIXTURES / "generate-request.json").read_text(encoding="utf-8")
-    )
-    GeneratedStatblockCandidateV1.model_validate_json(
-        (API_FIXTURES / "candidate-response.json").read_text(encoding="utf-8")
-    )
-    ValidationResponseV1.model_validate_json(
-        (API_FIXTURES / "validate-response.json").read_text(encoding="utf-8")
-    )
-    CreateStatblockRequestV1.model_validate_json(
-        (API_FIXTURES / "create-request.json").read_text(encoding="utf-8")
-    )
-    CreateStatblockResponseV1.model_validate_json(
-        (API_FIXTURES / "create-response.json").read_text(encoding="utf-8")
-    )
-    StatblockRevisionResourceV1.model_validate_json(
-        (API_FIXTURES / "exact-revision-response.json").read_text(encoding="utf-8")
-    )
-    ErrorEnvelopeV1.model_validate_json(
-        (API_FIXTURES / "errors.json").read_text(encoding="utf-8")
-    )
-    human = StatblockDefinitionV1.model_validate_json(
-        HUMAN_FIXTURE.read_text(encoding="utf-8")
-    )
-    summary = combat_minimums(human)
-    assert summary["human_adjudicated_elements"], "human_adjudicated fixture must project"
-    return summary
+    if completed.returncode != 0:
+        raise SystemExit(completed.stdout + completed.stderr)
 
 
 def exercise(client: TestClient, headers: dict[str, str]) -> None:
-    from statblocks_v1.application.projection import combat_minimums
-    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
-
     request_id = _unique("smoke-generate")
     candidate = client.post(
         f"{PREFIX}/statblock-candidates:generate",
@@ -208,21 +125,16 @@ def exercise(client: TestClient, headers: dict[str, str]) -> None:
     assert reread_first.json()["definition_digest"] == first_digest
     assert reread_first.json()["revision_id"] == first_id
 
-    summary = combat_minimums(StatblockDefinitionV1.model_validate(definition))
-    assert summary["armor_class"] is not None
-    assert summary["hit_points"] is not None
     print(
         "smoke passed:",
         statblock_id,
         first_id,
         second["revision_id"],
-        summary["name"],
-        summary["armor_class"],
-        summary["hit_points"],
+        definition["identity"]["name"],
     )
 
 
-def offline(*, compile_client: bool = True) -> None:
+def offline(*, run_buddy_proof: bool = True) -> None:
     from statblocks_v1.api.dependencies import (
         get_candidate_repository,
         get_clock,
@@ -241,9 +153,8 @@ def offline(*, compile_client: bool = True) -> None:
     )
     from statblocks_v1.testing import create_test_app
 
-    if compile_client:
-        compile_generated_client()
-    parse_api_fixtures_and_human_adjudicated()
+    if run_buddy_proof:
+        run_dungeonbuddy_contract_proof()
 
     key, now = "offline-smoke-key", datetime(2026, 1, 1, tzinfo=timezone.utc)
     os.environ.update(
@@ -288,23 +199,22 @@ def main() -> None:
         "--live", action="store_true", help="Permit network calls to --base-url."
     )
     parser.add_argument(
-        "--skip-client-compile",
+        "--skip-buddy-proof",
         action="store_true",
-        help="Skip generated TypeScript compile.",
+        help="Skip the DungeonBuddy vitest contract consumer proof.",
     )
     args = parser.parse_args()
     if args.base_url and not args.live:
         parser.error("--base-url requires --live to prevent accidental production writes")
-    compile_client = not args.skip_client_compile
+    run_buddy_proof = not args.skip_buddy_proof
     if not args.base_url:
-        offline(compile_client=compile_client)
+        offline(run_buddy_proof=run_buddy_proof)
         return
     key = os.getenv("DUNGEONBUDDY_INTERNAL_API_KEY")
     if not key:
         parser.error("DUNGEONBUDDY_INTERNAL_API_KEY is required for --live")
-    if compile_client:
-        compile_generated_client()
-    parse_api_fixtures_and_human_adjudicated()
+    if run_buddy_proof:
+        run_dungeonbuddy_contract_proof()
     import httpx
 
     with httpx.Client(base_url=args.base_url, timeout=30) as client:

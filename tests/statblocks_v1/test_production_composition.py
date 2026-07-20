@@ -5,15 +5,20 @@ import logging
 
 import pytest
 
-from statblocks_v1.config import ConfigurationError, StatblocksV1Settings
+from statblocks_v1.application.composition_state import set_asset_pipeline_ready
+from statblocks_v1.config import StatblocksV1Settings
 from statblocks_v1.domain.assets import AssetBriefV1, AssetRefV1
-from statblocks_v1.domain.errors import PersistenceUnavailableError
+from statblocks_v1.domain.errors import (
+    InternalServiceMisconfiguredError,
+    PersistenceUnavailableError,
+)
 from statblocks_v1.infrastructure.runtime import (
     apply_logging_settings,
     build_asset_gateway,
     build_candidate_repository,
     build_generation_service,
     build_persistence_repository,
+    configure_asset_pipeline,
     probe_production_composition,
 )
 
@@ -40,7 +45,8 @@ def test_asset_gateway_wired_only_when_enabled_with_pipeline(monkeypatch) -> Non
     assert build_asset_gateway() is None
 
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
-    with pytest.raises(ConfigurationError):
+    configure_asset_pipeline(None)
+    with pytest.raises(InternalServiceMisconfiguredError):
         build_asset_gateway()
 
     from datetime import datetime, timezone
@@ -112,7 +118,41 @@ def test_composition_probe_reports_missing_asset_pipeline(monkeypatch) -> None:
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
+    set_asset_pipeline_ready(False)
     settings = StatblocksV1Settings.from_environment()
     assert "asset_gateway_pipeline_unconfigured" in probe_production_composition(
         settings, client=object(), factories_configured=True
     )
+
+
+def test_asset_timeout_does_not_block_on_hung_pipeline(monkeypatch) -> None:
+    import time
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
+    monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "0.05")
+
+    def hung(_brief: AssetBriefV1) -> list[AssetRefV1]:
+        time.sleep(2)
+        return []
+
+    gateway = build_asset_gateway(pipeline=hung)
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        gateway.generate(AssetBriefV1(prompt="https://example.com/x.png"))
+    assert time.monotonic() - started < 1.0
+
+
+def test_logging_disabled_stops_telemetry(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.setenv("STATBLOCKS_V1_STRUCTURED_LOGGING", "false")
+    settings = StatblocksV1Settings.from_environment()
+    apply_logging_settings(settings)
+    logger = logging.getLogger("statblocks_v1")
+    assert logger.propagate is False
+    assert logger.handlers == []
+    with caplog.at_level(logging.INFO):
+        logger.info("should_not_propagate")
+    assert "should_not_propagate" not in caplog.text

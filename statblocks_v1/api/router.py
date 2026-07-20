@@ -292,7 +292,7 @@ async def create_statblock(
     http_request: Request,
     service: Annotated[RevisionServiceV1, Depends(get_revision_service)],
 ) -> CreateStatblockResponseV1:
-    statblock, revision = await asyncio.to_thread(
+    outcome = await asyncio.to_thread(
         service.create,
         idempotency_key=request.idempotency_key,
         definition=request.definition,
@@ -306,18 +306,22 @@ async def create_statblock(
         http_request,
         "success",
         operation="statblock_create",
-        statblock_id=statblock.statblock_id,
-        revision_id=revision.revision_id,
-        definition_digest=revision.definition_digest,
+        statblock_id=outcome.statblock.statblock_id,
+        revision_id=outcome.revision.revision_id,
+        definition_digest=outcome.revision.definition_digest,
         idempotency_key_present=True,
+        idempotency_replay=outcome.replayed,
     )
     log_operation(
         "statblock_created",
-        statblock_id=statblock.statblock_id,
-        revision_id=revision.revision_id,
-        definition_digest=revision.definition_digest,
+        statblock_id=outcome.statblock.statblock_id,
+        revision_id=outcome.revision.revision_id,
+        definition_digest=outcome.revision.definition_digest,
+        idempotency_replay=outcome.replayed,
     )
-    return CreateStatblockResponseV1(statblock=statblock, revision=revision)
+    return CreateStatblockResponseV1(
+        statblock=outcome.statblock, revision=outcome.revision
+    )
 
 
 @router.post(
@@ -333,7 +337,7 @@ async def append_revision(
     http_request: Request,
     service: Annotated[RevisionServiceV1, Depends(get_revision_service)],
 ) -> StatblockRevisionResourceV1:
-    revision = await asyncio.to_thread(
+    outcome = await asyncio.to_thread(
         service.append,
         statblock_id=statblock_id,
         parent_revision_id=request.parent_revision_id,
@@ -349,13 +353,14 @@ async def append_revision(
         http_request,
         "success",
         operation="statblock_revision_append",
-        statblock_id=revision.statblock_id,
-        revision_id=revision.revision_id,
-        parent_revision_id=revision.parent_revision_id,
-        definition_digest=revision.definition_digest,
+        statblock_id=outcome.revision.statblock_id,
+        revision_id=outcome.revision.revision_id,
+        parent_revision_id=outcome.revision.parent_revision_id,
+        definition_digest=outcome.revision.definition_digest,
         idempotency_key_present=True,
+        idempotency_replay=outcome.replayed,
     )
-    return revision
+    return outcome.revision
 
 
 @router.get(
