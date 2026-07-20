@@ -21,13 +21,14 @@ from typing import Annotated
 
 from fastapi import Header
 
-from statblocks_v1.api.http_errors import StatblockV1HTTPError
+from statblocks_v1.api.http_errors import GenerationTransportError, StatblockV1HTTPError
 from statblocks_v1.application.generation import GenerationServiceV1
 from statblocks_v1.application.repositories import (
     CandidateRepository,
     StatblockPersistenceRepository,
 )
 from statblocks_v1.application.revisions import RevisionServiceV1
+from statblocks_v1.config import ConfigurationError, StatblocksV1Settings
 from statblocks_v1.domain.errors import (
     InternalServiceMisconfiguredError,
     UnauthorizedInternalClientError,
@@ -98,6 +99,84 @@ async def require_internal_service_auth(
         raise StatblockV1HTTPError(
             403,
             UnauthorizedInternalClientError("Invalid internal API key"),
+        )
+
+
+async def require_generation_enabled() -> None:
+    """Fail generation closed while preserving configured persisted-resource reads."""
+    try:
+        settings = StatblocksV1Settings.from_environment()
+    except ConfigurationError:
+        raise StatblockV1HTTPError(503, InternalServiceMisconfiguredError()) from None
+    from statblocks_v1.application.composition_state import (
+        asset_pipeline_ready,
+        generation_available,
+    )
+
+    if not settings.feature_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "generation_disabled",
+                "Statblock generation is disabled",
+            ),
+        )
+    if not settings.openai_api_key:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "provider_not_configured",
+                "Statblock generation is not configured",
+            ),
+        )
+    if not settings.firestore_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "generation_requires_firestore",
+                "Statblock generation requires Firestore persistence",
+            ),
+        )
+    if settings.asset_gateway_enabled and not asset_pipeline_ready():
+        raise StatblockV1HTTPError(
+            503,
+            InternalServiceMisconfiguredError(
+                "Statblock asset gateway is enabled but no pipeline is configured"
+            ),
+        )
+    if not generation_available(
+        feature_enabled=settings.feature_enabled,
+        openai_api_key=settings.openai_api_key,
+        firestore_enabled=settings.firestore_enabled,
+        asset_gateway_enabled=settings.asset_gateway_enabled,
+    ):
+        raise StatblockV1HTTPError(
+            503,
+            InternalServiceMisconfiguredError("Statblock generation is not available"),
+        )
+
+
+async def require_persistence_enabled() -> None:
+    """Fail persistence/read routes closed when Firestore or read policy disables them."""
+    try:
+        settings = StatblocksV1Settings.from_environment()
+    except ConfigurationError:
+        raise StatblockV1HTTPError(503, InternalServiceMisconfiguredError()) from None
+    if not settings.firestore_enabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "persistence_disabled",
+                "Statblock persistence is disabled",
+            ),
+        )
+    if not settings.feature_enabled and not settings.allow_reads_when_disabled:
+        raise StatblockV1HTTPError(
+            503,
+            GenerationTransportError(
+                "reads_disabled",
+                "Statblock reads are disabled while generation is offline",
+            ),
         )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -27,6 +28,19 @@ from statblocks_v1.domain.validation import validate_definition
 
 # Service-authenticated caller identity. End-user ``actor`` is provenance only.
 SERVICE_CREATED_BY = "dungeonbuddy"
+
+
+@dataclass(frozen=True)
+class CreateOutcomeV1:
+    statblock: StatblockResourceV1
+    revision: StatblockRevisionResourceV1
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class AppendOutcomeV1:
+    revision: StatblockRevisionResourceV1
+    replayed: bool
 
 
 class RevisionServiceV1:
@@ -61,7 +75,7 @@ class RevisionServiceV1:
         actor: str | None = None,
         asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
-    ) -> tuple[StatblockResourceV1, StatblockRevisionResourceV1]:
+    ) -> CreateOutcomeV1:
         client_provenance = _seal_client_provenance(
             change_summary=change_summary,
             accepted_through=accepted_through,
@@ -78,11 +92,12 @@ class RevisionServiceV1:
         )
         replayed = self._replay_create(probe)
         if replayed is not None:
-            return replayed
+            statblock, revision = replayed
+            return CreateOutcomeV1(statblock=statblock, revision=revision, replayed=True)
 
         self._validate_persistence(definition)
         enriched = self._with_candidate_audit(candidate_id, definition, client_provenance)
-        return self._persistence.create_statblock(
+        statblock, revision = self._persistence.create_statblock(
             CreateStatblockCommand(
                 caller_scope="dungeonbuddy",
                 idempotency_key=idempotency_key,
@@ -93,6 +108,7 @@ class RevisionServiceV1:
                 candidate_id=candidate_id,
             )
         )
+        return CreateOutcomeV1(statblock=statblock, revision=revision, replayed=False)
 
     def append(
         self,
@@ -106,7 +122,7 @@ class RevisionServiceV1:
         actor: str | None = None,
         asset_bindings: list[AssetBindingV1] | None = None,
         candidate_id: str | None = None,
-    ) -> StatblockRevisionResourceV1:
+    ) -> AppendOutcomeV1:
         client_provenance = _seal_client_provenance(
             change_summary=change_summary,
             accepted_through=accepted_through,
@@ -124,11 +140,11 @@ class RevisionServiceV1:
         )
         replayed = self._replay_append(probe)
         if replayed is not None:
-            return replayed
+            return AppendOutcomeV1(revision=replayed, replayed=True)
 
         self._validate_persistence(definition)
         enriched = self._with_candidate_audit(candidate_id, definition, client_provenance)
-        return self._persistence.append_revision(
+        revision = self._persistence.append_revision(
             AppendRevisionCommand(
                 caller_scope="dungeonbuddy",
                 idempotency_key=idempotency_key,
@@ -140,6 +156,7 @@ class RevisionServiceV1:
                 candidate_id=candidate_id,
             )
         )
+        return AppendOutcomeV1(revision=revision, replayed=False)
 
     def _validate_persistence(self, definition: StatblockDefinitionV1) -> None:
         receipt = validate_definition(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -84,6 +85,36 @@ def _store_candidate(candidates, definition: dict, now: datetime, *, candidate_i
     )
     candidates.create(candidate)
     return candidate
+
+
+def test_create_idempotent_replay_binds_observability(
+    resource_client, caplog, monkeypatch
+) -> None:
+    client, definition, _, _, _, headers = resource_client
+    monkeypatch.setenv("STATBLOCKS_V1_STRUCTURED_LOGGING", "true")
+    from statblocks_v1.config import StatblocksV1Settings
+    from statblocks_v1.infrastructure.runtime import apply_logging_settings
+    from statblocks_v1.observability import REQUEST_ID_HEADER
+
+    apply_logging_settings(StatblocksV1Settings.from_environment())
+    caplog.set_level(logging.INFO, logger="statblocks_v1")
+    payload = _create_payload(definition, key="replay-obs-1")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblocks",
+        json=payload,
+        headers={**headers, REQUEST_ID_HEADER: "req-create-1"},
+    )
+    assert first.status_code == 200
+    replay = client.post(
+        "/api/internal/dungeonbuddy/v1/statblocks",
+        json=payload,
+        headers={**headers, REQUEST_ID_HEADER: "req-create-replay"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["revision"]["revision_id"] == first.json()["revision"]["revision_id"]
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "idempotency_replay" in messages
+    assert "True" in messages and "idempotency_replay" in messages
 
 
 def test_create_append_and_exact_replay(resource_client) -> None:

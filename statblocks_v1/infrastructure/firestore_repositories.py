@@ -51,13 +51,22 @@ IDEMPOTENCY_COLLECTION = "dungeonbuddy_statblock_idempotency_v1"
 class FirestoreCandidateRepository:
     """Candidate documents are mutable only for Firestore TTL deletion."""
 
-    def __init__(self, client: Any, *, clock: Callable[[], datetime] = utc_now) -> None:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+        candidates_collection: str = CANDIDATES_COLLECTION,
+        idempotency_collection: str = IDEMPOTENCY_COLLECTION,
+    ) -> None:
         self._client, self._clock = client, clock
+        self._candidates_collection = candidates_collection
+        self._idempotency_collection = idempotency_collection
 
     def create(self, candidate: GeneratedStatblockCandidateV1) -> GeneratedStatblockCandidateV1:
         stored = candidate.model_copy(deep=True)
         try:
-            self._client.collection(CANDIDATES_COLLECTION).document(stored.candidate_id).create(
+            self._client.collection(self._candidates_collection).document(stored.candidate_id).create(
                 _dump(stored)
             )
         except Exception as error:
@@ -68,7 +77,7 @@ class FirestoreCandidateRepository:
 
     def get(self, candidate_id: str, *, now: datetime | None = None) -> GeneratedStatblockCandidateV1:
         try:
-            snapshot = self._client.collection(CANDIDATES_COLLECTION).document(candidate_id).get()
+            snapshot = self._client.collection(self._candidates_collection).document(candidate_id).get()
         except Exception as error:
             raise PersistenceUnavailableError() from error
         if not snapshot.exists:
@@ -81,7 +90,7 @@ class FirestoreCandidateRepository:
     def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
         """Read retained candidate audit data without applying workflow expiry."""
         try:
-            snapshot = self._client.collection(CANDIDATES_COLLECTION).document(candidate_id).get()
+            snapshot = self._client.collection(self._candidates_collection).document(candidate_id).get()
         except Exception as error:
             raise PersistenceUnavailableError() from error
         if not snapshot.exists:
@@ -98,13 +107,17 @@ class FirestoreStatblockPersistenceRepository:
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[str], str] | None = None,
+        statblocks_collection: str = STATBLOCKS_COLLECTION,
+        idempotency_collection: str = IDEMPOTENCY_COLLECTION,
     ) -> None:
         self._client, self._clock = client, clock
         self._id_factory = id_factory or (lambda prefix: f"{prefix}_{uuid4().hex}")
+        self._statblocks_collection = statblocks_collection
+        self._idempotency_collection = idempotency_collection
 
     def get(self, statblock_id: str) -> StatblockResourceV1:
         try:
-            snapshot = self._document(STATBLOCKS_COLLECTION, statblock_id).get()
+            snapshot = self._document(self._statblocks_collection, statblock_id).get()
         except Exception as error:
             raise PersistenceUnavailableError() from error
         if not snapshot.exists:
@@ -113,7 +126,7 @@ class FirestoreStatblockPersistenceRepository:
 
     def get_revision(self, statblock_id: str, revision_id: str) -> StatblockRevisionResourceV1:
         try:
-            if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
+            if not self._document(self._statblocks_collection, statblock_id).get().exists:
                 raise StatblockNotFoundError(statblock_id)
             snapshot = self._revision_document(statblock_id, revision_id).get()
         except StatblockNotFoundError:
@@ -126,10 +139,10 @@ class FirestoreStatblockPersistenceRepository:
 
     def list_for_statblock(self, statblock_id: str) -> list[StatblockRevisionResourceV1]:
         try:
-            if not self._document(STATBLOCKS_COLLECTION, statblock_id).get().exists:
+            if not self._document(self._statblocks_collection, statblock_id).get().exists:
                 raise StatblockNotFoundError(statblock_id)
             snapshots = list(
-                self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").stream()
+                self._document(self._statblocks_collection, statblock_id).collection("revisions").stream()
             )
         except StatblockNotFoundError:
             raise
@@ -204,7 +217,7 @@ class FirestoreStatblockPersistenceRepository:
                 request_digest,
                 outcome,
                 [
-                    (self._document(STATBLOCKS_COLLECTION, statblock_id), _dump(statblock)),
+                    (self._document(self._statblocks_collection, statblock_id), _dump(statblock)),
                     (self._revision_document(statblock_id, revision_id), _dump(revision)),
                 ],
                 already_exists=ImmutableResourceConflictError("statblock", statblock_id),
@@ -333,7 +346,7 @@ class FirestoreStatblockPersistenceRepository:
         idem_ref = self._idempotency_document(
             command.caller_scope, "append_revision", command.idempotency_key
         )
-        statblock_ref = self._document(STATBLOCKS_COLLECTION, command.statblock_id)
+        statblock_ref = self._document(self._statblocks_collection, command.statblock_id)
         parent_ref = self._revision_document(command.statblock_id, command.parent_revision_id)
         revision_ref = self._revision_document(command.statblock_id, revision.revision_id)
 
@@ -428,7 +441,7 @@ class FirestoreStatblockPersistenceRepository:
         return self._client.collection(collection).document(document_id)
 
     def _revision_document(self, statblock_id: str, revision_id: str) -> Any:
-        return self._document(STATBLOCKS_COLLECTION, statblock_id).collection("revisions").document(
+        return self._document(self._statblocks_collection, statblock_id).collection("revisions").document(
             revision_id
         )
 
@@ -436,7 +449,7 @@ class FirestoreStatblockPersistenceRepository:
         import hashlib
 
         digest = hashlib.sha256(f"{scope}\x1f{operation}\x1f{key}".encode()).hexdigest()
-        return self._document(IDEMPOTENCY_COLLECTION, digest)
+        return self._document(self._idempotency_collection, digest)
 
 
 def _dump(model: Any) -> dict[str, Any]:

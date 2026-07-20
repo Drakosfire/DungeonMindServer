@@ -56,10 +56,19 @@ FORBIDDEN_LEGACY = (
     "StatBlockDetails",
 )
 
+# Package-root support modules shared across layers (not domain/application layers).
+PACKAGE_SUPPORT_MODULES = frozenset(
+    {
+        "statblocks_v1.config",
+        "statblocks_v1.observability",
+    }
+)
+
 # Relative path under infrastructure/ → allowed repo-owned import roots.
 # Empty in PR12; later adapters opt in explicitly (e.g. firestore client wrap).
-INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {}
-
+INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {
+    # Self-contained httpx upload; no repository cloudflare package import.
+}
 
 def _repo_owned_package_roots() -> frozenset[str]:
     """Top-level Python packages/modules owned by this repository (not third-party)."""
@@ -237,6 +246,8 @@ def test_infrastructure_depends_only_on_domain_and_application() -> None:
                 continue
             if name == "statblocks_v1":
                 continue
+            if name in PACKAGE_SUPPORT_MODULES:
+                continue
             layer = _layer_of(name)
             if layer is not None:
                 assert layer in allowed_layer, (
@@ -269,6 +280,8 @@ def test_api_depends_on_domain_application_fastapi_and_auth_constants() -> None:
                 )
                 continue
             if name == "statblocks_v1":
+                continue
+            if name in PACKAGE_SUPPORT_MODULES:
                 continue
             layer = _layer_of(name)
             if layer is not None:

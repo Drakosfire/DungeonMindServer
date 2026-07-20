@@ -125,16 +125,28 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(StatblockV1HTTPError)
     async def handle_statblock_v1_http_error(
-        _request: Request,
+        request: Request,
         exc: StatblockV1HTTPError,
     ) -> JSONResponse:
+        try:
+            from statblocks_v1.observability import bind_outcome
+
+            bind_outcome(request, exc.error.code)
+        except Exception:
+            pass
         return JSONResponse(status_code=exc.status_code, content=envelope_for(exc.error))
 
     @app.exception_handler(StatblockV1Error)
     async def handle_statblock_v1_error(
-        _request: Request,
+        request: Request,
         exc: StatblockV1Error,
     ) -> JSONResponse:
+        try:
+            from statblocks_v1.observability import bind_outcome
+
+            bind_outcome(request, exc.code)
+        except Exception:
+            pass
         return JSONResponse(
             status_code=status_for_domain_error(exc),
             content=envelope_for(exc),
@@ -151,6 +163,12 @@ def register_error_handlers(app: FastAPI) -> None:
                 status_code=422,
                 content={"detail": jsonable_encoder(exc.errors())},
             )
+        try:
+            from statblocks_v1.observability import bind_outcome
+
+            bind_outcome(request, "invalid_request")
+        except Exception:
+            pass
         return JSONResponse(
             status_code=422,
             content=ErrorEnvelopeV1(

@@ -9,8 +9,9 @@ Run with the project-independent lane (no full-server dependency sync)::
 Or::
 
     PYTHONPATH=. uv run --isolated --no-project \\
-      --with 'pytest>=8.3.5' --with 'fastapi>=0.115.4' \\
-      --with 'pydantic==2.7.4' --with 'httpx>=0.27.0' \\
+      --with 'pytest>=8.3.5' --with 'fastapi==0.115.6' \\
+      --with 'pydantic==2.7.4' --with 'httpx==0.28.1' \\
+      --with 'starlette==0.41.3' \\
       pytest --confcutdir=tests/statblocks_v1 tests/statblocks_v1 -q
 
 ``--confcutdir`` prevents loading ``tests/conftest.py``, which imports the
@@ -56,6 +57,7 @@ def auth_headers() -> dict[str, str]:
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setenv(INTERNAL_KEY_ENV, TEST_INTERNAL_KEY)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     return TestClient(create_test_app())
 
 

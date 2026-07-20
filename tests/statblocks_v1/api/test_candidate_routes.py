@@ -34,6 +34,7 @@ from statblocks_v1.testing import create_test_app
 @pytest.fixture
 def api_client(monkeypatch, load_fixture, auth_headers):
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", auth_headers["X-DungeonBuddy-Internal-Key"])
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
     candidates = InMemoryCandidateRepository(clock=lambda: now)
@@ -415,16 +416,18 @@ def test_production_generation_service_wires_persistence_resolver(monkeypatch) -
         def generate_definition(self, **kwargs):
             raise AssertionError("not called")
 
-    monkeypatch.setattr(
-        "statblocks_v1.infrastructure.runtime.OpenAIDefinitionProvider",
-        DummyProvider,
-    )
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "test-model")
     candidates = InMemoryCandidateRepository()
     persistence = InMemoryStatblockPersistenceRepository(
         clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),
         id_factory=DeterministicIdFactory(),
     )
-    service = build_generation_service(candidates=candidates, persistence=persistence)
+    service = build_generation_service(
+        candidates=candidates,
+        persistence=persistence,
+        provider=DummyProvider(),
+    )
     assert isinstance(service._definition_resolver, PersistenceDefinitionResolver)
     assert service._definition_resolver._repository is persistence
