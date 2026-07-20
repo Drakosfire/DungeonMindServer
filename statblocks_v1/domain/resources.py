@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -15,6 +15,13 @@ from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 STATBLOCK_CONTRACT = CONTRACT_NAME
 STATBLOCK_CONTRACT_VERSION = CONTRACT_VERSION
+
+# Keep package constants and published resource identity locked together.
+assert STATBLOCK_CONTRACT == "dungeonmind.dungeonbuddy-statblocks"
+assert STATBLOCK_CONTRACT_VERSION == "1.0.0"
+
+ContractNameV1 = Literal["dungeonmind.dungeonbuddy-statblocks"]
+ContractVersionV1 = Literal["1.0.0"]
 
 
 class ResourceLocatorV1(StrictModel):
@@ -76,8 +83,8 @@ class GenerationReceiptV1(StrictModel):
 
 class GeneratedStatblockCandidateV1(StrictModel):
     candidate_id: str = Field(pattern=r"^cand_[a-z0-9]+$")
-    contract: str = STATBLOCK_CONTRACT
-    contract_version: str = STATBLOCK_CONTRACT_VERSION
+    contract: ContractNameV1 = "dungeonmind.dungeonbuddy-statblocks"
+    contract_version: ContractVersionV1 = "1.0.0"
     definition: StatblockDefinitionV1
     validation_receipt: ValidationReceiptV1
     generation_receipt: GenerationReceiptV1 | None = None
@@ -100,8 +107,8 @@ class StatblockRevisionResourceV1(StrictModel):
     statblock_id: str = Field(pattern=r"^sb_[a-z0-9]+$")
     revision_id: str = Field(pattern=r"^rev_[a-z0-9]+$")
     parent_revision_id: str | None = Field(default=None, pattern=r"^rev_[a-z0-9]+$")
-    contract: str = STATBLOCK_CONTRACT
-    contract_version: str = STATBLOCK_CONTRACT_VERSION
+    contract: ContractNameV1 = "dungeonmind.dungeonbuddy-statblocks"
+    contract_version: ContractVersionV1 = "1.0.0"
     definition: StatblockDefinitionV1
     canonical_definition: str = Field(min_length=2)
     definition_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")

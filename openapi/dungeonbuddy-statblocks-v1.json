@@ -2032,12 +2032,20 @@
             "type": "string"
           },
           "contract": {
+            "const": "dungeonmind.dungeonbuddy-statblocks",
             "default": "dungeonmind.dungeonbuddy-statblocks",
+            "enum": [
+              "dungeonmind.dungeonbuddy-statblocks"
+            ],
             "title": "Contract",
             "type": "string"
           },
           "contract_version": {
+            "const": "1.0.0",
             "default": "1.0.0",
+            "enum": [
+              "1.0.0"
+            ],
             "title": "Contract Version",
             "type": "string"
           },
@@ -4818,12 +4826,20 @@
             "type": "string"
           },
           "contract": {
+            "const": "dungeonmind.dungeonbuddy-statblocks",
             "default": "dungeonmind.dungeonbuddy-statblocks",
+            "enum": [
+              "dungeonmind.dungeonbuddy-statblocks"
+            ],
             "title": "Contract",
             "type": "string"
           },
           "contract_version": {
+            "const": "1.0.0",
             "default": "1.0.0",
+            "enum": [
+              "1.0.0"
+            ],
             "title": "Contract Version",
             "type": "string"
           },

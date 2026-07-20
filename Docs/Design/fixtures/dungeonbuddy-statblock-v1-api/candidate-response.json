@@ -166,7 +166,25 @@
     }
   },
   "expires_at": "2026-01-02T00:00:00Z",
-  "generation_receipt": null,
+  "generation_receipt": {
+    "actor": "fixture",
+    "caller_scope": "dungeonbuddy",
+    "generated_at": "2026-01-01T00:00:00Z",
+    "input_tokens": null,
+    "latency_ms": 12,
+    "model": "fixture-model",
+    "output_tokens": null,
+    "prompt_version": "statblock-generation-prompt-v1",
+    "provider": "fixture",
+    "provider_request_id": null,
+    "provider_response_id": null,
+    "request_id": "fixture-generate-1",
+    "schema_fingerprint": "sha256:3f692b9ed6a521c485e137e3d5c42526f17efdfce9280a9ab5b038a6c4424ef4",
+    "schema_version": "statblock-openai-strict-compiler-v1",
+    "source_definition_digest": null,
+    "source_description_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_locator": null
+  },
   "source_locator": null,
   "validation_receipt": {
     "canonicalizer_version": "statblock-canonicalizer-v1",

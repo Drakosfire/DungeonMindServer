@@ -9,25 +9,28 @@
 ## PR19 predecessor completion notes
 
 - The authoritative isolated artifact is
-  `openapi/dungeonbuddy-statblocks-v1.json`. Regenerate it, its fixtures, and
-  the checked-in consumer client with
+  `openapi/dungeonbuddy-statblocks-v1.json` (schema fingerprint
+  `sha256:2974481088ab602f7520c82999dfca01cb30c6d9eb7f7aa5f00d9f5e389256bd`).
+  Regenerate it, its fixtures, and the checked-in consumer client with
   `PYTHONPATH=. uv run --isolated --no-project --with 'fastapi==0.115.6'
   --with 'pydantic==2.7.4' --with 'httpx==0.28.1' --with 'starlette==0.41.3'
   python scripts/export_dungeonbuddy_statblock_openapi.py`.
-- Resource envelopes publish the package contract identity
+- Resource envelopes publish the package contract identity as exact literals
   (`dungeonmind.dungeonbuddy-statblocks` / `1.0.0`), matching health and the
   design header — not the obsolete `dungeonbuddy-statblock` / `v1` pair.
 - The generated TypeScript contract/client is
   `generated/dungeonbuddy-statblocks-v1/client.ts`. Component names with
   OpenAPI hyphens are sanitized to valid identifiers (`AssetBindingV1_Input`),
+  `allOf` refs preserve enums (for example `Distance.unit` → `DistanceUnit`),
   nullable branches render as `| null` (not `| unknown`), and the focused
   lane exact-compares the client text to the exporter output. Consumer
   projects must import these generated transport types rather than maintaining
   copies.
-- Published API fixtures match live route semantics: candidate receipts use
-  `generation_candidate`, validate responses use `editor_preview`, accepted
-  revisions use `persistence`, and the public error fixture uses
-  `validation_failed`.
+- Published API fixtures match live route semantics: candidate responses include
+  a server-owned `generation_receipt` and a `generation_candidate` validation
+  receipt; validate responses use `editor_preview`; accepted revisions use
+  `persistence`; and the public error fixture uses `validation_failed` with the
+  full persistence receipt/`is_persistence_ready` details.
 - The final v1 resource operation IDs are `create_statblock_v1`,
   `append_statblock_revision_v1`, `get_statblock_v1`,
   `list_statblock_revisions_v1`, and `get_statblock_revision_v1`; candidate

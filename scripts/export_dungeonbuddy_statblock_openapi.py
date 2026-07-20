@@ -47,11 +47,26 @@ def _type(schema: dict[str, Any]) -> str:
         return _ts_name(schema["$ref"].rsplit("/", 1)[-1])
     if schema.get("type") == "null":
         return "null"
+    if "const" in schema and "enum" not in schema and "$ref" not in schema:
+        return json.dumps(schema["const"])
     if "enum" in schema and "type" not in schema:
         return " | ".join(json.dumps(value) for value in schema["enum"])
+    if "allOf" in schema:
+        parts: list[str] = []
+        for option in schema["allOf"]:
+            rendered = _type(option)
+            if rendered in {"unknown", "Record<string, unknown>"}:
+                continue
+            if rendered not in parts:
+                parts.append(rendered)
+        if not parts:
+            return "unknown"
+        if len(parts) == 1:
+            return parts[0]
+        return " & ".join(parts)
     if "anyOf" in schema or "oneOf" in schema:
         options = schema.get("anyOf") or schema.get("oneOf") or []
-        parts: list[str] = []
+        parts = []
         for option in options:
             rendered = _type(option)
             if rendered not in parts:
@@ -84,6 +99,8 @@ def _type(schema: dict[str, Any]) -> str:
     if kind == "string":
         if "enum" in schema:
             return " | ".join(json.dumps(value) for value in schema["enum"])
+        if "const" in schema:
+            return json.dumps(schema["const"])
         return "string"
     return "unknown"
 
@@ -135,29 +152,28 @@ def export_fixture_pack() -> None:
     from datetime import datetime, timezone
 
     from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
+    from statblocks_v1.application.prompts import PROMPT_VERSION
+    from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
     from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1
     from statblocks_v1.domain.canonicalization import canonicalize_definition
     from statblocks_v1.domain.digests import compute_definition_digest
+    from statblocks_v1.domain.errors import PersistenceValidationError
     from statblocks_v1.domain.receipts import ValidationMode
     from statblocks_v1.domain.resources import (
         GeneratedStatblockCandidateV1,
+        GenerationReceiptV1,
         StatblockResourceV1,
         StatblockRevisionResourceV1,
     )
     from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
     from statblocks_v1.domain.validation import validate_definition
 
+    fixtures_root = ROOT / "Docs" / "Design" / "fixtures" / "dungeonbuddy-statblock-v1"
     definition = StatblockDefinitionV1.model_validate(
-        json.loads(
-            (
-                ROOT
-                / "Docs"
-                / "Design"
-                / "fixtures"
-                / "dungeonbuddy-statblock-v1"
-                / "simple_bruiser.json"
-            ).read_text()
-        )
+        json.loads((fixtures_root / "simple_bruiser.json").read_text())
+    )
+    invalid_definition = StatblockDefinitionV1.model_validate(
+        json.loads((fixtures_root / "unknown_resource_pool.json").read_text())
     )
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     binding = AssetBindingV1.model_validate(
@@ -182,12 +198,32 @@ def export_fixture_pack() -> None:
     persistence_receipt = validate_definition(
         definition, ValidationMode.persistence, validated_at=now
     )
+    invalid_persistence_receipt = validate_definition(
+        invalid_definition, ValidationMode.persistence, validated_at=now
+    )
+    assert not invalid_persistence_receipt.is_persistence_ready
+    persistence_error = PersistenceValidationError(invalid_persistence_receipt)
+    compiled = compile_openai_definition_schema()
+    generation_receipt = GenerationReceiptV1(
+        request_id="fixture-generate-1",
+        provider="fixture",
+        model="fixture-model",
+        prompt_version=PROMPT_VERSION,
+        schema_version=compiled.compiler_version,
+        schema_fingerprint=compiled.fingerprint,
+        generated_at=now,
+        caller_scope="dungeonbuddy",
+        actor="fixture",
+        source_description_digest="sha256:" + ("a" * 64),
+        latency_ms=12,
+    )
     canonical = str(canonicalize_definition(definition))
     digest = compute_definition_digest(definition)
     candidate = GeneratedStatblockCandidateV1(
         candidate_id="cand_fixture1",
         definition=definition,
         validation_receipt=candidate_receipt,
+        generation_receipt=generation_receipt,
         asset_brief=AssetBriefV1(prompt="Ironhide Brute portrait"),
         assets=[binding.asset],
         created_at=now,
@@ -195,6 +231,7 @@ def export_fixture_pack() -> None:
     )
     assert candidate.contract == CONTRACT_NAME
     assert candidate.contract_version == CONTRACT_VERSION
+    assert candidate.generation_receipt is not None
     revision = StatblockRevisionResourceV1(
         statblock_id="sb_fixture1",
         revision_id="rev_fixture1",
@@ -246,8 +283,9 @@ def export_fixture_pack() -> None:
         "exact-revision-response.json": revision.model_dump(mode="json"),
         "errors.json": {
             "error": {
-                "code": "validation_failed",
-                "message": "Definition is not persistence-ready",
+                "code": persistence_error.code,
+                "message": persistence_error.message,
+                "details": persistence_error.details,
             }
         },
     }

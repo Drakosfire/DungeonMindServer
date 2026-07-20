@@ -53,6 +53,10 @@ def test_openapi_artifact_and_generated_types_are_current() -> None:
         if line.startswith("export type ")
     }
     assert " | unknown" not in expected_typescript
+    assert "?: unknown" not in expected_typescript
+    assert "unit?: DistanceUnit" in expected_typescript
+    assert 'contract?: "dungeonmind.dungeonbuddy-statblocks"' in expected_typescript
+    assert 'contract_version?: "1.0.0"' in expected_typescript
     for line in expected_typescript.splitlines():
         if line.startswith("export type "):
             name = line.split("export type ", 1)[1].split(" ", 1)[0]
@@ -98,9 +102,16 @@ def test_published_api_fixtures_match_live_route_semantics() -> None:
     assert candidate.contract == CONTRACT_NAME
     assert candidate.contract_version == CONTRACT_VERSION
     assert candidate.validation_receipt.mode.value == "generation_candidate"
+    assert candidate.generation_receipt is not None
+    assert candidate.generation_receipt.request_id == "fixture-generate-1"
+    assert candidate.generation_receipt.caller_scope == "dungeonbuddy"
     assert validate_response.validation_receipt.mode.value == "editor_preview"
     assert revision.contract == CONTRACT_NAME
     assert revision.contract_version == CONTRACT_VERSION
     assert revision.validation_receipt.mode.value == "persistence"
     assert create_response.revision.validation_receipt.mode.value == "persistence"
     assert error.error.code == "validation_failed"
+    assert error.error.details is not None
+    assert error.error.details["is_persistence_ready"] is False
+    assert "validation_receipt" in error.error.details
+    assert error.error.details["validation_receipt"]["mode"] == "persistence"
