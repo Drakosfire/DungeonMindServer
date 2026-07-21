@@ -1,0 +1,39 @@
+name: Red-team hardening
+
+on:
+  push:
+    branches: [main, "fix/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  redteam-hardening:
+    runs-on: ubuntu-latest
+    env:
+      SESSION_SECRET_KEY: ci-session-secret-not-for-prod
+      GOOGLE_CLIENT_ID: ci-google-client-id
+      GOOGLE_CLIENT_SECRET: ci-google-client-secret
+      EXTERNAL_MESSAGE_API_KEY: ci-external-message-key
+      EXTERNAL_SMS_ENDPOINT: https://example.test/sms-forward
+      TWILIO_ACCOUNT_SID: ACci
+      TWILIO_AUTH_TOKEN: ci-twilio-token
+      TWILIO_TEST_MODE: "false"
+      ENVIRONMENT: development
+      ALLOWED_HOSTS: localhost,testserver,127.0.0.1
+      REACT_LANDING_URL: http://localhost:3000
+      DUNGEONMIND_API_URL: http://localhost:7860
+      FIREBASE_SKIP_INIT: "true"
+      TRUST_PROXY: "false"
+      SERVICE_ACCOUNT_PATH: /tmp/missing-sa.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --frozen || uv sync
+      - name: Run red-team hardening tests
+        run: >
+          uv run pytest -q
+          tests/test_redteam_hardening.py
+          tests/test_ruleslawyer_router.py

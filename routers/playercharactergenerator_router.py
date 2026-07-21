@@ -20,6 +20,8 @@ import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
+from security_limits.demo_quota import require_demo_quota_pcg_preferences
+from security_limits.paid_budget import paid_budget_store
 from auth_service import User
 
 # Import Firestore
@@ -423,24 +425,14 @@ async def compute_character(request: ComputeRequest):
 @router.post("/generate-preferences")
 async def generate_preferences(
     request: PreferenceGenerationRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    _demo_quota=Depends(require_demo_quota_pcg_preferences),
 ):
     """
-    Generate AI preferences for character creation
+    Generate AI preferences for character creation (public demo — IP/day quota).
     
     This endpoint generates creative preferences (ability priorities, skill themes,
     character flavor) based on user-provided character concept and constraints.
-    
-    Does not require authentication - works for anonymous users.
-    
-    Request body:
-    - input: GenerationInput (classId, raceId, level, backgroundId, concept)
-    - constraints: Optional[GenerationConstraints] - if not provided, backend computes via PCGRuleEngine
-    
-    Returns:
-    - preferences: AiPreferences
-    - rawResponse: str (for debugging)
-    - generationInfo: Dict (tokens, model, etc.)
     """
     start_time = time.time()
     user_id = current_user.email if current_user else 'anonymous'
@@ -477,10 +469,10 @@ async def generate_preferences(
 @router.post("/generate")
 async def generate_character(
     request: GenerationInput,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     """
-    Generate a complete D&D 5e character from concept.
+    Generate a complete D&D 5e character from concept (auth required).
 
     Pipeline:
     1. Constraints (rule engine)
@@ -491,7 +483,8 @@ async def generate_character(
     6. Build frontend-compatible Character wrapper payload
     """
     start_time = time.time()
-    user_id = current_user.email if current_user else "anonymous"
+    user_id = current_user.email
+    paid_budget_store.consume(current_user.user_id)
 
     try:
         logger.info(

@@ -515,7 +515,8 @@ class StatBlockGenerator:
         try:
             if isinstance(cr, str):
                 if '/' in cr:
-                    cr_num = eval(cr)  # Handle fractions like "1/4"
+                    num_s, den_s = cr.split('/', 1)
+                    cr_num = float(num_s) / float(den_s)
                 else:
                     cr_num = float(cr)
             else:

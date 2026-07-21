@@ -17,6 +17,19 @@ from PIL import Image
 # Auth
 from .auth_router import get_current_user
 from auth_service import User
+from security_limits.paid_budget import paid_budget_store
+from security_limits.input_limits import enforce_max_chars, MAX_PROMPT_CHARS, MAX_DESCRIPTION_CHARS
+from security_limits.image_bounds import open_image_bounded
+from services.image_asset_registry import (
+    get_asset_for_owner,
+    get_owned_asset_by_url,
+    register_cloudflare_url_asset,
+)
+from security_limits.download_limits import (
+    download_url_allowed as _download_url_allowed,
+    fetch_allowlisted_bytes,
+    MAX_PROXY_BYTES,
+)
 
 # GenerationEngine
 from generationengine import (
@@ -118,7 +131,13 @@ async def generate_map(
     
     Requires authentication.
     """
-    logger.info(f"🗺️ [MapGenerator] Generate request: prompt={request.prompt[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.prompt, field="prompt", limit=MAX_PROMPT_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator generate user_id=%s prompt_chars=%s",
+        current_user.user_id,
+        len(request.prompt or ""),
+    )
     
     start_time = time.time()
     
@@ -183,9 +202,16 @@ async def generate_map(
         image = response.images[0]
         
         logger.info(f"✅ [MapGenerator] Generation complete: {generation_time:.2f}s, size={image.width}x{image.height}")
+
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=image.url,
+            service="map",
+        )
         
         return GenerateMapResponse(
             imageUrl=image.url,
+            assetId=asset.asset_id,
             width=image.width,
             height=image.height,
             generationTime=generation_time,
@@ -222,7 +248,13 @@ async def generate_masked_map(
     
     Implements TDD tests T178-T180.
     """
-    logger.info(f"🎭 [MapGenerator] Masked generation request: prompt={request.prompt[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.prompt, field="prompt", limit=MAX_PROMPT_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator masked generate user_id=%s prompt_chars=%s",
+        current_user.user_id,
+        len(request.prompt or ""),
+    )
     
     start_time = time.time()
     
@@ -274,10 +306,17 @@ async def generate_masked_map(
         
         generation_time = time.time() - start_time
         
-        logger.info(f"✅ [MapGenerator] Masked generation complete: {generation_time:.2f}s, image_url={image_url}")
+        logger.info(f"✅ [MapGenerator] Masked generation complete: {generation_time:.2f}s")
+
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=image_url,
+            service="map",
+        )
         
         return GenerateMapResponse(
             imageUrl=image_url,
+            assetId=asset.asset_id,
             width=1024,  # TODO: Get actual dimensions from inpainting result
             height=1024,
             generationTime=generation_time,
@@ -325,7 +364,13 @@ async def generate_svg_mask(
     
     Requires authentication.
     """
-    logger.info(f"🎨 [MapGenerator] SVG mask generation: desc={request.description[:50]}..., user={current_user.sub}")
+    enforce_max_chars(request.description, field="description", limit=MAX_DESCRIPTION_CHARS)
+    paid_budget_store.consume(current_user.user_id, units=1)
+    logger.info(
+        "MapGenerator svg-mask user_id=%s description_chars=%s",
+        current_user.user_id,
+        len(request.description or ""),
+    )
     
     # Lazy import to avoid requiring Cairo library at server startup
     try:
@@ -496,6 +541,7 @@ async def create_project(
     Create a new map project.
     
     Requires authentication.
+    Prefer baseImageAssetId; legacy baseImageUrl must already be in the caller's registry.
     """
     logger.info(f"➕ [MapGenerator] Create project: name={request.name}, user={current_user.sub}")
     
@@ -503,6 +549,33 @@ async def create_project(
         user_id = current_user.sub
         now = datetime.now()
         project_id = str(uuid.uuid4())
+
+        base_image_url = ""
+        base_image_asset_id = None
+
+        if request.base_image_asset_id:
+            asset = get_asset_for_owner(request.base_image_asset_id, user_id)
+            if not asset:
+                raise HTTPException(
+                    status_code=403,
+                    detail="baseImageAssetId must reference an image asset owned by you",
+                )
+            base_image_url = asset.canonical_url
+            base_image_asset_id = asset.asset_id
+        elif request.base_image_url:
+            owned = get_owned_asset_by_url(user_id, request.base_image_url)
+            if not owned:
+                raise HTTPException(
+                    status_code=403,
+                    detail="baseImageUrl must reference an image asset owned by you",
+                )
+            base_image_url = owned.canonical_url
+            base_image_asset_id = owned.asset_id
+        else:
+            raise HTTPException(
+                status_code=422,
+                detail="baseImageAssetId or baseImageUrl is required",
+            )
         
         # Build project with defaults
         grid_config = request.grid_config or DEFAULT_GRID_CONFIG
@@ -510,7 +583,7 @@ async def create_project(
         project = MapProject(
             id=project_id,
             name=request.name,
-            base_image_url=request.base_image_url,
+            base_image_url=base_image_url,
             grid_config=grid_config,
             labels=[],
             scale_metadata=request.scale_metadata,
@@ -524,7 +597,8 @@ async def create_project(
         project_dict = {
             "id": project_id,
             "name": request.name,
-            "base_image_url": request.base_image_url or "",
+            "base_image_url": base_image_url,
+            "base_image_asset_id": base_image_asset_id,
             "grid_config": grid_config.model_dump(by_alias=False),  # Store as snake_case
             "labels": [],
             "generated_images": [],  # Initialize empty gallery
@@ -539,6 +613,8 @@ async def create_project(
         
         return project
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ [MapGenerator] Error creating project: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to create project: {str(e)}")
@@ -662,8 +738,32 @@ async def update_project(
         updates = {}
         if request.name is not None:
             updates["name"] = request.name
-        if request.base_image_url is not None:
-            updates["base_image_url"] = request.base_image_url
+        if request.base_image_asset_id is not None:
+            if request.base_image_asset_id:
+                asset = get_asset_for_owner(request.base_image_asset_id, user_id)
+                if not asset:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="baseImageAssetId must reference an image asset owned by you",
+                    )
+                updates["base_image_url"] = asset.canonical_url
+                updates["base_image_asset_id"] = asset.asset_id
+            else:
+                updates["base_image_url"] = ""
+                updates["base_image_asset_id"] = None
+        elif request.base_image_url is not None:
+            if request.base_image_url:
+                owned = get_owned_asset_by_url(user_id, request.base_image_url)
+                if not owned:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="baseImageUrl must reference an image asset owned by you",
+                    )
+                updates["base_image_url"] = owned.canonical_url
+                updates["base_image_asset_id"] = owned.asset_id
+            else:
+                updates["base_image_url"] = ""
+                updates["base_image_asset_id"] = None
         if request.grid_config is not None:
             updates["grid_config"] = request.grid_config.model_dump(by_alias=False)
         if request.labels is not None:
@@ -786,24 +886,22 @@ async def delete_project(
 # =============================================================================
 
 @router.post("/export", response_model=ExportMapResponse)
-async def export_map(request: ExportMapRequest):
+async def export_map(
+    request: ExportMapRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Export a map as a flattened image.
     
     Composites base image, grid overlay, and labels into a single PNG/JPEG.
-    
-    - Authenticated users can export by projectId
-    - Guests can export with inline project data
+    Requires authentication. Base image URL must be on the CDN allowlist.
     """
-    logger.info(f"📤 [MapGenerator] Export request: format={request.format}")
+    logger.info("MapGenerator export request format=%s", request.format)
     
     try:
         # Get project data (either from projectId or inline)
         project_data = None
         if request.project_id:
-            # Load project from Firestore by projectId
-            # Note: Export endpoint doesn't require auth (guests can export)
-            # But if projectId is provided, we need to load it
             doc_ref = db.collection(MAP_PROJECTS_COLLECTION).document(request.project_id)
             doc = doc_ref.get()
             
@@ -814,7 +912,10 @@ async def export_map(request: ExportMapRequest):
                 )
             
             project_data = doc.to_dict()
-            logger.info(f"📥 [MapGenerator] Loaded project from Firestore: {request.project_id}")
+            owner = project_data.get("userId") or project_data.get("user_id")
+            if owner != current_user.user_id:
+                raise HTTPException(status_code=403, detail="Not authorized to export this project")
+            logger.info("MapGenerator loaded project for export")
         
         # Use inline project data if provided, otherwise use loaded project
         if request.project:
@@ -842,15 +943,14 @@ async def export_map(request: ExportMapRequest):
         labels_dict = project_data.get("labels", [])
         labels = [MapLabel(**label_dict) for label_dict in labels_dict]
         
-        # Download base image
-        logger.info(f"📥 [MapGenerator] Downloading base image from {base_image_url}")
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(base_image_url)
-            response.raise_for_status()
-            base_image_bytes = response.content
+        # Download base image (allowlisted + size/type capped)
+        logger.info("MapGenerator downloading base image for export")
+        base_image_bytes, _ctype = await fetch_allowlisted_bytes(
+            base_image_url, max_bytes=MAX_PROXY_BYTES, timeout=30.0
+        )
         
         # Get image dimensions
-        base_image = Image.open(io.BytesIO(base_image_bytes))
+        base_image = open_image_bounded(base_image_bytes)
         width, height = base_image.size
         
         # Composite map export
@@ -943,68 +1043,67 @@ async def export_map(request: ExportMapRequest):
 
 
 # =============================================================================
-# DOWNLOAD PROXY (for CORS bypass)
+# DOWNLOAD PROXY (for CORS bypass) — allowlisted hosts only
 # =============================================================================
 
+
 @router.get("/download")
-async def download_proxy(url: str, filename: Optional[str] = None):
+async def download_proxy(
+    url: str,
+    filename: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+):
     """
-    Proxy endpoint for downloading images from R2.
-    
-    Bypasses CORS by fetching server-side and streaming to client.
-    Used for exporting maps where the R2 presigned URL can't be fetched
-    directly from the browser.
-    
-    Args:
-        url: The R2 presigned URL to fetch
-        filename: Optional filename for Content-Disposition header
+    Proxy endpoint for downloading images from allowlisted CDN/R2 hosts.
+
+    Requires authentication. Rejects non-HTTPS and non-allowlisted hosts (SSRF).
+    Streams with a hard byte cap and content-type allowlist.
     """
-    logger.info("📥 [MapGenerator] Download proxy request")
-    
+    logger.info("MapGenerator download proxy request")
+
     try:
-        # Decode URL if it was URL-encoded
         decoded_url = unquote(url)
-        
+
+        if not _download_url_allowed(decoded_url):
+            raise HTTPException(
+                status_code=400,
+                detail="Download URL host is not allowlisted",
+            )
+
         # Normalize Cloudflare Images URLs: /full -> /Full (case-sensitive)
-        # The lowercase /full variant returns 403, must use /Full for 1024x1024
         if "imagedelivery.net" in decoded_url and decoded_url.endswith("/full"):
             decoded_url = decoded_url[:-5] + "/Full"
-            logger.info("📥 [MapGenerator] Normalized /full to /Full for Cloudflare Images URL")
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.get(decoded_url)
-            response.raise_for_status()
-            
-            # Determine content type from response or infer from URL
-            content_type = response.headers.get('content-type', 'image/png')
-            
-            # Set up response headers
-            headers = {
-                'Content-Type': content_type,
-                'Content-Length': str(len(response.content)),
-            }
-            
-            # Add Content-Disposition if filename provided
-            if filename:
-                headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-            
-            logger.info(f"✅ [MapGenerator] Download proxy complete: {len(response.content)} bytes")
-            
-            return StreamingResponse(
-                iter([response.content]),
-                media_type=content_type,
-                headers=headers
-            )
-            
+
+        content, content_type = await fetch_allowlisted_bytes(
+            decoded_url, max_bytes=MAX_PROXY_BYTES
+        )
+
+        headers = {
+            "Content-Type": content_type,
+            "Content-Length": str(len(content)),
+        }
+        if filename:
+            headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        logger.info("MapGenerator download proxy complete bytes=%s", len(content))
+
+        return StreamingResponse(
+            iter([content]),
+            media_type=content_type,
+            headers=headers,
+        )
+
+    except HTTPException:
+        raise
     except httpx.HTTPError as e:
-        logger.error(f"❌ [MapGenerator] Download proxy HTTP error: {str(e)}")
+        logger.error("MapGenerator download proxy HTTP error: %s", type(e).__name__)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to download from upstream: {str(e)}"
+            detail="Failed to download from upstream",
         )
     except Exception as e:
-        logger.error(f"❌ [MapGenerator] Download proxy error: {str(e)}", exc_info=True)
+        logger.error("MapGenerator download proxy error: %s", type(e).__name__, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Map export failed: {str(e)}"
+            detail="Download proxy failed",
         )

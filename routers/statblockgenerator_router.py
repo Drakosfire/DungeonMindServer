@@ -15,6 +15,8 @@ import time
 
 # Import authentication
 from .auth_router import get_current_user, get_current_user_optional
+from security_limits.demo_quota import require_demo_quota_statblock
+from security_limits.paid_budget import paid_budget_store
 from auth_service import User
 
 # Import StatBlock components
@@ -37,7 +39,16 @@ from google.cloud import firestore
 import os
 import fal_client
 from openai import OpenAI
-from cloudflare.handle_images import upload_image_to_cloudflare
+from cloudflare.handle_images import (
+    upload_image_to_cloudflare_detailed,
+    delete_cloudflare_image_by_id,
+)
+from services.image_asset_registry import (
+    register_cloudflare_url_asset,
+    get_asset_for_owner,
+    delete_asset_record,
+)
+from security_limits.image_validation import read_upload_limited, as_upload_file
 
 # NOTE: Image generation now handled by /api/images/generate (image_management_router.py)
 
@@ -76,12 +87,15 @@ async def health_check():
 @router.post("/generate-statblock")
 async def generate_statblock(
     request: CreatureGenerationRequest,
-    current_user: Optional[User] = Depends(get_current_user_optional)
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    _demo_quota=Depends(require_demo_quota_statblock),
 ):
     """
-    Generate a complete D&D 5e creature statblock from description
-    Does not require authentication - works for anonymous users
+    Generate a complete D&D 5e creature statblock from description.
+    Public demo allowlist — hard IP/day quota. Authenticated users also counted.
     """
+    from security_limits.input_limits import enforce_max_chars, MAX_DESCRIPTION_CHARS
+    enforce_max_chars(request.description, field="description", limit=MAX_DESCRIPTION_CHARS)
     start_time = time.time()
     user_id = current_user.email if current_user else 'anonymous'
     
@@ -121,7 +135,7 @@ async def upload_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload user's own creature image to Cloudflare R2
+    Upload user's own creature image to Cloudflare Images and register asset_id.
     Requires authentication for CDN storage and project association
     """
     try:
@@ -131,17 +145,23 @@ async def upload_image(
         if not image_data:
             raise HTTPException(status_code=400, detail="Image data required")
         
-        logger.info(f"Uploading creature image for user: {current_user.email}")
+        logger.info("Uploading creature image user_id=%s", current_user.user_id)
         
-        # Upload to Cloudflare R2 (reuse existing upload function)
-        # upload_image_to_cloudflare takes 1 arg (UploadFile) and returns URL string
-        cloudflare_url = await upload_image_to_cloudflare(image_data)
+        detailed = await upload_image_to_cloudflare_detailed(image_data)
+        asset = register_cloudflare_url_asset(
+            owner_id=current_user.user_id,
+            canonical_url=detailed.url,
+            provider_image_id=detailed.provider_image_id,
+            account_or_bucket=detailed.account_id,
+            service="statblock",
+        )
         
         return {
             "success": True,
             "data": {
-                "id": f"upload_{datetime.now().timestamp()}",
-                "url": cloudflare_url,
+                "id": asset.asset_id,
+                "asset_id": asset.asset_id,
+                "url": detailed.url,
                 "prompt": "Uploaded image",
                 "created_at": datetime.now().isoformat()
             }
@@ -159,7 +179,7 @@ async def upload_images(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Upload multiple user images to Cloudflare R2
+    Upload multiple user images to Cloudflare Images and register asset ids.
     
     **REQUIRES AUTHENTICATION** - Login required to upload images.
     Guests can still use AI image generation.
@@ -167,9 +187,7 @@ async def upload_images(
     Images are stored permanently and associated with user account.
     """
     try:
-        user_email = current_user.email
-        
-        logger.info(f"Uploading {len(images)} image(s) for user: {user_email}")
+        logger.info("Uploading %s image(s) user_id=%s", len(images), current_user.user_id)
         
         if len(images) == 0:
             raise HTTPException(status_code=400, detail="No images provided")
@@ -181,31 +199,38 @@ async def upload_images(
         
         for idx, image_file in enumerate(images):
             try:
-                # Validate file type
-                if not image_file.content_type or not image_file.content_type.startswith('image/'):
-                    logger.warning(f"Skipping non-image file: {image_file.filename}")
-                    continue
+                # Bounded read + magic sniff BEFORE any full in-memory accept
+                try:
+                    content, sniffed_mime = await read_upload_limited(image_file)
+                except HTTPException as size_err:
+                    if size_err.status_code in (400, 413):
+                        logger.warning(
+                            "Skipping invalid/oversized upload %s: %s",
+                            image_file.filename,
+                            size_err.detail,
+                        )
+                        continue
+                    raise
+
+                bounded = as_upload_file(
+                    content,
+                    filename=image_file.filename or f"upload_{idx}.bin",
+                    mime=sniffed_mime,
+                )
                 
-                # Validate file size (max 10MB) - Python 3.10 compatible
-                content = await image_file.read()
-                file_size = len(content)
+                detailed = await upload_image_to_cloudflare_detailed(bounded)
+                asset = register_cloudflare_url_asset(
+                    owner_id=current_user.user_id,
+                    canonical_url=detailed.url,
+                    provider_image_id=detailed.provider_image_id,
+                    account_or_bucket=detailed.account_id,
+                    service="statblock",
+                )
                 
-                if file_size > 10 * 1024 * 1024:  # 10MB
-                    logger.warning(f"Skipping oversized file: {image_file.filename} ({file_size} bytes)")
-                    continue
-                
-                # Recreate UploadFile for upload_image_to_cloudflare
-                from io import BytesIO
-                image_file.file = BytesIO(content)
-                await image_file.seek(0)
-                
-                # Upload to Cloudflare
-                cloudflare_url = await upload_image_to_cloudflare(image_file)
-                
-                timestamp = datetime.now().timestamp()
                 uploaded_images.append({
-                    "id": f"upload_{timestamp}_{idx}_{user_email[:8]}",
-                    "url": cloudflare_url,
+                    "id": asset.asset_id,
+                    "asset_id": asset.asset_id,
+                    "url": detailed.url,
                     "filename": image_file.filename,
                     "prompt": f"Uploaded: {image_file.filename}",
                     "timestamp": datetime.now().isoformat()
@@ -508,69 +533,40 @@ async def delete_image_from_project(
 
 @router.delete("/delete-image")
 async def delete_image(
-    image_url: str,
+    asset_id: str,
     current_user: User = Depends(get_current_user)
 ):
     """
-    Permanently delete an image from Cloudflare storage
-    This removes the image from all projects (permanent deletion)
-    Requires authentication for security
+    Permanently delete an image by opaque asset_id from the server registry.
     """
     try:
-        logger.info(f"Deleting image from library for user: {current_user.email}")
-        
-        # Extract Cloudflare image ID from URL
-        # Cloudflare URLs typically look like: https://imagedelivery.net/{account_hash}/{image_id}/{variant}
-        import re
-        
-        # Try to extract image ID from Cloudflare URL
-        match = re.search(r'/([a-zA-Z0-9-]+)/[^/]+$', image_url)
-        if not match:
-            logger.warning(f"Could not extract image ID from URL: {image_url}")
-            # Return success anyway (image may already be deleted or URL malformed)
-            return {
-                "success": True,
-                "message": "Image URL processed"
-            }
-        
-        image_id = match.group(1)
-        
-        # Delete from Cloudflare Images
-        cloudflare_account_id = os.environ.get('CLOUDFLARE_ACCOUNT_ID')
-        cloudflare_api_token = os.environ.get('CLOUDFLARE_IMAGES_API_TOKEN')
-        
-        if not cloudflare_account_id or not cloudflare_api_token:
-            logger.error("Cloudflare credentials not configured")
-            raise HTTPException(status_code=500, detail="Image storage not configured")
-        
-        delete_url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1/{image_id}"
-        headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
-        
-        import httpx
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            cf_response = await client.delete(delete_url, headers=headers)
-            cf_result = cf_response.json()
-            
-            if cf_result.get("success"):
-                logger.info(f"✅ Successfully deleted image {image_id} from Cloudflare")
-            else:
-                logger.warning(f"Cloudflare deletion returned: {cf_result}")
-                # Don't fail if Cloudflare returns error (image may already be deleted)
-        
+        logger.info("Statblock delete-image asset_id=%s user_id=%s", asset_id, current_user.user_id)
+
+        asset = get_asset_for_owner(asset_id, current_user.user_id)
+        if asset is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Asset not found or not owned by caller",
+            )
+
+        cloud_deleted = False
+        if asset.provider == "cloudflare_images" and asset.object_key:
+            cloud_deleted = await delete_cloudflare_image_by_id(asset.object_key)
+
+        delete_asset_record(asset_id)
+
         return {
             "success": True,
-            "message": "Image deleted successfully"
+            "cloud_deleted": cloud_deleted,
+            "asset_id": asset_id,
+            "message": "Image deleted successfully",
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting image: {str(e)}")
-        # Return success to prevent UI blocking (optimistic deletion)
-        return {
-            "success": True,
-            "message": "Image deletion processed"
-        }
+        logger.error("Error deleting image: %s", type(e).__name__)
+        raise HTTPException(status_code=500, detail="Image deletion failed")
 
 @router.delete("/project/{project_id}")
 async def delete_project(

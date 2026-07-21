@@ -28,18 +28,6 @@ def create_safe_card_session_data(state_data: Dict[str, Any], project_id: str) -
     """
     Safely create CardSessionData with proper defaults for required fields
     """
-    # Debug: Log input data
-    logger.info("🔍 create_safe_card_session_data INPUT DEBUG")
-    logger.info(f"Input state_data type: {type(state_data)}")
-    logger.info(f"Input state_data keys: {list(state_data.keys()) if isinstance(state_data, dict) else 'Not a dict'}")
-    
-    if isinstance(state_data, dict) and 'itemDetails' in state_data:
-        input_item_details = state_data['itemDetails']
-        logger.info(f"Input itemDetails type: {type(input_item_details)}")
-        logger.info(f"Input itemDetails keys: {list(input_item_details.keys()) if isinstance(input_item_details, dict) else 'Not a dict'}")
-        if isinstance(input_item_details, dict):
-            logger.info(f"Input itemDetails content: name='{input_item_details.get('name', '')}', type='{input_item_details.get('type', '')}', rarity='{input_item_details.get('rarity', '')}', value='{input_item_details.get('value', '')}'")
-    
     # Ensure required fields have defaults
     safe_state = {
         "sessionId": state_data.get("sessionId", project_id),  # Use project_id as fallback
@@ -47,25 +35,14 @@ def create_safe_card_session_data(state_data: Dict[str, Any], project_id: str) -
         **state_data  # Override with any existing state data
     }
     
-    # Debug: Log safe_state before CardSessionData creation
-    logger.info("🔍 create_safe_card_session_data SAFE_STATE DEBUG")
-    logger.info(f"Safe_state keys: {list(safe_state.keys())}")
-    if 'itemDetails' in safe_state:
-        safe_item_details = safe_state['itemDetails']
-        logger.info(f"Safe_state itemDetails type: {type(safe_item_details)}")
-        if isinstance(safe_item_details, dict):
-            logger.info(f"Safe_state itemDetails content: name='{safe_item_details.get('name', '')}', type='{safe_item_details.get('type', '')}', rarity='{safe_item_details.get('rarity', '')}', value='{safe_item_details.get('value', '')}'")
-    
-    # Create CardSessionData and debug result
     try:
-        result = CardSessionData(**safe_state)
-        logger.info("🔍 create_safe_card_session_data RESULT DEBUG")
-        logger.info(f"Result itemDetails type: {type(result.itemDetails)}")
-        logger.info(f"Result itemDetails content: {result.itemDetails}")
-        return result
+        return CardSessionData(**safe_state)
     except Exception as e:
-        logger.error(f"Error creating CardSessionData: {e}")
-        logger.error(f"Safe_state that caused error: {safe_state}")
+        logger.error(
+            "Error creating CardSessionData for project_id=%s: %s",
+            project_id,
+            type(e).__name__,
+        )
         raise
 
 # Pydantic models

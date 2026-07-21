@@ -11,6 +11,14 @@ from models.ruleslawyer_models import (
     UpdateSavedRuleRequest,
 )
 from dependencies import get_current_user, get_ruleslawyer_db
+from routers.internal_auth import require_dungeonbuddy_internal_key
+from security_limits.demo_quota import require_demo_quota_ruleslawyer
+from security_limits.input_limits import (
+    enforce_max_chars,
+    MAX_CHAT_HISTORY_MESSAGES,
+    MAX_CHAT_MESSAGE_CHARS,
+    MAX_PROMPT_CHARS,
+)
 from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
@@ -75,6 +83,35 @@ class EmbeddingRequest(BaseModel):
     embeddings_file_path: str
     enhanced_json_path: str
 
+
+def _strip_relative_prefix(relative_path: str) -> str:
+    """Remove a single leading './' only — never use str.lstrip('./') (eats '../')."""
+    raw = str(relative_path).strip()
+    while raw.startswith("./"):
+        raw = raw[2:]
+    return raw
+
+
+def _resolve_under_ruleslawyer_data_dir(relative_path: str) -> Path:
+    """
+    Resolve a caller-supplied relative path and prove it stays under RULESLAWYER_DATA_DIR.
+    Rejects absolute paths and .. traversal (e.g. folder/../../outside.csv).
+    """
+    if not relative_path or not str(relative_path).strip():
+        raise HTTPException(status_code=400, detail="Path is required")
+    raw = _strip_relative_prefix(relative_path)
+    if not raw or Path(raw).is_absolute() or raw.startswith("/") or raw.startswith("\\"):
+        raise HTTPException(status_code=400, detail="Absolute paths are not allowed")
+    # Join then resolve; is_relative_to catches traversal after symlink/.. normalization
+    candidate = (RULESLAWYER_DATA_DIR / raw).resolve()
+    if not candidate.is_relative_to(RULESLAWYER_DATA_DIR):
+        raise HTTPException(
+            status_code=400,
+            detail="Path escapes Rules Lawyer data directory",
+        )
+    return candidate
+
+
 def _to_chat_history_tuples(chat_history: list) -> list[tuple[str, str]]:
     tuples: list[tuple[str, str]] = []
     current_user_msg: str | None = None
@@ -96,9 +133,11 @@ class RulesLawyerService:
         self.active_rulebook_id: str | None = None
     
     def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
+        embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
+        json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
         self.loader = EmbeddingLoader(
-            embeddings_file_path=os.path.join(RULESLAWYER_DATA_DIR, embeddings_file_path.lstrip('./')),
-            enhanced_json_path=os.path.join(RULESLAWYER_DATA_DIR, enhanced_json_path.lstrip('./'))
+            embeddings_file_path=str(embeddings_resolved),
+            enhanced_json_path=str(json_resolved),
         )
         if rulebook_id:
             self.active_rulebook_id = rulebook_id
@@ -145,7 +184,10 @@ async def list_rulebooks(
         raise HTTPException(status_code=500, detail="Unable to load rulebooks right now.") from e
 
 
-@router.post("/rulebooks/refresh")
+@router.post(
+    "/rulebooks/refresh",
+    dependencies=[Depends(require_dungeonbuddy_internal_key)],
+)
 async def refresh_rulebooks(
     request: RulebookRefreshRequest,
     registry: RulesLawyerRegistry = Depends(get_ruleslawyer_registry),
@@ -236,36 +278,60 @@ async def delete_rule(
         logger.error("❌ [RulesLawyer] Failed to delete saved rule", exc_info=True)
         raise HTTPException(status_code=500, detail="Unable to delete saved rule right now.") from e
 
-@router.post("/loadembeddings")
+@router.post(
+    "/loadembeddings",
+    dependencies=[Depends(require_dungeonbuddy_internal_key)],
+)
 async def load_embedding(request: EmbeddingRequest):
-    logger.info(f"Loading embedding: {request}")
-    logger.info(f"RULESLAWYER_DATA_DIR: {RULESLAWYER_DATA_DIR}")
-    logger.info(f"Expected embeddings file: {RULESLAWYER_DATA_DIR / request.embeddings_file_path.lstrip('./')}")
-    logger.info(f"Expected JSON file: {RULESLAWYER_DATA_DIR / request.enhanced_json_path.lstrip('./')}")
-    
+    # Contain paths BEFORE EmbeddingLoader constructs SentenceTransformer (CPU/RAM).
+    _resolve_under_ruleslawyer_data_dir(request.embeddings_file_path)
+    _resolve_under_ruleslawyer_data_dir(request.enhanced_json_path)
+    logger.info(
+        "Loading embeddings rulebook=%s",
+        request.embedding,
+    )
+
     try:
         rules_lawyer_service.load_embeddings(
             embeddings_file_path=request.embeddings_file_path,
             enhanced_json_path=request.enhanced_json_path,
-            rulebook_id=request.embedding
+            rulebook_id=request.embedding,
         )
-        logger.info(f"✅ [RulesLawyer] Embeddings loaded successfully")
+        logger.info("✅ [RulesLawyer] Embeddings loaded successfully")
         return {"message": "Embedding loaded successfully"}
+    except HTTPException:
+        raise
     except FileNotFoundError as e:
-        logger.error(f"File not found: {str(e)}")
-        logger.error(f"Looking in directory: {RULESLAWYER_DATA_DIR}")
-        logger.error(
-            f"Files in directory: {list(RULESLAWYER_DATA_DIR.iterdir()) if RULESLAWYER_DATA_DIR.exists() else 'Directory does not exist'}"
-        )
-        raise HTTPException(status_code=404, detail="Embedding file not found. Please verify rulebook data is available.") from e
+        logger.error("Embedding file not found under data dir")
+        raise HTTPException(
+            status_code=404,
+            detail="Embedding file not found. Please verify rulebook data is available.",
+        ) from e
     except Exception as e:
-        logger.error(f"Error loading embeddings: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to load embeddings. Please try again later.") from e
+        logger.error("Error loading embeddings: %s", type(e).__name__, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to load embeddings. Please try again later.",
+        ) from e
 
 @router.post("/query")
-async def query_rules(request: RulesQueryRequest):
+async def query_rules(
+    request: RulesQueryRequest,
+    _demo_quota=Depends(require_demo_quota_ruleslawyer),
+):
     import time as time_module
     request_start_time = time_module.time()
+
+    enforce_max_chars(request.message, field="message", limit=MAX_PROMPT_CHARS)
+    if len(request.chatHistory or []) > MAX_CHAT_HISTORY_MESSAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"chatHistory cannot exceed {MAX_CHAT_HISTORY_MESSAGES} messages",
+        )
+    for i, msg in enumerate(request.chatHistory or []):
+        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
+        if content:
+            enforce_max_chars(str(content), field=f"chatHistory[{i}]", limit=MAX_CHAT_MESSAGE_CHARS)
     
     logger.info(f"🔵 [RulesLawyer] Query request received at {time_module.time()}: message_length={len(request.message)}, chat_history_length={len(request.chatHistory)}")
     

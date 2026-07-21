@@ -98,8 +98,16 @@ class DungeonMindSessionConfig:
         # Only add domain in production or HTTPS dev
         if self.domain:
             config["domain"] = self.domain
-        
-        logger.info(f"Session middleware config: {config}")
+
+        # Never log secret_key — log non-sensitive cookie policy only
+        logger.info(
+            "Session middleware config: cookie=%s max_age=%s https_only=%s same_site=%s domain=%s",
+            config.get("session_cookie"),
+            config.get("max_age"),
+            config.get("https_only"),
+            config.get("same_site"),
+            config.get("domain"),
+        )
         return config
     
     def get_cookie_kwargs(self) -> dict:
@@ -128,9 +136,9 @@ class DungeonMindSessionConfig:
         """
         middleware_kwargs = self.get_middleware_kwargs()
         app.add_middleware(SessionMiddleware, **middleware_kwargs)
-        
+
+        # Never log middleware_kwargs — it includes secret_key
         logger.info("Added standardized session middleware to application")
-        logger.debug(f"Session middleware config: {middleware_kwargs}")
 
 # Global session configuration instance
 session_config = DungeonMindSessionConfig()

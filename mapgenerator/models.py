@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
+from security_limits.image_bounds import MAX_DATA_URI_CHARS
+
 
 # =============================================================================
 # CORE ENTITIES
@@ -109,7 +111,16 @@ class CreateMapProjectRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
     
     name: str = Field(min_length=1, max_length=100)
-    base_image_url: str = Field(alias="baseImageUrl")
+    base_image_url: Optional[str] = Field(
+        None,
+        alias="baseImageUrl",
+        description="Legacy: CDN URL that must already be in the caller's asset registry",
+    )
+    base_image_asset_id: Optional[str] = Field(
+        None,
+        alias="baseImageAssetId",
+        description="Preferred: opaque asset id; server resolves canonical URL",
+    )
     grid_config: Optional[GridConfig] = Field(None, alias="gridConfig")
     scale_metadata: Optional[ScaleMetadata] = Field(None, alias="scaleMetadata")
 
@@ -120,6 +131,7 @@ class UpdateMapProjectRequest(BaseModel):
     
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     base_image_url: Optional[str] = Field(None, alias="baseImageUrl")
+    base_image_asset_id: Optional[str] = Field(None, alias="baseImageAssetId")
     grid_config: Optional[GridConfig] = Field(None, alias="gridConfig")
     labels: Optional[list[MapLabel]] = Field(None, max_length=100)
     scale_metadata: Optional[ScaleMetadata] = Field(None, alias="scaleMetadata")
@@ -144,8 +156,18 @@ class GenerateMaskedMapRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
     
     prompt: str = Field(..., min_length=1, max_length=8000)
-    mask_base64: str = Field(..., alias="maskBase64", description="Base64-encoded PNG mask")
-    base_image_base64: str = Field(..., alias="baseImageBase64", description="Base64-encoded PNG base image")
+    mask_base64: str = Field(
+        ...,
+        alias="maskBase64",
+        description="Base64-encoded PNG mask",
+        max_length=MAX_DATA_URI_CHARS,
+    )
+    base_image_base64: str = Field(
+        ...,
+        alias="baseImageBase64",
+        description="Base64-encoded PNG base image",
+        max_length=MAX_DATA_URI_CHARS,
+    )
     style_options: Optional[dict] = Field(None, alias="styleOptions", description="Optional style configuration")
     mode: Literal["inpaint", "edit"] = Field(
         default="inpaint",
@@ -218,6 +240,11 @@ class GenerateMapResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
     
     image_url: str = Field(alias="imageUrl")
+    asset_id: Optional[str] = Field(
+        None,
+        alias="assetId",
+        description="Opaque server-issued asset id for ownership / project binding",
+    )
     width: int
     height: int
     generation_time: Optional[float] = Field(None, alias="generationTime")
