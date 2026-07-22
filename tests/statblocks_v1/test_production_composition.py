@@ -103,6 +103,8 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
     assert service._settings.candidate_ttl_seconds == 30
     assert service._asset_gateway is not None
     assert service._provider is provider
+    assert service._generate_operations is None  # no firestore client in this composition
+    assert service._generate_lease_seconds >= 120
 
 
 def test_logging_settings_applied(monkeypatch) -> None:

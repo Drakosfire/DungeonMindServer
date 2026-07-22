@@ -7,14 +7,28 @@ the event loop.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
 
 from pydantic import AnyUrl
 
-from statblocks_v1.application.repositories import AppendRevisionCommand, CreateStatblockCommand
+from statblocks_v1.application.repositories import (
+    AppendRevisionCommand,
+    CreateStatblockCommand,
+    GenerateBeginClaimed,
+    GenerateBeginCompleted,
+    GenerateBeginFailed,
+    GenerateBeginInProgress,
+    GenerateBeginResult,
+)
+from statblocks_v1.domain.candidate_operations import (
+    GENERATE_CANDIDATE_OPERATION,
+    CandidateGenerationFailureSnapshotV1,
+    CandidateGenerationOperationV1,
+    CandidateGenerationStatusV1,
+)
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateNotFoundError,
@@ -46,6 +60,7 @@ from statblocks_v1.infrastructure.memory_repositories import (
 CANDIDATES_COLLECTION = "dungeonbuddy_statblock_candidates_v1"
 STATBLOCKS_COLLECTION = "dungeonbuddy_statblocks_v1"
 IDEMPOTENCY_COLLECTION = "dungeonbuddy_statblock_idempotency_v1"
+GENERATE_OPS_COLLECTION = "dungeonbuddy_statblock_candidate_generate_ops_v1"
 
 
 class FirestoreCandidateRepository:
@@ -96,6 +111,334 @@ class FirestoreCandidateRepository:
         if not snapshot.exists:
             raise CandidateNotFoundError(candidate_id)
         return GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+
+
+class FirestoreCandidateGenerationOperationRepository:
+    """Transactional generate-operation adapter with atomic candidate completion."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+        candidates_collection: str = CANDIDATES_COLLECTION,
+        generate_ops_collection: str = GENERATE_OPS_COLLECTION,
+    ) -> None:
+        self._client = client
+        self._clock = clock
+        self._candidates_collection = candidates_collection
+        self._generate_ops_collection = generate_ops_collection
+
+    def get_generate_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateGenerationOperationV1 | None:
+        try:
+            snapshot = self._operation_document(caller_scope, request_id).get()
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
+        if not snapshot.exists:
+            return None
+        return CandidateGenerationOperationV1.model_validate(snapshot.to_dict())
+
+    def begin_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> GenerateBeginResult:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        result_box: dict[str, GenerateBeginResult] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                operation = CandidateGenerationOperationV1(
+                    caller_scope=caller_scope,
+                    operation=GENERATE_CANDIDATE_OPERATION,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate_id_factory(),
+                    status=CandidateGenerationStatusV1.pending,
+                    lease_owner=lease_owner,
+                    lease_expires_at=now + timedelta(seconds=lease_duration_seconds),
+                    attempt_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                transaction.create(op_ref, _dump(operation))
+                result_box["result"] = GenerateBeginClaimed(operation=operation)
+                return
+
+            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if existing.status is CandidateGenerationStatusV1.completed:
+                result_box["result"] = GenerateBeginCompleted(candidate_id=existing.candidate_id)
+                return
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                result_box["result"] = GenerateBeginFailed(failure=existing.failure)
+                return
+            if existing.lease_expires_at > now:
+                result_box["result"] = GenerateBeginInProgress(
+                    candidate_id=existing.candidate_id,
+                    lease_expires_at=existing.lease_expires_at,
+                )
+                return
+
+            claimed = existing.model_copy(
+                update={
+                    "lease_owner": lease_owner,
+                    "lease_expires_at": now + timedelta(seconds=lease_duration_seconds),
+                    "attempt_count": existing.attempt_count + 1,
+                    "updated_at": now,
+                }
+            )
+            transaction.set(op_ref, _dump(claimed))
+            result_box["result"] = GenerateBeginClaimed(operation=claimed)
+
+        try:
+            operation_fn(self._client.transaction())
+        except IdempotencyConflictError:
+            raise
+        except PersistenceUnavailableError:
+            raise
+        except Exception as error:
+            if _is_already_exists(error):
+                # Concurrent first-create: re-enter begin semantics via re-read.
+                return self.begin_generate(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id_factory=candidate_id_factory,
+                    lease_owner=lease_owner,
+                    lease_duration_seconds=lease_duration_seconds,
+                )
+            raise PersistenceUnavailableError() from error
+        return result_box["result"]
+
+    def complete_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> GeneratedStatblockCandidateV1:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        candidate_ref = self._client.collection(self._candidates_collection).document(
+            candidate.candidate_id
+        )
+        result_box: dict[str, GeneratedStatblockCandidateV1] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                raise PersistenceUnavailableError()
+            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if candidate.candidate_id != existing.candidate_id:
+                raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.failed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            candidate_snap = candidate_ref.get(transaction=transaction)
+            if existing.status is CandidateGenerationStatusV1.completed or candidate_snap.exists:
+                if candidate_snap.exists:
+                    stored = GeneratedStatblockCandidateV1.model_validate(candidate_snap.to_dict())
+                else:
+                    raise PersistenceUnavailableError()
+                if existing.status is not CandidateGenerationStatusV1.completed:
+                    transaction.set(
+                        op_ref,
+                        _dump(
+                            existing.model_copy(
+                                update={
+                                    "status": CandidateGenerationStatusV1.completed,
+                                    "updated_at": now,
+                                    "completed_at": now,
+                                    "failure": None,
+                                }
+                            )
+                        ),
+                    )
+                result_box["result"] = stored
+                return
+
+            stored = candidate.model_copy(deep=True)
+            transaction.create(candidate_ref, _dump(stored))
+            transaction.set(
+                op_ref,
+                _dump(
+                    existing.model_copy(
+                        update={
+                            "status": CandidateGenerationStatusV1.completed,
+                            "updated_at": now,
+                            "completed_at": now,
+                            "failure": None,
+                        }
+                    )
+                ),
+            )
+            result_box["result"] = stored
+
+        try:
+            operation_fn(self._client.transaction())
+        except (
+            IdempotencyConflictError,
+            ImmutableResourceConflictError,
+            PersistenceUnavailableError,
+        ):
+            raise
+        except Exception as error:
+            # Indeterminate: reconcile from durable operation + candidate.
+            reconciled = self._reconcile_complete(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                candidate_id=candidate.candidate_id,
+            )
+            if reconciled is not None:
+                return reconciled
+            if _is_already_exists(error):
+                reconciled = self._reconcile_complete(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate.candidate_id,
+                )
+                if reconciled is not None:
+                    return reconciled
+            raise TransactionIndeterminateError() from error
+        return result_box["result"]
+
+    def fail_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        result_box: dict[str, CandidateGenerationFailureSnapshotV1] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                raise PersistenceUnavailableError()
+            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                result_box["result"] = existing.failure
+                return
+
+            if existing.lease_owner != lease_owner:
+                result_box["result"] = failure
+                return
+
+            snapshot = failure.model_copy(deep=True)
+            transaction.set(
+                op_ref,
+                _dump(
+                    existing.model_copy(
+                        update={
+                            "status": CandidateGenerationStatusV1.failed,
+                            "failure": snapshot,
+                            "updated_at": now,
+                            "completed_at": now,
+                        }
+                    )
+                ),
+            )
+            result_box["result"] = snapshot
+
+        try:
+            operation_fn(self._client.transaction())
+        except (
+            IdempotencyConflictError,
+            ImmutableResourceConflictError,
+            PersistenceUnavailableError,
+        ):
+            raise
+        except Exception as error:
+            record = self.get_generate_operation(caller_scope, request_id)
+            if record is not None and record.status is CandidateGenerationStatusV1.failed:
+                if record.request_digest != request_digest:
+                    raise IdempotencyConflictError(request_id) from error
+                if record.failure is not None:
+                    return record.failure
+            raise TransactionIndeterminateError() from error
+        return result_box["result"]
+
+    def _reconcile_complete(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id: str,
+    ) -> GeneratedStatblockCandidateV1 | None:
+        try:
+            record = self.get_generate_operation(caller_scope, request_id)
+        except PersistenceUnavailableError:
+            return None
+        if record is None:
+            return None
+        if record.request_digest != request_digest:
+            raise IdempotencyConflictError(request_id)
+        if record.candidate_id != candidate_id:
+            raise ImmutableResourceConflictError("candidate", candidate_id)
+        if record.status is CandidateGenerationStatusV1.completed:
+            try:
+                snapshot = (
+                    self._client.collection(self._candidates_collection)
+                    .document(candidate_id)
+                    .get()
+                )
+            except Exception as error:
+                raise PersistenceUnavailableError() from error
+            if snapshot.exists:
+                return GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+            raise PersistenceUnavailableError()
+        if record.status is CandidateGenerationStatusV1.failed:
+            raise ImmutableResourceConflictError("candidate", candidate_id)
+        return None
+
+    def _operation_document(self, caller_scope: str, request_id: str) -> Any:
+        import hashlib
+
+        digest = hashlib.sha256(
+            f"{caller_scope}\x1f{GENERATE_CANDIDATE_OPERATION}\x1f{request_id}".encode()
+        ).hexdigest()
+        return self._client.collection(self._generate_ops_collection).document(digest)
 
 
 class FirestoreStatblockPersistenceRepository:

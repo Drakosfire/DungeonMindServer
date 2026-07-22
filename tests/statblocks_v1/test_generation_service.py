@@ -59,16 +59,40 @@ def _service(
     asset_gateway=None,
     definition_resolver=None,
     candidates=None,
+    generate_operations=None,
+    clock=None,
+    provider=None,
 ) -> GenerationServiceV1:
-    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+    )
+
+    fixed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    clock_fn = clock or (lambda: fixed)
+    candidate_repo = candidates or InMemoryCandidateRepository(clock=clock_fn)
+    ops = generate_operations or InMemoryCandidateGenerationOperationRepository(
+        candidate_repo, clock=clock_fn
+    )
+    counter = {"n": 0}
+
+    def next_candidate_id() -> str:
+        counter["n"] += 1
+        if counter["n"] == 1:
+            return candidate_id
+        prefix, _, rest = candidate_id.partition("_")
+        if rest.isdigit():
+            return f"{prefix}_{int(rest) + counter['n'] - 1}"
+        return f"{candidate_id}_{counter['n']}"
+
     return GenerationServiceV1(
-        provider=FakeDefinitionProvider(payload),
-        candidates=candidates or InMemoryCandidateRepository(clock=lambda: now),
+        provider=provider or FakeDefinitionProvider(payload),
+        candidates=candidate_repo,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
-        clock=lambda: now,
-        candidate_id_factory=lambda: candidate_id,
+        clock=clock_fn,
+        candidate_id_factory=next_candidate_id,
         asset_gateway=asset_gateway,
         definition_resolver=definition_resolver,
+        generate_operations=ops,
     )
 
 
@@ -608,3 +632,190 @@ def test_settings_malformed_env_is_typed(monkeypatch, env_name, env_value) -> No
 def test_settings_direct_construction_fails_closed(kwargs, match) -> None:
     with pytest.raises(InternalServiceMisconfiguredError, match=match):
         GenerationSettingsV1(**kwargs)
+
+
+def test_generate_replay_returns_same_candidate_without_provider(load_fixture) -> None:
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = _service(None, provider=provider)
+    first = service.generate(_command())
+    second = service.generate(_command())
+
+    assert not isinstance(first, GenerationFailureV1)
+    assert not isinstance(second, GenerationFailureV1)
+    assert first.candidate_id == second.candidate_id == "cand_1"
+    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert len(provider.calls) == 1
+
+
+def test_generate_changed_digest_conflicts_without_provider(load_fixture) -> None:
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = _service(None, provider=provider)
+    first = service.generate(_command())
+    assert not isinstance(first, GenerationFailureV1)
+    assert len(provider.calls) == 1
+
+    with pytest.raises(IdempotencyConflictError):
+        service.generate(
+            _command(source=SourceSnapshotV1(name_hint="Bruiser", description="Changed intent."))
+        )
+    assert len(provider.calls) == 1
+
+
+def test_generate_terminal_failure_replays_without_provider(load_fixture) -> None:
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1(kind=ProviderOutcomeKind.refusal, message="nope")
+    )
+    service = _service(None, provider=provider)
+    first = service.generate(_command())
+    second = service.generate(_command())
+
+    assert isinstance(first, GenerationFailureV1)
+    assert isinstance(second, GenerationFailureV1)
+    assert first.kind == second.kind == "provider_refusal"
+    assert len(provider.calls) == 1
+
+
+def test_generate_in_progress_when_lease_active(load_fixture) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+
+    def clock():
+        return now["t"]
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class BlockingProvider:
+        provider_name = "blocking"
+
+        def generate_definition(self, **kwargs):
+            started.set()
+            release.wait(timeout=2)
+            return FakeDefinitionProvider(load_fixture("simple_bruiser")).generate_definition(
+                **kwargs
+            )
+
+    candidates = InMemoryCandidateRepository(clock=clock)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=clock)
+    service = GenerationServiceV1(
+        provider=BlockingProvider(),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=clock,
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+
+    results: list = []
+
+    def worker():
+        results.append(service.generate(_command()))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(worker)
+        assert started.wait(timeout=2)
+        second = service.generate(_command())
+        release.set()
+        first.result(timeout=2)
+
+    assert isinstance(second, GenerationFailureV1)
+    assert second.kind == "generation_in_progress"
+    assert not isinstance(results[0], GenerationFailureV1)
+    assert results[0].candidate_id == "cand_1"
+
+
+def test_generate_expired_lease_takeover_retains_candidate_id(load_fixture) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    # Seed an expired pending reservation for cand_reserved.
+    ops._operations[("tests", "req_generation")] = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=__import__(
+            "statblocks_v1.application.repositories", fromlist=["compute_generate_candidate_digest"]
+        ).compute_generate_candidate_digest(_command()),
+        candidate_id="cand_reserved",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="stale",
+        lease_expires_at=now["t"] - timedelta(seconds=1),
+        attempt_count=1,
+        created_at=now["t"] - timedelta(seconds=10),
+        updated_at=now["t"] - timedelta(seconds=10),
+    )
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_should_not_use",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    result = service.generate(_command())
+    assert not isinstance(result, GenerationFailureV1)
+    assert result.candidate_id == "cand_reserved"
+    assert len(provider.calls) == 1
+
+
+def test_generate_expired_candidate_replay_raises_410(load_fixture) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.domain.errors import CandidateExpiredError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 5),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert not isinstance(first, GenerationFailureV1)
+    now["t"] = now["t"] + timedelta(seconds=10)
+    with pytest.raises(CandidateExpiredError) as exc:
+        service.generate(_command())
+    assert exc.value.details["candidate_id"] == "cand_1"
+
+
+def test_different_request_ids_are_independent(load_fixture) -> None:
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = _service(None, provider=provider)
+    first = service.generate(_command(request_id="req_a"))
+    second = service.generate(_command(request_id="req_b"))
+    assert not isinstance(first, GenerationFailureV1)
+    assert not isinstance(second, GenerationFailureV1)
+    assert first.candidate_id != second.candidate_id
+    assert len(provider.calls) == 2

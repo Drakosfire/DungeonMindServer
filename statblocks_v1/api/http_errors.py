@@ -80,6 +80,16 @@ _GENERATION_FAILURE_POLICY: dict[str, tuple[int, str, str]] = {
     ),
     "revision_not_found": (404, "revision_not_found", "Revision was not found"),
     "statblock_not_found": (404, "statblock_not_found", "Statblock was not found"),
+    "generation_in_progress": (
+        409,
+        "generation_in_progress",
+        "Candidate generation is already in progress for this request",
+    ),
+    "generation_replay_expired": (
+        410,
+        "generation_replay_expired",
+        "Completed generation points to an expired candidate",
+    ),
 }
 
 

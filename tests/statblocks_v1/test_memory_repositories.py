@@ -436,3 +436,236 @@ def test_concurrent_readers_observe_committed_state_only(load_fixture):
 
     assert errors == []
     assert len(repository.list_for_statblock(statblock.statblock_id)) == 26
+
+
+
+def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        GenerateBeginCompleted,
+        GenerateBeginFailed,
+        GenerateBeginInProgress,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import CandidateGenerationFailureSnapshotV1
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    command = GenerateStatblockCommandV1(
+        request_id="req_ops",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+
+    claimed = ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_ops",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_ops1",
+        lease_owner="owner-a",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(claimed, GenerateBeginClaimed)
+    assert claimed.operation.candidate_id == "cand_ops1"
+
+    assert isinstance(
+        ops.begin_generate(
+            caller_scope="tests",
+            request_id="req_ops",
+            request_digest=digest,
+            candidate_id_factory=lambda: "cand_other",
+            lease_owner="owner-b",
+            lease_duration_seconds=30,
+        ),
+        GenerateBeginInProgress,
+    )
+
+    with pytest.raises(IdempotencyConflictError):
+        ops.begin_generate(
+            caller_scope="tests",
+            request_id="req_ops",
+            request_digest=compute_generate_candidate_digest(
+                command.model_copy(
+                    update={"source": SourceSnapshotV1(name_hint="X", description="Z")}
+                )
+            ),
+            candidate_id_factory=lambda: "cand_other",
+            lease_owner="owner-b",
+            lease_duration_seconds=30,
+        )
+
+    now["t"] = now["t"] + timedelta(seconds=31)
+    takeover = ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_ops",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_should_not",
+        lease_owner="owner-c",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(takeover, GenerateBeginClaimed)
+    assert takeover.operation.candidate_id == "cand_ops1"
+    assert takeover.operation.attempt_count == 2
+
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    created = now["t"]
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id="cand_ops1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=validate_definition(
+            definition, ValidationMode.generation_candidate
+        ),
+        created_at=created,
+        expires_at=created + timedelta(minutes=5),
+    )
+    stored = ops.complete_generate(
+        caller_scope="tests",
+        request_id="req_ops",
+        request_digest=digest,
+        lease_owner="owner-c",
+        candidate=candidate,
+    )
+    assert stored.candidate_id == "cand_ops1"
+    assert isinstance(
+        ops.begin_generate(
+            caller_scope="tests",
+            request_id="req_ops",
+            request_digest=digest,
+            candidate_id_factory=lambda: "cand_x",
+            lease_owner="owner-d",
+            lease_duration_seconds=30,
+        ),
+        GenerateBeginCompleted,
+    )
+
+    # Stale-worker convergence: second complete returns canonical candidate.
+    again = ops.complete_generate(
+        caller_scope="tests",
+        request_id="req_ops",
+        request_digest=digest,
+        lease_owner="owner-stale",
+        candidate=candidate.model_copy(update={"asset_brief": None}),
+    )
+    assert again.candidate_id == "cand_ops1"
+
+    # Independent failure key
+    fail_cmd = command.model_copy(update={"request_id": "req_fail"})
+    fail_digest = compute_generate_candidate_digest(fail_cmd)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_fail",
+        request_digest=fail_digest,
+        candidate_id_factory=lambda: "cand_fail",
+        lease_owner="owner-f",
+        lease_duration_seconds=30,
+    )
+    snapshot = ops.fail_generate(
+        caller_scope="tests",
+        request_id="req_fail",
+        request_digest=fail_digest,
+        lease_owner="owner-f",
+        failure=CandidateGenerationFailureSnapshotV1(
+            kind="provider_refusal", message="nope"
+        ),
+    )
+    assert snapshot.kind == "provider_refusal"
+    failed = ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_fail",
+        request_digest=fail_digest,
+        candidate_id_factory=lambda: "cand_fail2",
+        lease_owner="owner-g",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(failed, GenerateBeginFailed)
+    assert failed.failure.kind == "provider_refusal"
+
+
+def test_generate_ops_concurrent_complete_converges(load_fixture):
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_race",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_race",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_race",
+        lease_owner="a",
+        lease_duration_seconds=60,
+    )
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+
+    def make(tag: str) -> GeneratedStatblockCandidateV1:
+        return GeneratedStatblockCandidateV1(
+            candidate_id="cand_race",
+            contract=STATBLOCK_CONTRACT,
+            contract_version=STATBLOCK_CONTRACT_VERSION,
+            definition=definition,
+            validation_receipt=receipt,
+            created_at=now,
+            expires_at=now + timedelta(minutes=5),
+            asset_brief=AssetBriefV1(prompt=tag),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                ops.complete_generate,
+                caller_scope="tests",
+                request_id="req_race",
+                request_digest=digest,
+                lease_owner="a",
+                candidate=make("a"),
+            ),
+            pool.submit(
+                ops.complete_generate,
+                caller_scope="tests",
+                request_id="req_race",
+                request_digest=digest,
+                lease_owner="b",
+                candidate=make("b"),
+            ),
+        ]
+        results = [future.result() for future in futures]
+    assert {item.candidate_id for item in results} == {"cand_race"}
+    assert len(candidates._candidates) == 1

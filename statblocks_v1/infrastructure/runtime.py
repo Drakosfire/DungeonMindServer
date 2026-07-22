@@ -31,6 +31,7 @@ from statblocks_v1.infrastructure.cloudflare_asset_gateway import (
     PipelineGenerate,
 )
 from statblocks_v1.infrastructure.firestore_repositories import (
+    FirestoreCandidateGenerationOperationRepository,
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
@@ -127,11 +128,25 @@ def build_persistence_repository(client: Any) -> StatblockPersistenceRepository:
     )
 
 
+def build_generate_operation_repository(client: Any) -> FirestoreCandidateGenerationOperationRepository:
+    settings = StatblocksV1Settings.from_environment()
+    apply_logging_settings(settings)
+    _require_firestore(settings)
+    if client is None:
+        raise InternalServiceMisconfiguredError("Firestore client is not configured")
+    return FirestoreCandidateGenerationOperationRepository(
+        client,
+        candidates_collection=settings.candidates_collection,
+        generate_ops_collection=settings.generate_ops_collection,
+    )
+
+
 def build_generation_service(
     *,
     client: Any | None = None,
     candidates: CandidateRepository | None = None,
     persistence: StatblockPersistenceRepository | None = None,
+    generate_operations: Any | None = None,
     asset_pipeline: PipelineGenerate | None = None,
     provider: Any | None = None,
 ) -> GenerationServiceV1:
@@ -141,6 +156,9 @@ def build_generation_service(
         configure_asset_pipeline(asset_pipeline)
     candidate_repo = candidates or build_candidate_repository(client)
     persistence_repo = persistence or build_persistence_repository(client)
+    generate_ops = generate_operations
+    if generate_ops is None and client is not None:
+        generate_ops = build_generate_operation_repository(client)
     try:
         asset_gateway = build_asset_gateway(settings, pipeline=asset_pipeline)
     except InternalServiceMisconfiguredError:
@@ -156,6 +174,8 @@ def build_generation_service(
         ),
         definition_resolver=PersistenceDefinitionResolver(persistence_repo),
         asset_gateway=asset_gateway,
+        generate_operations=generate_ops,
+        generate_lease_seconds=settings.generate_lease_seconds,
     )
 
 

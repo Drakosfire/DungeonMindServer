@@ -5649,6 +5649,26 @@
             },
             "description": "Invalid internal API key"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Idempotency conflict or generation already in progress"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Completed generation points to an expired or TTL-deleted candidate"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -5777,6 +5797,26 @@
               }
             },
             "description": "Source statblock or revision not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Idempotency conflict or generation already in progress"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            },
+            "description": "Completed generation points to an expired or TTL-deleted candidate"
           },
           "422": {
             "content": {

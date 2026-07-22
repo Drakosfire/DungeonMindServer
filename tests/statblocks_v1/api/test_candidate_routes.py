@@ -24,6 +24,7 @@ from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
 from statblocks_v1.infrastructure.memory_repositories import (
     DeterministicIdFactory,
+    InMemoryCandidateGenerationOperationRepository,
     InMemoryCandidateRepository,
     InMemoryStatblockPersistenceRepository,
 )
@@ -54,6 +55,10 @@ def api_client(monkeypatch, load_fixture, auth_headers):
         clock=lambda: now,
         candidate_id_factory=next_candidate_id,
         definition_resolver=PersistenceDefinitionResolver(persistence),
+        generate_operations=InMemoryCandidateGenerationOperationRepository(
+            candidates, clock=lambda: now
+        ),
+        generate_lease_seconds=120,
     )
     app = create_test_app()
     app.dependency_overrides[get_generation_service] = lambda: service
@@ -88,13 +93,93 @@ def test_generate_and_exact_read(api_client) -> None:
     assert first.status_code == 200
     assert first.json()["candidate_id"] == "cand_1"
     assert first.json() == read.json()
-    # Candidate idempotency is deferred; distinct requests each invoke the provider.
+    # Distinct request IDs remain independent and each invoke the provider once.
     assert second.status_code == 200
     assert second.json()["candidate_id"] == "cand_2"
     assert len(provider.calls) == 2
     assert "combat_defaults" not in first.text
     assert "markdown" not in first.text.lower()
     assert first.json()["generation_receipt"]["caller_scope"] == "dungeonbuddy"
+
+
+def test_generate_replay_lost_response_and_conflict(api_client) -> None:
+    client, provider, headers, *_ = api_client
+
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("req_live_replay_1"),
+        headers=headers,
+    )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    assert len(provider.calls) == 1
+
+    # Lost-response recovery: discard body and repeat identical POST.
+    replay = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("req_live_replay_1"),
+        headers=headers,
+    )
+    assert replay.status_code == 200
+    assert replay.json()["candidate_id"] == candidate_id
+    assert replay.json() == first.json()
+    assert len(provider.calls) == 1
+
+    conflict_payload = _generate_payload("req_live_replay_1")
+    conflict_payload["source"]["description"] = "A different creature description."
+    conflict = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=conflict_payload,
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "idempotency_conflict"
+    assert len(provider.calls) == 1
+
+
+def test_generate_terminal_failure_replay(api_client, load_fixture) -> None:
+    client, provider, headers, *_ = api_client
+    provider._outcome = ProviderOutcomeV1(kind=ProviderOutcomeKind.timeout, message="slow")
+
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("fail-key"),
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("fail-key"),
+        headers=headers,
+    )
+    assert first.status_code == 504
+    assert second.status_code == 504
+    assert first.json()["error"]["code"] == second.json()["error"]["code"] == "provider_timeout"
+    assert len(provider.calls) == 1
+
+
+def test_generate_expired_candidate_replay_410(api_client) -> None:
+    client, provider, headers, _, candidates, now = api_client
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("expire-key"),
+        headers=headers,
+    )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    # Force expiry on stored candidate while keeping operation completed.
+    stored = candidates.get_for_acceptance(candidate_id)
+    candidates._candidates[candidate_id] = stored.model_copy(
+        update={"expires_at": now}
+    )
+    replay = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("expire-key"),
+        headers=headers,
+    )
+    assert replay.status_code == 410
+    assert replay.json()["error"]["code"] == "candidate_expired"
+    assert replay.json()["error"]["details"]["candidate_id"] == candidate_id
+    assert len(provider.calls) == 1
 
 
 def test_candidate_read_reports_missing_and_expired(api_client) -> None:
@@ -359,6 +444,8 @@ def test_validate_and_openapi_models(api_client, load_fixture) -> None:
     assert "ErrorEnvelopeV1" in components
     assert "GeneratedStatblockCandidateV1" in components
     assert "422" in generate["responses"]
+    assert "409" in generate["responses"]
+    assert "410" in generate["responses"]
     assert "500" in generate["responses"]
     assert "503" in generate["responses"]
     assert "404" in paths["/api/internal/dungeonbuddy/v1/statblock-candidates/{candidate_id}"]["get"][

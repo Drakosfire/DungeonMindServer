@@ -6,9 +6,22 @@ from datetime import datetime, timezone
 from threading import RLock
 from typing import Callable
 
+from datetime import timedelta
+
 from statblocks_v1.application.repositories import (
     AppendRevisionCommand,
     CreateStatblockCommand,
+    GenerateBeginClaimed,
+    GenerateBeginCompleted,
+    GenerateBeginFailed,
+    GenerateBeginInProgress,
+    GenerateBeginResult,
+)
+from statblocks_v1.domain.candidate_operations import (
+    GENERATE_CANDIDATE_OPERATION,
+    CandidateGenerationFailureSnapshotV1,
+    CandidateGenerationOperationV1,
+    CandidateGenerationStatusV1,
 )
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.digests import compute_definition_digest
@@ -19,6 +32,7 @@ from statblocks_v1.domain.errors import (
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
     ParentRevisionMismatchError,
+    PersistenceUnavailableError,
     PersistenceValidationError,
     RevisionNotFoundError,
     StaleParentRevisionError,
@@ -85,6 +99,199 @@ class InMemoryCandidateRepository:
             if candidate is None:
                 raise CandidateNotFoundError(candidate_id)
             return _copy(candidate)
+
+    def _create_unlocked(
+        self, candidate: GeneratedStatblockCandidateV1
+    ) -> GeneratedStatblockCandidateV1:
+        if candidate.candidate_id in self._candidates:
+            raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+        stored = _copy(candidate)
+        self._candidates[candidate.candidate_id] = stored
+        return _copy(stored)
+
+    def _get_unlocked(
+        self,
+        candidate_id: str,
+        *,
+        now: datetime | None = None,
+        enforce_expiry: bool = True,
+    ) -> GeneratedStatblockCandidateV1:
+        candidate = self._candidates.get(candidate_id)
+        if candidate is None:
+            raise CandidateNotFoundError(candidate_id)
+        if enforce_expiry and candidate.expires_at <= (now or self._clock()):
+            raise CandidateExpiredError(candidate_id)
+        return _copy(candidate)
+
+
+class InMemoryCandidateGenerationOperationRepository:
+    """In-memory generate-operation state machine sharing the candidate lock."""
+
+    def __init__(
+        self,
+        candidates: InMemoryCandidateRepository,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
+        self._candidates = candidates
+        self._clock = clock or candidates._clock
+        self._lock = candidates._lock
+        self._operations: dict[tuple[str, str], CandidateGenerationOperationV1] = {}
+
+    def get_generate_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateGenerationOperationV1 | None:
+        with self._lock:
+            record = self._operations.get((caller_scope, request_id))
+            return _copy(record) if record else None
+
+    def begin_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> GenerateBeginResult:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                operation = CandidateGenerationOperationV1(
+                    caller_scope=caller_scope,
+                    operation=GENERATE_CANDIDATE_OPERATION,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate_id_factory(),
+                    status=CandidateGenerationStatusV1.pending,
+                    lease_owner=lease_owner,
+                    lease_expires_at=now + timedelta(seconds=lease_duration_seconds),
+                    attempt_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self._operations[key] = operation
+                return GenerateBeginClaimed(operation=_copy(operation))
+
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                return GenerateBeginCompleted(candidate_id=existing.candidate_id)
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                return GenerateBeginFailed(failure=_copy(existing.failure))
+
+            if existing.lease_expires_at > now:
+                return GenerateBeginInProgress(
+                    candidate_id=existing.candidate_id,
+                    lease_expires_at=existing.lease_expires_at,
+                )
+
+            claimed = existing.model_copy(
+                update={
+                    "lease_owner": lease_owner,
+                    "lease_expires_at": now + timedelta(seconds=lease_duration_seconds),
+                    "attempt_count": existing.attempt_count + 1,
+                    "updated_at": now,
+                }
+            )
+            self._operations[key] = claimed
+            return GenerateBeginClaimed(operation=_copy(claimed))
+
+    def complete_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> GeneratedStatblockCandidateV1:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                raise PersistenceUnavailableError()
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if candidate.candidate_id != existing.candidate_id:
+                raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                # Terminal failure is immutable; do not create under this request key.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                return self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+
+            try:
+                stored = self._candidates._create_unlocked(candidate)
+            except ImmutableResourceConflictError:
+                stored = self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+
+            self._operations[key] = existing.model_copy(
+                update={
+                    "status": CandidateGenerationStatusV1.completed,
+                    "updated_at": now,
+                    "completed_at": now,
+                    "failure": None,
+                }
+            )
+            return stored
+
+    def fail_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                raise PersistenceUnavailableError()
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                return _copy(existing.failure)
+
+            if existing.lease_owner != lease_owner:
+                # Lease taken over; do not poison the active attempt.
+                if existing.status is CandidateGenerationStatusV1.failed and existing.failure is not None:
+                    return _copy(existing.failure)
+                return _copy(failure)
+
+            snapshot = _copy(failure)
+            self._operations[key] = existing.model_copy(
+                update={
+                    "status": CandidateGenerationStatusV1.failed,
+                    "failure": snapshot,
+                    "updated_at": now,
+                    "completed_at": now,
+                }
+            )
+            return snapshot
 
 
 class InMemoryStatblockPersistenceRepository:

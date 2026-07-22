@@ -18,6 +18,8 @@ old key; this version accepts one active key at a time.
 | `STATBLOCKS_V1_CANDIDATES_COLLECTION` | `dungeonbuddy_statblock_candidates_v1` | Candidate collection |
 | `STATBLOCKS_V1_STATBLOCKS_COLLECTION` | `dungeonbuddy_statblocks_v1` | Logical statblocks and revisions |
 | `STATBLOCKS_V1_IDEMPOTENCY_COLLECTION` | `dungeonbuddy_statblock_idempotency_v1` | Idempotency records |
+| `STATBLOCKS_V1_GENERATE_OPS_COLLECTION` | `dungeonbuddy_statblock_candidate_generate_ops_v1` | Candidate generate-operation leases |
+| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, timeout*(retries+1)+30)` | Pending generate lease duration; must exceed provider timeout |
 | `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED` | `false` | Enables optional asset pipeline wiring |
 | `STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS` | `20` | Asset pipeline timeout policy |
 | `FAL_KEY` | required when assets enabled | fal.ai credential for text-to-image |
@@ -36,10 +38,17 @@ generation endpoints return `503 generation_disabled`; persisted reads retain
 service when Firestore is configured and `ALLOW_READS_WHEN_DISABLED=true`.
 
 Firestore documents use the PR15 layout: candidates, logical statblocks with
-`revisions` subcollections, and idempotency records. Configure a Firestore TTL
-policy on candidate `expires_at`; never TTL revisions or idempotency records.
+`revisions` subcollections, and idempotency records, plus PR23 generate-operation
+records in `STATBLOCKS_V1_GENERATE_OPS_COLLECTION`. Configure a Firestore TTL
+policy on candidate `expires_at`; never TTL revisions, PR15 idempotency records,
+or candidate generate-operation records.
 Provision indexes required by operational list/query workflows, least-privilege
 service-account access, and exports/backups for immutable revisions.
+
+Generate-request idempotency keys are body `request_id` values namespaced by
+`caller_scope` and operation `generate_candidate`. The pending lease
+(`STATBLOCKS_V1_GENERATE_LEASE_SECONDS`) must exceed one normal provider attempt
+budget so an in-flight worker is not spuriously taken over.
 
 The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore

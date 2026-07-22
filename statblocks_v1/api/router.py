@@ -64,6 +64,14 @@ _AUTH_ERROR_RESPONSES = {
 
 _CANDIDATE_ERROR_RESPONSES = {
     **_AUTH_ERROR_RESPONSES,
+    409: {
+        "model": ErrorEnvelopeV1,
+        "description": "Idempotency conflict or generation already in progress",
+    },
+    410: {
+        "model": ErrorEnvelopeV1,
+        "description": "Completed generation points to an expired or TTL-deleted candidate",
+    },
     422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
     429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
     500: {

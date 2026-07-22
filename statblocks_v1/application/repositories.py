@@ -10,10 +10,17 @@ import json
 import unicodedata
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from statblocks_v1.application.commands import GenerateStatblockCommandV1
 from statblocks_v1.domain.assets import AssetBindingV1
+from statblocks_v1.domain.candidate_operations import (
+    GENERATE_CANDIDATE_OPERATION,
+    CandidateGenerationFailureSnapshotV1,
+    CandidateGenerationOperationV1,
+)
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.errors import AmbiguousRequestPayloadError
 from statblocks_v1.domain.resources import (
@@ -83,6 +90,92 @@ class CandidateRepository(Protocol):
     def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
         """Load retained candidate audit data without applying workflow expiry."""
         ...
+
+
+def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> str:
+    """Digest caller-controlled generate intent. ``request_id`` is the durable key, not digested."""
+
+    return compute_request_digest(
+        GENERATE_CANDIDATE_OPERATION,
+        {
+            "ruleset": command.ruleset.model_dump(mode="json"),
+            "source": command.source.model_dump(mode="json"),
+            "intent": command.intent.model_dump(mode="json"),
+            "context": command.context.model_dump(mode="json"),
+            "asset_options": command.asset_options.model_dump(mode="json"),
+            "actor": command.caller.actor,
+        },
+    )
+
+
+@dataclass(frozen=True)
+class GenerateBeginClaimed:
+    """Caller owns a pending lease and must run generation against ``candidate_id``."""
+
+    operation: CandidateGenerationOperationV1
+
+
+@dataclass(frozen=True)
+class GenerateBeginCompleted:
+    candidate_id: str
+
+
+@dataclass(frozen=True)
+class GenerateBeginFailed:
+    failure: CandidateGenerationFailureSnapshotV1
+
+
+@dataclass(frozen=True)
+class GenerateBeginInProgress:
+    candidate_id: str
+    lease_expires_at: datetime
+
+
+GenerateBeginResult = (
+    GenerateBeginClaimed
+    | GenerateBeginCompleted
+    | GenerateBeginFailed
+    | GenerateBeginInProgress
+)
+
+
+class CandidateGenerationOperationRepository(Protocol):
+    """Durable generate-request reservation, completion, and terminal-failure store."""
+
+    def get_generate_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateGenerationOperationV1 | None: ...
+
+    def begin_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> GenerateBeginResult: ...
+
+    def complete_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> GeneratedStatblockCandidateV1: ...
+
+    def fail_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1: ...
 
 
 class StatblockRepository(Protocol):
