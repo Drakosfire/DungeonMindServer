@@ -22,6 +22,7 @@ from statblocks_v1.application.repositories import (
     GenerateBeginFailed,
     GenerateBeginInProgress,
     GenerateBeginResult,
+    candidate_belongs_to_generate_operation,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
@@ -181,7 +182,10 @@ class FirestoreCandidateGenerationOperationRepository:
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
             if existing.status is CandidateGenerationStatusV1.completed:
-                result_box["result"] = GenerateBeginCompleted(candidate_id=existing.candidate_id)
+                result_box["result"] = GenerateBeginCompleted(
+                    candidate_id=existing.candidate_id,
+                    candidate_expires_at=existing.candidate_expires_at,
+                )
                 return
             if existing.status is CandidateGenerationStatusV1.failed:
                 if existing.failure is None:
@@ -260,10 +264,13 @@ class FirestoreCandidateGenerationOperationRepository:
 
             candidate_snap = candidate_ref.get(transaction=transaction)
             if existing.status is CandidateGenerationStatusV1.completed or candidate_snap.exists:
-                if candidate_snap.exists:
-                    stored = GeneratedStatblockCandidateV1.model_validate(candidate_snap.to_dict())
-                else:
+                if not candidate_snap.exists:
                     raise PersistenceUnavailableError()
+                stored = GeneratedStatblockCandidateV1.model_validate(candidate_snap.to_dict())
+                if not candidate_belongs_to_generate_operation(stored, existing):
+                    raise ImmutableResourceConflictError(
+                        "candidate", existing.candidate_id
+                    )
                 if existing.status is not CandidateGenerationStatusV1.completed:
                     transaction.set(
                         op_ref,
@@ -274,6 +281,7 @@ class FirestoreCandidateGenerationOperationRepository:
                                     "updated_at": now,
                                     "completed_at": now,
                                     "failure": None,
+                                    "candidate_expires_at": stored.expires_at,
                                 }
                             )
                         ),
@@ -292,6 +300,7 @@ class FirestoreCandidateGenerationOperationRepository:
                             "updated_at": now,
                             "completed_at": now,
                             "failure": None,
+                            "candidate_expires_at": stored.expires_at,
                         }
                     )
                 ),
@@ -361,8 +370,8 @@ class FirestoreCandidateGenerationOperationRepository:
                 return
 
             if existing.lease_owner != lease_owner:
-                result_box["result"] = failure
-                return
+                # Lease taken over; never echo an uncommitted local failure.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
 
             snapshot = failure.model_copy(deep=True)
             transaction.set(
@@ -426,7 +435,10 @@ class FirestoreCandidateGenerationOperationRepository:
             except Exception as error:
                 raise PersistenceUnavailableError() from error
             if snapshot.exists:
-                return GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+                stored = GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+                if not candidate_belongs_to_generate_operation(stored, record):
+                    raise ImmutableResourceConflictError("candidate", candidate_id)
+                return stored
             raise PersistenceUnavailableError()
         if record.status is CandidateGenerationStatusV1.failed:
             raise ImmutableResourceConflictError("candidate", candidate_id)

@@ -19,6 +19,7 @@ from statblocks_v1.application.commands import (
 )
 from statblocks_v1.application.generation import (
     KEY_PRESERVATION_PASS_VERSION,
+    GenerateOutcomeV1,
     GenerationFailureV1,
     GenerationServiceV1,
     _digest_text,
@@ -640,10 +641,12 @@ def test_generate_replay_returns_same_candidate_without_provider(load_fixture) -
     first = service.generate(_command())
     second = service.generate(_command())
 
-    assert not isinstance(first, GenerationFailureV1)
-    assert not isinstance(second, GenerationFailureV1)
+    assert isinstance(first, GenerateOutcomeV1)
+    assert isinstance(second, GenerateOutcomeV1)
+    assert first.replayed is False
+    assert second.replayed is True
     assert first.candidate_id == second.candidate_id == "cand_1"
-    assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert first.candidate.model_dump(mode="json") == second.candidate.model_dump(mode="json")
     assert len(provider.calls) == 1
 
 
@@ -653,7 +656,7 @@ def test_generate_changed_digest_conflicts_without_provider(load_fixture) -> Non
     provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
     service = _service(None, provider=provider)
     first = service.generate(_command())
-    assert not isinstance(first, GenerationFailureV1)
+    assert isinstance(first, GenerateOutcomeV1)
     assert len(provider.calls) == 1
 
     with pytest.raises(IdempotencyConflictError):
@@ -661,6 +664,36 @@ def test_generate_changed_digest_conflicts_without_provider(load_fixture) -> Non
             _command(source=SourceSnapshotV1(name_hint="Bruiser", description="Changed intent."))
         )
     assert len(provider.calls) == 1
+
+
+def test_generate_uses_pinned_identity_despite_command_mutation(load_fixture) -> None:
+    """Idempotent generate must not re-read request_id/scope/digest from a mutated command."""
+
+    command = _command()
+    inner = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+
+    class MutatingProvider:
+        provider_name = "mutating"
+
+        def generate_definition(self, **kwargs):
+            command.request_id = "hijacked_request"
+            command.caller.caller_scope = "hijacked_scope"
+            command.source.description = "Hijacked description after pin."
+            return inner.generate_definition(**kwargs)
+
+    service = _service(None, provider=MutatingProvider())
+    result = service.generate(command)
+    assert isinstance(result, GenerateOutcomeV1)
+    assert result.candidate.generation_receipt is not None
+    assert result.candidate.generation_receipt.request_id == "req_generation"
+    assert result.candidate.generation_receipt.caller_scope == "tests"
+    # Mutated command must not create a second operation under the hijacked key.
+    assert service._generate_operations.get_generate_operation(  # type: ignore[union-attr]
+        "hijacked_scope", "hijacked_request"
+    ) is None
+    assert service._generate_operations.get_generate_operation(  # type: ignore[union-attr]
+        "tests", "req_generation"
+    ) is not None
 
 
 def test_generate_terminal_failure_replays_without_provider(load_fixture) -> None:
@@ -729,8 +762,57 @@ def test_generate_in_progress_when_lease_active(load_fixture) -> None:
 
     assert isinstance(second, GenerationFailureV1)
     assert second.kind == "generation_in_progress"
-    assert not isinstance(results[0], GenerationFailureV1)
+    assert isinstance(results[0], GenerateOutcomeV1)
     assert results[0].candidate_id == "cand_1"
+
+
+def test_stale_worker_fail_does_not_echo_uncommitted_failure(load_fixture) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationFailureSnapshotV1,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import ImmutableResourceConflictError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    digest = compute_generate_candidate_digest(_command())
+    ops._operations[("tests", "req_generation")] = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_1",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="active-owner",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=2,
+        created_at=now,
+        updated_at=now,
+    )
+    with pytest.raises(ImmutableResourceConflictError):
+        ops.fail_generate(
+            caller_scope="tests",
+            request_id="req_generation",
+            request_digest=digest,
+            lease_owner="stale-owner",
+            failure=CandidateGenerationFailureSnapshotV1(
+                kind="provider_refusal", message="stale local failure"
+            ),
+        )
+    existing = ops.get_generate_operation("tests", "req_generation")
+    assert existing is not None
+    assert existing.status is CandidateGenerationStatusV1.pending
+    assert existing.failure is None
 
 
 def test_generate_expired_lease_takeover_retains_candidate_id(load_fixture) -> None:
@@ -776,8 +858,9 @@ def test_generate_expired_lease_takeover_retains_candidate_id(load_fixture) -> N
         generate_lease_seconds=120,
     )
     result = service.generate(_command())
-    assert not isinstance(result, GenerationFailureV1)
+    assert isinstance(result, GenerateOutcomeV1)
     assert result.candidate_id == "cand_reserved"
+    assert result.replayed is False
     assert len(provider.calls) == 1
 
 
@@ -803,11 +886,40 @@ def test_generate_expired_candidate_replay_raises_410(load_fixture) -> None:
         generate_lease_seconds=120,
     )
     first = service.generate(_command())
-    assert not isinstance(first, GenerationFailureV1)
+    assert isinstance(first, GenerateOutcomeV1)
     now["t"] = now["t"] + timedelta(seconds=10)
     with pytest.raises(CandidateExpiredError) as exc:
         service.generate(_command())
     assert exc.value.details["candidate_id"] == "cand_1"
+
+
+def test_generate_premature_candidate_loss_is_integrity_failure(load_fixture) -> None:
+    from statblocks_v1.domain.errors import CandidateMissingBeforeExpiryError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+    del candidates._candidates["cand_1"]
+    with pytest.raises(CandidateMissingBeforeExpiryError) as exc:
+        service.generate(_command())
+    assert exc.value.details["candidate_id"] == "cand_1"
+    assert len(provider.calls) == 1
 
 
 def test_different_request_ids_are_independent(load_fixture) -> None:
@@ -815,7 +927,7 @@ def test_different_request_ids_are_independent(load_fixture) -> None:
     service = _service(None, provider=provider)
     first = service.generate(_command(request_id="req_a"))
     second = service.generate(_command(request_id="req_b"))
-    assert not isinstance(first, GenerationFailureV1)
-    assert not isinstance(second, GenerationFailureV1)
+    assert isinstance(first, GenerateOutcomeV1)
+    assert isinstance(second, GenerateOutcomeV1)
     assert first.candidate_id != second.candidate_id
     assert len(provider.calls) == 2

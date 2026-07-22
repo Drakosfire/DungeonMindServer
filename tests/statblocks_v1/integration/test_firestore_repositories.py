@@ -372,6 +372,16 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
         contract_version=STATBLOCK_CONTRACT_VERSION,
         definition=bruiser,
         validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
+        generation_receipt=GenerationReceiptV1(
+            request_id=command.request_id,
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="dungeonbuddy",
+        ),
         created_at=now,
         expires_at=now + timedelta(hours=1),
     )

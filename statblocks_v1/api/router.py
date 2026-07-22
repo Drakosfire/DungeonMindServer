@@ -37,7 +37,11 @@ from statblocks_v1.application.commands import (
     GenerateStatblockCommandV1,
     ReviseStatblockCommandV1,
 )
-from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+from statblocks_v1.application.generation import (
+    GenerateOutcomeV1,
+    GenerationFailureV1,
+    GenerationServiceV1,
+)
 from statblocks_v1.application.repositories import (
     CandidateRepository,
     StatblockPersistenceRepository,
@@ -76,7 +80,10 @@ _CANDIDATE_ERROR_RESPONSES = {
     429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
     500: {
         "model": ErrorEnvelopeV1,
-        "description": "Unexpected generation failure (fail-closed unknown outcome)",
+        "description": (
+            "Unexpected generation failure or completed generate points to a "
+            "candidate missing before its declared expiry"
+        ),
     },
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
@@ -147,7 +154,12 @@ def _issue_counts(receipt: object) -> dict[str, int]:
     return counts
 
 
-def _bind_candidate(http_request: Request, candidate: GeneratedStatblockCandidateV1) -> None:
+def _bind_candidate(
+    http_request: Request,
+    candidate: GeneratedStatblockCandidateV1,
+    *,
+    replayed: bool = False,
+) -> None:
     receipt = candidate.generation_receipt
     bind_outcome(
         http_request,
@@ -163,13 +175,15 @@ def _bind_candidate(http_request: Request, candidate: GeneratedStatblockCandidat
         provider_latency_ms=receipt.latency_ms if receipt else None,
         input_tokens=receipt.input_tokens if receipt else None,
         output_tokens=receipt.output_tokens if receipt else None,
+        idempotency_replay=replayed,
     )
     log_operation(
-        "candidate_persisted",
+        "candidate_generate_replay" if replayed else "candidate_persisted",
         candidate_id=candidate.candidate_id,
         definition_digest=candidate.validation_receipt.definition_digest,
         asset_count=len(candidate.assets),
         asset_warning_count=len(candidate.asset_warnings),
+        idempotency_replay=replayed,
     )
 
 
@@ -198,7 +212,10 @@ async def generate_candidate(
     if isinstance(result, GenerationFailureV1):
         bind_outcome(http_request, result.kind, operation="candidate_generate")
         raise_for_generation_failure(result)
-    _bind_candidate(http_request, result)
+    if isinstance(result, GenerateOutcomeV1):
+        _bind_candidate(http_request, result.candidate, replayed=result.replayed)
+        return result.candidate
+    _bind_candidate(http_request, result, replayed=False)
     return result
 
 

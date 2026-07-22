@@ -45,3 +45,6 @@ class CandidateGenerationOperationV1(StrictModel):
     updated_at: datetime
     completed_at: datetime | None = None
     failure: CandidateGenerationFailureSnapshotV1 | None = None
+    # Retained on completion so premature TTL/deletion can be distinguished from
+    # normal expiry without keeping the full candidate mechanics.
+    candidate_expires_at: datetime | None = None

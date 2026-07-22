@@ -108,6 +108,27 @@ def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> st
     )
 
 
+def candidate_belongs_to_generate_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateGenerationOperationV1,
+) -> bool:
+    """True only when the stored candidate was produced for this generate operation.
+
+    Same-operation stale-worker convergence is valid. An unrelated or recreated
+    document that happens to share ``candidate_id`` must fail closed.
+    """
+
+    if candidate.candidate_id != operation.candidate_id:
+        return False
+    receipt = candidate.generation_receipt
+    if receipt is None:
+        return False
+    return (
+        receipt.request_id == operation.request_id
+        and receipt.caller_scope == operation.caller_scope
+    )
+
+
 @dataclass(frozen=True)
 class GenerateBeginClaimed:
     """Caller owns a pending lease and must run generation against ``candidate_id``."""
@@ -118,6 +139,7 @@ class GenerateBeginClaimed:
 @dataclass(frozen=True)
 class GenerateBeginCompleted:
     candidate_id: str
+    candidate_expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)

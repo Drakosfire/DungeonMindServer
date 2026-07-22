@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import secrets
 import time
 import unicodedata
@@ -43,6 +44,7 @@ from statblocks_v1.domain.candidate_operations import CandidateGenerationFailure
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
+    CandidateMissingBeforeExpiryError,
     CandidateNotFoundError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
@@ -87,7 +89,18 @@ class GenerationFailureV1:
     message: str
 
 
-GenerationResultV1 = GeneratedStatblockCandidateV1 | GenerationFailureV1
+@dataclass(frozen=True)
+class GenerateOutcomeV1:
+    """Successful generate result with fresh-versus-replay observability."""
+
+    candidate: GeneratedStatblockCandidateV1
+    replayed: bool
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self.candidate, name)
+
+
+GenerationResultV1 = GeneratedStatblockCandidateV1 | GenerationFailureV1 | GenerateOutcomeV1
 
 
 @dataclass(frozen=True)
@@ -97,9 +110,12 @@ class _PinnedOperationIntent:
     Nested models are deep-copied at construction so concurrent mutation of the
     original command cannot change prompt, digests, ruleset, caller, locator,
     key-preservation inputs, or asset intent after the operation starts.
+    ``request_id``, ``caller_scope``, and ``request_digest`` are frozen here so
+    idempotent generate never re-reads identity from the mutable command.
     """
 
     request_id: str
+    request_digest: str | None
     ruleset: RulesetRef
     caller: CallerProvenanceV1
     prompt: str
@@ -162,8 +178,11 @@ class GenerationServiceV1:
         if isinstance(pinned, GenerationFailureV1):
             return pinned
         if self._generate_operations is None:
-            return self._run(pinned)
-        return self._generate_idempotent(command, pinned)
+            result = self._run(pinned)
+            if isinstance(result, GenerationFailureV1):
+                return result
+            return GenerateOutcomeV1(candidate=result, replayed=False)
+        return self._generate_idempotent(pinned)
 
     def revise(self, command: ReviseStatblockCommandV1) -> GenerationResultV1:
         pinned = _pin_revise_intent(command, self._definition_resolver)
@@ -171,23 +190,19 @@ class GenerationServiceV1:
             return pinned
         return self._run(pinned)
 
-    def _generate_idempotent(
-        self,
-        command: GenerateStatblockCommandV1,
-        pinned: _PinnedOperationIntent,
-    ) -> GenerationResultV1:
+    def _generate_idempotent(self, pinned: _PinnedOperationIntent) -> GenerationResultV1:
         assert self._generate_operations is not None
+        assert pinned.request_digest is not None
         ops = self._generate_operations
-        try:
-            request_digest = compute_generate_candidate_digest(command)
-        except StatblockV1Error as error:
-            return GenerationFailureV1(error.code, error.message)
+        request_id = pinned.request_id
+        request_digest = pinned.request_digest
+        caller_scope = pinned.caller.caller_scope
 
         lease_owner = self._lease_owner_factory()
         try:
             began = ops.begin_generate(
-                caller_scope=command.caller.caller_scope,
-                request_id=command.request_id,
+                caller_scope=caller_scope,
+                request_id=request_id,
                 request_digest=request_digest,
                 candidate_id_factory=self._candidate_id_factory,
                 lease_owner=lease_owner,
@@ -205,7 +220,13 @@ class GenerationServiceV1:
             )
 
         if isinstance(began, GenerateBeginCompleted):
-            return self._load_completed_candidate(began.candidate_id)
+            loaded = self._load_completed_candidate(
+                began.candidate_id,
+                candidate_expires_at=began.candidate_expires_at,
+            )
+            if isinstance(loaded, GenerationFailureV1):
+                return loaded
+            return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if isinstance(began, GenerateBeginFailed):
             return GenerationFailureV1(began.failure.kind, began.failure.message)
         if isinstance(began, GenerateBeginInProgress):
@@ -223,9 +244,9 @@ class GenerationServiceV1:
         result = self._run(pinned, reserved_candidate_id=claim.candidate_id, persist=False)
         if isinstance(result, GenerationFailureV1):
             try:
-                ops.fail_generate(
-                    caller_scope=command.caller.caller_scope,
-                    request_id=command.request_id,
+                snapshot = ops.fail_generate(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
                     failure=CandidateGenerationFailureSnapshotV1(
@@ -233,42 +254,43 @@ class GenerationServiceV1:
                     ),
                 )
             except ImmutableResourceConflictError:
-                # Another worker completed with the reserved candidate.
-                return self._load_completed_candidate(claim.candidate_id)
+                return self._resolve_after_terminal_race(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    reserved_candidate_id=claim.candidate_id,
+                )
             except (PersistenceUnavailableError, TransactionIndeterminateError):
                 return GenerationFailureV1(
                     "persistence_unavailable", "Persistence is unavailable"
                 )
             except IdempotencyConflictError:
                 raise
-            return result
+            return GenerationFailureV1(snapshot.kind, snapshot.message)
 
         try:
-            return ops.complete_generate(
-                caller_scope=command.caller.caller_scope,
-                request_id=command.request_id,
+            stored = ops.complete_generate(
+                caller_scope=caller_scope,
+                request_id=request_id,
                 request_digest=request_digest,
                 lease_owner=lease_owner,
                 candidate=result,
             )
         except ImmutableResourceConflictError:
-            # Terminal failure won, or identity conflict — prefer durable failure if present.
-            existing = ops.get_generate_operation(
-                command.caller.caller_scope, command.request_id
+            return self._resolve_after_terminal_race(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                reserved_candidate_id=claim.candidate_id,
             )
-            if (
-                existing is not None
-                and existing.failure is not None
-                and existing.status.value == "failed"
-            ):
-                return GenerationFailureV1(existing.failure.kind, existing.failure.message)
-            return self._load_completed_candidate(claim.candidate_id)
         except TransactionIndeterminateError:
-            existing = ops.get_generate_operation(
-                command.caller.caller_scope, command.request_id
-            )
+            existing = ops.get_generate_operation(caller_scope, request_id)
             if existing is not None and existing.status.value == "completed":
-                return self._load_completed_candidate(existing.candidate_id)
+                loaded = self._load_completed_candidate(
+                    existing.candidate_id,
+                    candidate_expires_at=existing.candidate_expires_at,
+                )
+                if isinstance(loaded, GenerationFailureV1):
+                    return loaded
+                return GenerateOutcomeV1(candidate=loaded, replayed=False)
             if existing is not None and existing.failure is not None:
                 return GenerationFailureV1(existing.failure.kind, existing.failure.message)
             return GenerationFailureV1(
@@ -278,15 +300,64 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
             )
+        return GenerateOutcomeV1(candidate=stored, replayed=False)
 
-    def _load_completed_candidate(self, candidate_id: str) -> GenerationResultV1:
+    def _resolve_after_terminal_race(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        reserved_candidate_id: str,
+    ) -> GenerationResultV1:
+        """Reconcile when this worker lost the lease or lost a terminal race."""
+
+        assert self._generate_operations is not None
+        existing = self._generate_operations.get_generate_operation(
+            caller_scope, request_id
+        )
+        if existing is None:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        if existing.status.value == "completed":
+            loaded = self._load_completed_candidate(
+                existing.candidate_id,
+                candidate_expires_at=existing.candidate_expires_at,
+            )
+            if isinstance(loaded, GenerationFailureV1):
+                return loaded
+            return GenerateOutcomeV1(candidate=loaded, replayed=True)
+        if existing.status.value == "failed" and existing.failure is not None:
+            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+        if existing.status.value == "pending":
+            return GenerationFailureV1(
+                "generation_in_progress",
+                "Candidate generation is already in progress for this request",
+            )
+        return GenerationFailureV1(
+            "persistence_unavailable", "Persistence is unavailable"
+        )
+
+    def _load_completed_candidate(
+        self,
+        candidate_id: str,
+        *,
+        candidate_expires_at: datetime | None = None,
+    ) -> GenerationResultV1:
         try:
             return self._candidates.get(candidate_id, now=self._clock())
         except CandidateExpiredError:
             raise
         except CandidateNotFoundError as error:
-            # TTL deletion after completion: never regenerate under the same key.
-            raise CandidateExpiredError(error.details.get("candidate_id", candidate_id)) from error
+            now = self._clock()
+            if candidate_expires_at is not None and now < candidate_expires_at:
+                raise CandidateMissingBeforeExpiryError(
+                    error.details.get("candidate_id", candidate_id)
+                ) from error
+            # TTL deletion after declared expiry: never regenerate under the same key.
+            raise CandidateExpiredError(
+                error.details.get("candidate_id", candidate_id)
+            ) from error
         except PersistenceUnavailableError:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
@@ -422,10 +493,12 @@ class GenerationServiceV1:
 
 
 def _default_generate_lease_seconds(settings: GenerationSettingsV1) -> int:
-    """Lease must outlast one normal provider execution budget (timeout × attempts)."""
+    """Lease must outlast the full provider retry budget (timeout × attempts + margin)."""
 
-    provider_budget = int(settings.timeout_seconds) * (settings.max_retries + 1)
-    return max(120, provider_budget + 30)
+    provider_budget = math.ceil(
+        float(settings.timeout_seconds) * (settings.max_retries + 1) + 30
+    )
+    return max(120, provider_budget)
 
 
 def _pin_generate_intent(
@@ -434,11 +507,16 @@ def _pin_generate_intent(
     """Deep-copy and derive all generate inputs before any provider call."""
 
     snapshot = command.model_copy(deep=True)
+    try:
+        request_digest = compute_generate_candidate_digest(snapshot)
+    except StatblockV1Error as error:
+        return GenerationFailureV1(error.code, error.message)
     digest_error = _verified_source_digest(snapshot.source)
     if isinstance(digest_error, GenerationFailureV1):
         return digest_error
     return _PinnedOperationIntent(
         request_id=snapshot.request_id,
+        request_digest=request_digest,
         ruleset=snapshot.ruleset,
         caller=snapshot.caller,
         prompt=build_generation_prompt(snapshot),
@@ -491,6 +569,7 @@ def _pin_revise_intent(
 
     return _PinnedOperationIntent(
         request_id=snapshot.request_id,
+        request_digest=None,
         ruleset=snapshot.ruleset,
         caller=snapshot.caller,
         prompt=build_revision_prompt(snapshot, source),

@@ -19,7 +19,7 @@ old key; this version accepts one active key at a time.
 | `STATBLOCKS_V1_STATBLOCKS_COLLECTION` | `dungeonbuddy_statblocks_v1` | Logical statblocks and revisions |
 | `STATBLOCKS_V1_IDEMPOTENCY_COLLECTION` | `dungeonbuddy_statblock_idempotency_v1` | Idempotency records |
 | `STATBLOCKS_V1_GENERATE_OPS_COLLECTION` | `dungeonbuddy_statblock_candidate_generate_ops_v1` | Candidate generate-operation leases |
-| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, timeout*(retries+1)+30)` | Pending generate lease duration; must exceed provider timeout |
+| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, ceil(timeout×(retries+1)+30))` | Pending generate lease; must cover full provider retry budget |
 | `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED` | `false` | Enables optional asset pipeline wiring |
 | `STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS` | `20` | Asset pipeline timeout policy |
 | `FAL_KEY` | required when assets enabled | fal.ai credential for text-to-image |
@@ -47,8 +47,11 @@ service-account access, and exports/backups for immutable revisions.
 
 Generate-request idempotency keys are body `request_id` values namespaced by
 `caller_scope` and operation `generate_candidate`. The pending lease
-(`STATBLOCKS_V1_GENERATE_LEASE_SECONDS`) must exceed one normal provider attempt
-budget so an in-flight worker is not spuriously taken over.
+(`STATBLOCKS_V1_GENERATE_LEASE_SECONDS`) must cover the full provider retry
+budget (`timeout × (retries+1) + margin`, ceiling fractional timeouts) so an
+in-flight worker is not spuriously taken over. Completed operations retain
+`candidate_expires_at` so a missing candidate before that instant is treated as
+integrity failure rather than normal expiry.
 
 The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore

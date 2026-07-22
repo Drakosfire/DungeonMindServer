@@ -44,6 +44,17 @@ class CandidateExpiredError(StatblockV1Error):
         super().__init__("candidate_expired", "Candidate has expired", {"candidate_id": candidate_id})
 
 
+class CandidateMissingBeforeExpiryError(StatblockV1Error):
+    """Completed operation points to a candidate missing before its declared expiry."""
+
+    def __init__(self, candidate_id: str) -> None:
+        super().__init__(
+            "candidate_missing_before_expiry",
+            "Completed generation points to a candidate missing before its declared expiry",
+            {"candidate_id": candidate_id},
+        )
+
+
 class StatblockNotFoundError(StatblockV1Error):
     def __init__(self, statblock_id: str) -> None:
         super().__init__("statblock_not_found", "Statblock was not found", {"statblock_id": statblock_id})

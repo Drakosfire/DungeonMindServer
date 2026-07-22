@@ -16,6 +16,7 @@ from statblocks_v1.application.repositories import (
     GenerateBeginFailed,
     GenerateBeginInProgress,
     GenerateBeginResult,
+    candidate_belongs_to_generate_operation,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
@@ -180,7 +181,10 @@ class InMemoryCandidateGenerationOperationRepository:
                 raise IdempotencyConflictError(request_id)
 
             if existing.status is CandidateGenerationStatusV1.completed:
-                return GenerateBeginCompleted(candidate_id=existing.candidate_id)
+                return GenerateBeginCompleted(
+                    candidate_id=existing.candidate_id,
+                    candidate_expires_at=existing.candidate_expires_at,
+                )
             if existing.status is CandidateGenerationStatusV1.failed:
                 if existing.failure is None:
                     raise PersistenceUnavailableError()
@@ -230,9 +234,14 @@ class InMemoryCandidateGenerationOperationRepository:
                 raise ImmutableResourceConflictError("candidate", existing.candidate_id)
 
             if existing.status is CandidateGenerationStatusV1.completed:
-                return self._candidates._get_unlocked(
+                stored = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
+                if not candidate_belongs_to_generate_operation(stored, existing):
+                    raise ImmutableResourceConflictError(
+                        "candidate", existing.candidate_id
+                    )
+                return stored
 
             try:
                 stored = self._candidates._create_unlocked(candidate)
@@ -240,6 +249,10 @@ class InMemoryCandidateGenerationOperationRepository:
                 stored = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
+                if not candidate_belongs_to_generate_operation(stored, existing):
+                    raise ImmutableResourceConflictError(
+                        "candidate", existing.candidate_id
+                    )
 
             self._operations[key] = existing.model_copy(
                 update={
@@ -247,6 +260,7 @@ class InMemoryCandidateGenerationOperationRepository:
                     "updated_at": now,
                     "completed_at": now,
                     "failure": None,
+                    "candidate_expires_at": stored.expires_at,
                 }
             )
             return stored
@@ -277,10 +291,8 @@ class InMemoryCandidateGenerationOperationRepository:
                 return _copy(existing.failure)
 
             if existing.lease_owner != lease_owner:
-                # Lease taken over; do not poison the active attempt.
-                if existing.status is CandidateGenerationStatusV1.failed and existing.failure is not None:
-                    return _copy(existing.failure)
-                return _copy(failure)
+                # Lease taken over; never echo an uncommitted local failure.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
 
             snapshot = _copy(failure)
             self._operations[key] = existing.model_copy(

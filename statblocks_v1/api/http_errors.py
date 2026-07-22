@@ -21,6 +21,7 @@ from statblocks_v1.application.generation import GenerationFailureV1
 from statblocks_v1.domain.errors import (
     AmbiguousRequestPayloadError,
     CandidateExpiredError,
+    CandidateMissingBeforeExpiryError,
     CandidateNotFoundError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
@@ -44,6 +45,7 @@ _DOMAIN_STATUS: dict[type[StatblockV1Error], int] = {
     InternalServiceMisconfiguredError: 503,
     CandidateNotFoundError: 404,
     CandidateExpiredError: 410,
+    CandidateMissingBeforeExpiryError: 500,
     StatblockNotFoundError: 404,
     RevisionNotFoundError: 404,
     IdempotencyConflictError: 409,

@@ -1,6 +1,7 @@
 """Validated, secret-safe runtime configuration for the statblock v1 boundary."""
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -86,18 +87,21 @@ class StatblocksV1Settings:
             raise ConfigurationError("structured generation model is not configured") from error
         provider_timeout_seconds = _positive_float("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", 45)
         provider_max_retries = _positive_int("STATBLOCKS_V1_OPENAI_MAX_RETRIES", 1)
-        default_lease = max(
-            120,
-            int(provider_timeout_seconds) * (provider_max_retries + 1) + 30,
+        # Lease must cover the full provider retry budget, not a single attempt.
+        # Ceil so fractional timeouts cannot shrink the budget via truncation.
+        provider_retry_budget_seconds = math.ceil(
+            provider_timeout_seconds * (provider_max_retries + 1) + 30
         )
+        default_lease = max(120, provider_retry_budget_seconds)
         generate_lease_seconds = _positive_int(
             "STATBLOCKS_V1_GENERATE_LEASE_SECONDS",
             default_lease,
             minimum=1,
         )
-        if generate_lease_seconds <= provider_timeout_seconds:
+        if generate_lease_seconds < provider_retry_budget_seconds:
             raise ConfigurationError(
-                "STATBLOCKS_V1_GENERATE_LEASE_SECONDS must exceed STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS"
+                "STATBLOCKS_V1_GENERATE_LEASE_SECONDS must cover the full provider "
+                "retry budget (timeout × (retries+1) + margin)"
             )
         return cls(
             internal_api_key=_required("DUNGEONBUDDY_INTERNAL_API_KEY"),

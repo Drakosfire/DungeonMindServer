@@ -154,7 +154,11 @@ def export_fixture_pack() -> None:
     from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
     from statblocks_v1.api.models import GenerateCandidateRequestV1
     from statblocks_v1.application.commands import CallerProvenanceV1, GenerateStatblockCommandV1
-    from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+    from statblocks_v1.application.generation import (
+        GenerateOutcomeV1,
+        GenerationFailureV1,
+        GenerationServiceV1,
+    )
     from statblocks_v1.application.provider import ProviderOutcomeV1
     from statblocks_v1.application.settings import GenerationSettingsV1
     from statblocks_v1.domain.assets import AssetBindingV1
@@ -239,8 +243,9 @@ def export_fixture_pack() -> None:
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_fixture1",
     )
-    candidate = service.generate(command)
-    assert not isinstance(candidate, GenerationFailureV1)
+    outcome = service.generate(command)
+    assert not isinstance(outcome, GenerationFailureV1)
+    candidate = outcome.candidate if isinstance(outcome, GenerateOutcomeV1) else outcome
     assert candidate.contract == CONTRACT_NAME
     assert candidate.contract_version == CONTRACT_VERSION
     assert candidate.generation_receipt is not None

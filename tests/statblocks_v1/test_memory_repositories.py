@@ -25,7 +25,12 @@ from statblocks_v1.domain.errors import (
     StatblockNotFoundError,
 )
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
+from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
+    GeneratedStatblockCandidateV1,
+    GenerationReceiptV1,
+)
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.memory_repositories import (
@@ -533,6 +538,16 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
         validation_receipt=validate_definition(
             definition, ValidationMode.generation_candidate
         ),
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_ops",
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=created,
+            caller_scope="tests",
+        ),
         created_at=created,
         expires_at=created + timedelta(minutes=5),
     )
@@ -642,6 +657,16 @@ def test_generate_ops_concurrent_complete_converges(load_fixture):
             contract_version=STATBLOCK_CONTRACT_VERSION,
             definition=definition,
             validation_receipt=receipt,
+            generation_receipt=GenerationReceiptV1(
+                request_id="req_race",
+                provider="test",
+                model="test-model",
+                prompt_version="v1",
+                schema_version="v1",
+                schema_fingerprint="fp",
+                generated_at=now,
+                caller_scope="tests",
+            ),
             created_at=now,
             expires_at=now + timedelta(minutes=5),
             asset_brief=AssetBriefV1(prompt=tag),
@@ -669,3 +694,85 @@ def test_generate_ops_concurrent_complete_converges(load_fixture):
         results = [future.result() for future in futures]
     assert {item.candidate_id for item in results} == {"cand_race"}
     assert len(candidates._candidates) == 1
+
+
+def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
+    """Same candidate_id from a different request must fail closed, not be adopted."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.errors import ImmutableResourceConflictError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_own",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_own",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_shared",
+        lease_owner="owner-a",
+        lease_duration_seconds=60,
+    )
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    # Pre-seed an unrelated candidate that happens to share the reserved ID.
+    foreign = GeneratedStatblockCandidateV1(
+        candidate_id="cand_shared",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt={
+            "request_id": "req_foreign",
+            "provider": "test",
+            "model": "test-model",
+            "prompt_version": "v1",
+            "schema_version": "v1",
+            "schema_fingerprint": "fp",
+            "generated_at": now,
+            "caller_scope": "tests",
+        },
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    candidates._create_unlocked(foreign)
+    owned = foreign.model_copy(
+        update={
+            "generation_receipt": {
+                "request_id": "req_own",
+                "provider": "test",
+                "model": "test-model",
+                "prompt_version": "v1",
+                "schema_version": "v1",
+                "schema_fingerprint": "fp",
+                "generated_at": now,
+                "caller_scope": "tests",
+            }
+        }
+    )
+    with pytest.raises(ImmutableResourceConflictError):
+        ops.complete_generate(
+            caller_scope="tests",
+            request_id="req_own",
+            request_digest=digest,
+            lease_owner="owner-a",
+            candidate=owned,
+        )

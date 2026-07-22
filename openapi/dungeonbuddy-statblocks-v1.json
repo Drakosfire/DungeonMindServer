@@ -5697,7 +5697,7 @@
                 }
               }
             },
-            "description": "Unexpected generation failure (fail-closed unknown outcome)"
+            "description": "Unexpected generation failure or completed generate points to a candidate missing before its declared expiry"
           },
           "503": {
             "content": {
@@ -5846,7 +5846,7 @@
                 }
               }
             },
-            "description": "Unexpected generation failure (fail-closed unknown outcome)"
+            "description": "Unexpected generation failure or completed generate points to a candidate missing before its declared expiry"
           },
           "503": {
             "content": {

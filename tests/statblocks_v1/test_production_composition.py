@@ -28,6 +28,27 @@ class _FakeFirestore:
         raise AssertionError(f"unexpected firestore call for {name}")
 
 
+def test_generate_lease_must_cover_full_provider_retry_budget(monkeypatch) -> None:
+    from statblocks_v1.config import ConfigurationError, StatblocksV1Settings
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "45.7")
+    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "1")
+    # Full budget = ceil(45.7 * 2 + 30) = ceil(121.4) = 122
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "121")
+    with pytest.raises(ConfigurationError, match="full provider"):
+        StatblocksV1Settings.from_environment()
+
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "122")
+    settings = StatblocksV1Settings.from_environment()
+    assert settings.generate_lease_seconds == 122
+    # Default without explicit lease uses ceil, not truncating int().
+    monkeypatch.delenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", raising=False)
+    settings = StatblocksV1Settings.from_environment()
+    assert settings.generate_lease_seconds == max(120, 122)
+
+
 def test_firestore_disabled_blocks_repository_construction(monkeypatch) -> None:
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")

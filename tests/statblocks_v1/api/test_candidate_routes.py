@@ -102,28 +102,36 @@ def test_generate_and_exact_read(api_client) -> None:
     assert first.json()["generation_receipt"]["caller_scope"] == "dungeonbuddy"
 
 
-def test_generate_replay_lost_response_and_conflict(api_client) -> None:
+def test_generate_replay_lost_response_and_conflict(api_client, caplog) -> None:
+    import logging
+
     client, provider, headers, *_ = api_client
 
-    first = client.post(
-        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
-        json=_generate_payload("req_live_replay_1"),
-        headers=headers,
-    )
+    with caplog.at_level(logging.INFO):
+        first = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+            json=_generate_payload("req_live_replay_1"),
+            headers=headers,
+        )
     assert first.status_code == 200
     candidate_id = first.json()["candidate_id"]
     assert len(provider.calls) == 1
+    assert any("candidate_persisted" in message for message in caplog.messages)
 
-    # Lost-response recovery: discard body and repeat identical POST.
-    replay = client.post(
-        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
-        json=_generate_payload("req_live_replay_1"),
-        headers=headers,
-    )
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        replay = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+            json=_generate_payload("req_live_replay_1"),
+            headers=headers,
+        )
     assert replay.status_code == 200
     assert replay.json()["candidate_id"] == candidate_id
     assert replay.json() == first.json()
     assert len(provider.calls) == 1
+    assert any("candidate_generate_replay" in message for message in caplog.messages)
+    assert any("idempotency_replay" in message for message in caplog.messages)
+    assert not any("candidate_persisted" in message for message in caplog.messages)
 
     conflict_payload = _generate_payload("req_live_replay_1")
     conflict_payload["source"]["description"] = "A different creature description."
@@ -134,6 +142,27 @@ def test_generate_replay_lost_response_and_conflict(api_client) -> None:
     )
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "idempotency_conflict"
+    assert len(provider.calls) == 1
+
+
+def test_generate_premature_candidate_loss_returns_500(api_client) -> None:
+    client, provider, headers, _, candidates, _ = api_client
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("premature-loss"),
+        headers=headers,
+    )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    del candidates._candidates[candidate_id]
+    replay = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("premature-loss"),
+        headers=headers,
+    )
+    assert replay.status_code == 500
+    assert replay.json()["error"]["code"] == "candidate_missing_before_expiry"
+    assert replay.json()["error"]["details"]["candidate_id"] == candidate_id
     assert len(provider.calls) == 1
 
 
