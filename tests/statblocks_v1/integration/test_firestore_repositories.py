@@ -381,6 +381,7 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
             schema_fingerprint="fp",
             generated_at=now,
             caller_scope="dungeonbuddy",
+            request_digest=digest,
         ),
         created_at=now,
         expires_at=now + timedelta(hours=1),
@@ -392,7 +393,8 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
         lease_owner="owner-a",
         candidate=candidate,
     )
-    assert stored.candidate_id == candidate_id
+    assert stored.candidate.candidate_id == candidate_id
+    assert stored.already_completed is False
     assert candidates.get(candidate_id, now=now).candidate_id == candidate_id
 
     # Restart-style replay via new repository instances.
@@ -422,4 +424,5 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
             for _ in range(2)
         ]
         results = [future.result() for future in futures]
-    assert {item.candidate_id for item in results} == {candidate_id}
+    assert {item.candidate.candidate_id for item in results} == {candidate_id}
+    assert all(item.already_completed for item in results)

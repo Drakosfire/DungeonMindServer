@@ -20,9 +20,13 @@ from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
+    CandidateGenerationStatusV1,
 )
 from statblocks_v1.domain.canonicalization import canonicalize_definition
-from statblocks_v1.domain.errors import AmbiguousRequestPayloadError
+from statblocks_v1.domain.errors import (
+    AmbiguousRequestPayloadError,
+    GenerateOperationIntegrityError,
+)
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     IdempotencyRecordV1,
@@ -115,18 +119,51 @@ def candidate_belongs_to_generate_operation(
     """True only when the stored candidate was produced for this generate operation.
 
     Same-operation stale-worker convergence is valid. An unrelated or recreated
-    document that happens to share ``candidate_id`` must fail closed.
+    document that happens to share ``candidate_id`` must fail closed. Binding
+    includes ``request_digest`` so a replaced document under the same ID cannot
+    be treated as canonical for a different generate intent.
     """
 
     if candidate.candidate_id != operation.candidate_id:
         return False
     receipt = candidate.generation_receipt
-    if receipt is None:
+    if receipt is None or receipt.request_digest is None:
         return False
     return (
         receipt.request_id == operation.request_id
         and receipt.caller_scope == operation.caller_scope
+        and receipt.request_digest == operation.request_digest
     )
+
+
+def verify_generate_operation_lookup_identity(
+    record: CandidateGenerationOperationV1,
+    *,
+    caller_scope: str,
+    request_id: str,
+) -> CandidateGenerationOperationV1:
+    """Fail closed when stored identity/state does not match the hashed lookup key."""
+
+    if (
+        record.caller_scope != caller_scope
+        or record.request_id != request_id
+        or record.operation != GENERATE_CANDIDATE_OPERATION
+    ):
+        raise GenerateOperationIntegrityError(
+            request_id,
+            candidate_id=record.candidate_id,
+            reason="Stored generate operation identity does not match lookup key",
+        )
+    if (
+        record.status is CandidateGenerationStatusV1.completed
+        and record.candidate_expires_at is None
+    ):
+        raise GenerateOperationIntegrityError(
+            request_id,
+            candidate_id=record.candidate_id,
+            reason="Completed generate operation is missing candidate_expires_at",
+        )
+    return record
 
 
 @dataclass(frozen=True)
@@ -138,8 +175,17 @@ class GenerateBeginClaimed:
 
 @dataclass(frozen=True)
 class GenerateBeginCompleted:
-    candidate_id: str
-    candidate_expires_at: datetime | None = None
+    """Durable completed operation; replay must verify candidate ownership."""
+
+    operation: CandidateGenerationOperationV1
+
+    @property
+    def candidate_id(self) -> str:
+        return self.operation.candidate_id
+
+    @property
+    def candidate_expires_at(self) -> datetime | None:
+        return self.operation.candidate_expires_at
 
 
 @dataclass(frozen=True)
@@ -151,6 +197,14 @@ class GenerateBeginFailed:
 class GenerateBeginInProgress:
     candidate_id: str
     lease_expires_at: datetime
+
+
+@dataclass(frozen=True)
+class GenerateCompleteResult:
+    """Outcome of complete_generate with fresh-vs-convergence observability."""
+
+    candidate: GeneratedStatblockCandidateV1
+    already_completed: bool
 
 
 GenerateBeginResult = (
@@ -187,7 +241,7 @@ class CandidateGenerationOperationRepository(Protocol):
         request_digest: str,
         lease_owner: str,
         candidate: GeneratedStatblockCandidateV1,
-    ) -> GeneratedStatblockCandidateV1: ...
+    ) -> GenerateCompleteResult: ...
 
     def fail_generate(
         self,

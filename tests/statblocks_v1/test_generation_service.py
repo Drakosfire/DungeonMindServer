@@ -864,6 +864,98 @@ def test_generate_expired_lease_takeover_retains_candidate_id(load_fixture) -> N
     assert len(provider.calls) == 1
 
 
+def test_generate_replay_rejects_replaced_candidate_under_same_id(load_fixture) -> None:
+    """Completed replay must fail closed when the candidate no longer binds to the op."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+    assert first.candidate.generation_receipt is not None
+    assert first.candidate.generation_receipt.request_digest is not None
+
+    # Replace the durable candidate under the same ID with a digest-mismatched receipt.
+    replaced = first.candidate.model_copy(
+        deep=True,
+        update={
+            "generation_receipt": first.candidate.generation_receipt.model_copy(
+                update={"request_digest": "sha256:" + ("e" * 64)}
+            )
+        },
+    )
+    candidates._candidates["cand_1"] = replaced
+    with pytest.raises(GenerateOperationIntegrityError):
+        service.generate(_command())
+    assert len(provider.calls) == 1
+
+
+def test_stale_worker_complete_convergence_is_observed_as_replay(load_fixture) -> None:
+    """Service must treat complete_generate(already_completed=True) as replay, not fresh persist."""
+
+    from statblocks_v1.application.repositories import GenerateCompleteResult
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    real_ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+
+    class ConvergenceOps:
+        """Adapter that surfaces race-convergence as already_completed=True."""
+
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return real_ops.get_generate_operation(caller_scope, request_id)
+
+        def begin_generate(self, **kwargs):
+            return real_ops.begin_generate(**kwargs)
+
+        def fail_generate(self, **kwargs):
+            return real_ops.fail_generate(**kwargs)
+
+        def complete_generate(self, **kwargs):
+            result = real_ops.complete_generate(**kwargs)
+            # Simulate discovering another worker already completed this operation.
+            return GenerateCompleteResult(
+                candidate=result.candidate, already_completed=True
+            )
+
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ConvergenceOps(),
+        generate_lease_seconds=120,
+    )
+    result = service.generate(_command())
+    assert isinstance(result, GenerateOutcomeV1)
+    assert result.replayed is True
+    assert len(provider.calls) == 1
+
+
 def test_generate_expired_candidate_replay_raises_410(load_fixture) -> None:
     from datetime import timedelta
 

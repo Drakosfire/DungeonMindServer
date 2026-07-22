@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Callable
 from uuid import uuid4
 
-from pydantic import AnyUrl
+from pydantic import AnyUrl, ValidationError
 
 from statblocks_v1.application.repositories import (
     AppendRevisionCommand,
@@ -22,7 +22,9 @@ from statblocks_v1.application.repositories import (
     GenerateBeginFailed,
     GenerateBeginInProgress,
     GenerateBeginResult,
+    GenerateCompleteResult,
     candidate_belongs_to_generate_operation,
+    verify_generate_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
@@ -33,6 +35,7 @@ from statblocks_v1.domain.candidate_operations import (
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateNotFoundError,
+    GenerateOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
@@ -139,7 +142,9 @@ class FirestoreCandidateGenerationOperationRepository:
             raise PersistenceUnavailableError() from error
         if not snapshot.exists:
             return None
-        return CandidateGenerationOperationV1.model_validate(snapshot.to_dict())
+        return self._parse_operation(
+            snapshot.to_dict(), caller_scope=caller_scope, request_id=request_id
+        )
 
     def begin_generate(
         self,
@@ -178,14 +183,15 @@ class FirestoreCandidateGenerationOperationRepository:
                 result_box["result"] = GenerateBeginClaimed(operation=operation)
                 return
 
-            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
             if existing.status is CandidateGenerationStatusV1.completed:
-                result_box["result"] = GenerateBeginCompleted(
-                    candidate_id=existing.candidate_id,
-                    candidate_expires_at=existing.candidate_expires_at,
-                )
+                result_box["result"] = GenerateBeginCompleted(operation=existing)
                 return
             if existing.status is CandidateGenerationStatusV1.failed:
                 if existing.failure is None:
@@ -212,9 +218,11 @@ class FirestoreCandidateGenerationOperationRepository:
 
         try:
             operation_fn(self._client.transaction())
-        except IdempotencyConflictError:
-            raise
-        except PersistenceUnavailableError:
+        except (
+            IdempotencyConflictError,
+            GenerateOperationIntegrityError,
+            PersistenceUnavailableError,
+        ):
             raise
         except Exception as error:
             if _is_already_exists(error):
@@ -238,14 +246,14 @@ class FirestoreCandidateGenerationOperationRepository:
         request_digest: str,
         lease_owner: str,
         candidate: GeneratedStatblockCandidateV1,
-    ) -> GeneratedStatblockCandidateV1:
+    ) -> GenerateCompleteResult:
         from google.cloud.firestore_v1 import transactional
 
         op_ref = self._operation_document(caller_scope, request_id)
         candidate_ref = self._client.collection(self._candidates_collection).document(
             candidate.candidate_id
         )
-        result_box: dict[str, GeneratedStatblockCandidateV1] = {}
+        result_box: dict[str, GenerateCompleteResult] = {}
 
         @transactional
         def operation_fn(transaction):
@@ -253,7 +261,11 @@ class FirestoreCandidateGenerationOperationRepository:
             existing_snap = op_ref.get(transaction=transaction)
             if not existing_snap.exists:
                 raise PersistenceUnavailableError()
-            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
             if candidate.candidate_id != existing.candidate_id:
@@ -268,8 +280,13 @@ class FirestoreCandidateGenerationOperationRepository:
                     raise PersistenceUnavailableError()
                 stored = GeneratedStatblockCandidateV1.model_validate(candidate_snap.to_dict())
                 if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise ImmutableResourceConflictError(
-                        "candidate", existing.candidate_id
+                    raise GenerateOperationIntegrityError(
+                        request_id,
+                        candidate_id=existing.candidate_id,
+                        reason=(
+                            "Completed generate points to a candidate that does not "
+                            "belong to this operation"
+                        ),
                     )
                 if existing.status is not CandidateGenerationStatusV1.completed:
                     transaction.set(
@@ -286,7 +303,13 @@ class FirestoreCandidateGenerationOperationRepository:
                             )
                         ),
                     )
-                result_box["result"] = stored
+                    result_box["result"] = GenerateCompleteResult(
+                        candidate=stored, already_completed=False
+                    )
+                else:
+                    result_box["result"] = GenerateCompleteResult(
+                        candidate=stored, already_completed=True
+                    )
                 return
 
             stored = candidate.model_copy(deep=True)
@@ -305,13 +328,16 @@ class FirestoreCandidateGenerationOperationRepository:
                     )
                 ),
             )
-            result_box["result"] = stored
+            result_box["result"] = GenerateCompleteResult(
+                candidate=stored, already_completed=False
+            )
 
         try:
             operation_fn(self._client.transaction())
         except (
             IdempotencyConflictError,
             ImmutableResourceConflictError,
+            GenerateOperationIntegrityError,
             PersistenceUnavailableError,
         ):
             raise
@@ -357,7 +383,11 @@ class FirestoreCandidateGenerationOperationRepository:
             existing_snap = op_ref.get(transaction=transaction)
             if not existing_snap.exists:
                 raise PersistenceUnavailableError()
-            existing = CandidateGenerationOperationV1.model_validate(existing_snap.to_dict())
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
 
@@ -394,6 +424,7 @@ class FirestoreCandidateGenerationOperationRepository:
         except (
             IdempotencyConflictError,
             ImmutableResourceConflictError,
+            GenerateOperationIntegrityError,
             PersistenceUnavailableError,
         ):
             raise
@@ -414,7 +445,7 @@ class FirestoreCandidateGenerationOperationRepository:
         request_id: str,
         request_digest: str,
         candidate_id: str,
-    ) -> GeneratedStatblockCandidateV1 | None:
+    ) -> GenerateCompleteResult | None:
         try:
             record = self.get_generate_operation(caller_scope, request_id)
         except PersistenceUnavailableError:
@@ -437,12 +468,37 @@ class FirestoreCandidateGenerationOperationRepository:
             if snapshot.exists:
                 stored = GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
                 if not candidate_belongs_to_generate_operation(stored, record):
-                    raise ImmutableResourceConflictError("candidate", candidate_id)
-                return stored
+                    raise GenerateOperationIntegrityError(
+                        request_id,
+                        candidate_id=candidate_id,
+                        reason=(
+                            "Completed generate points to a candidate that does not "
+                            "belong to this operation"
+                        ),
+                    )
+                return GenerateCompleteResult(candidate=stored, already_completed=True)
             raise PersistenceUnavailableError()
         if record.status is CandidateGenerationStatusV1.failed:
             raise ImmutableResourceConflictError("candidate", candidate_id)
         return None
+
+    def _parse_operation(
+        self,
+        payload: dict[str, Any] | None,
+        *,
+        caller_scope: str,
+        request_id: str,
+    ) -> CandidateGenerationOperationV1:
+        try:
+            record = CandidateGenerationOperationV1.model_validate(payload or {})
+        except ValidationError as error:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                reason="Stored generate operation failed schema/state validation",
+            ) from error
+        return verify_generate_operation_lookup_identity(
+            record, caller_scope=caller_scope, request_id=request_id
+        )
 
     def _operation_document(self, caller_scope: str, request_id: str) -> Any:
         import hashlib

@@ -547,6 +547,7 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
             schema_fingerprint="fp",
             generated_at=created,
             caller_scope="tests",
+            request_digest=digest,
         ),
         created_at=created,
         expires_at=created + timedelta(minutes=5),
@@ -558,7 +559,8 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
         lease_owner="owner-c",
         candidate=candidate,
     )
-    assert stored.candidate_id == "cand_ops1"
+    assert stored.candidate.candidate_id == "cand_ops1"
+    assert stored.already_completed is False
     assert isinstance(
         ops.begin_generate(
             caller_scope="tests",
@@ -571,7 +573,7 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
         GenerateBeginCompleted,
     )
 
-    # Stale-worker convergence: second complete returns canonical candidate.
+    # Stale-worker convergence: second complete returns canonical candidate as replay.
     again = ops.complete_generate(
         caller_scope="tests",
         request_id="req_ops",
@@ -579,7 +581,8 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
         lease_owner="owner-stale",
         candidate=candidate.model_copy(update={"asset_brief": None}),
     )
-    assert again.candidate_id == "cand_ops1"
+    assert again.candidate.candidate_id == "cand_ops1"
+    assert again.already_completed is True
 
     # Independent failure key
     fail_cmd = command.model_copy(update={"request_id": "req_fail"})
@@ -666,6 +669,7 @@ def test_generate_ops_concurrent_complete_converges(load_fixture):
                 schema_fingerprint="fp",
                 generated_at=now,
                 caller_scope="tests",
+                request_digest=digest,
             ),
             created_at=now,
             expires_at=now + timedelta(minutes=5),
@@ -692,7 +696,8 @@ def test_generate_ops_concurrent_complete_converges(load_fixture):
             ),
         ]
         results = [future.result() for future in futures]
-    assert {item.candidate_id for item in results} == {"cand_race"}
+    assert {item.candidate.candidate_id for item in results} == {"cand_race"}
+    assert {item.already_completed for item in results} == {False, True}
     assert len(candidates._candidates) == 1
 
 
@@ -749,6 +754,7 @@ def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
             "schema_fingerprint": "fp",
             "generated_at": now,
             "caller_scope": "tests",
+            "request_digest": "sha256:" + ("a" * 64),
         },
         created_at=now,
         expires_at=now + timedelta(minutes=5),
@@ -765,6 +771,7 @@ def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
                 "schema_fingerprint": "fp",
                 "generated_at": now,
                 "caller_scope": "tests",
+                "request_digest": digest,
             }
         }
     )
@@ -775,4 +782,180 @@ def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
             request_digest=digest,
             lease_owner="owner-a",
             candidate=owned,
+        )
+
+
+def test_generate_ops_ownership_requires_request_digest(load_fixture):
+    """Same request_id/scope without matching request_digest must fail closed."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        candidate_belongs_to_generate_operation,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_digest",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    other_digest = "sha256:" + ("b" * 64)
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    operation = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_digest",
+        request_digest=digest,
+        candidate_id="cand_digest",
+        status=CandidateGenerationStatusV1.completed,
+        lease_owner="owner",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+        completed_at=now,
+        candidate_expires_at=now + timedelta(minutes=5),
+    )
+    mismatched = GeneratedStatblockCandidateV1(
+        candidate_id="cand_digest",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_digest",
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="tests",
+            request_digest=other_digest,
+        ),
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    assert candidate_belongs_to_generate_operation(mismatched, operation) is False
+    candidates._create_unlocked(mismatched)
+    ops._operations[("tests", "req_digest")] = operation
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.complete_generate(
+            caller_scope="tests",
+            request_id="req_digest",
+            request_digest=digest,
+            lease_owner="owner",
+            candidate=mismatched,
+        )
+
+
+def test_generate_ops_rejects_key_identity_mismatch(load_fixture):
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    ops._operations[("tests", "req_key")] = CandidateGenerationOperationV1(
+        caller_scope="other-scope",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_key",
+        request_digest="sha256:" + ("c" * 64),
+        candidate_id="cand_key",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="owner",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.get_generate_operation("tests", "req_key")
+
+
+def test_generate_ops_completed_without_expiry_fails_closed(load_fixture):
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    # Bypass model validator to simulate a malformed durable record.
+    ops._operations[("tests", "req_malformed")] = (
+        CandidateGenerationOperationV1.model_construct(
+            caller_scope="tests",
+            operation=GENERATE_CANDIDATE_OPERATION,
+            request_id="req_malformed",
+            request_digest="sha256:" + ("d" * 64),
+            candidate_id="cand_malformed",
+            status=CandidateGenerationStatusV1.completed,
+            lease_owner="owner",
+            lease_expires_at=now + timedelta(seconds=60),
+            attempt_count=1,
+            created_at=now,
+            updated_at=now,
+            completed_at=now,
+            failure=None,
+            candidate_expires_at=None,
+        )
+    )
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.get_generate_operation("tests", "req_malformed")
+    with pytest.raises(ValueError, match="candidate_expires_at"):
+        CandidateGenerationOperationV1(
+            caller_scope="tests",
+            operation=GENERATE_CANDIDATE_OPERATION,
+            request_id="req_malformed",
+            request_digest="sha256:" + ("d" * 64),
+            candidate_id="cand_malformed",
+            status=CandidateGenerationStatusV1.completed,
+            lease_owner="owner",
+            lease_expires_at=now + timedelta(seconds=60),
+            attempt_count=1,
+            created_at=now,
+            updated_at=now,
+            completed_at=now,
+            candidate_expires_at=None,
         )

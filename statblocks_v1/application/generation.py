@@ -35,17 +35,22 @@ from statblocks_v1.application.repositories import (
     GenerateBeginCompleted,
     GenerateBeginFailed,
     GenerateBeginInProgress,
+    candidate_belongs_to_generate_operation,
     compute_generate_candidate_digest,
 )
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.assets import AssetBriefV1, AssetRefV1
-from statblocks_v1.domain.candidate_operations import CandidateGenerationFailureSnapshotV1
+from statblocks_v1.domain.candidate_operations import (
+    CandidateGenerationFailureSnapshotV1,
+    CandidateGenerationOperationV1,
+)
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateMissingBeforeExpiryError,
     CandidateNotFoundError,
+    GenerateOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     PersistenceUnavailableError,
@@ -208,7 +213,7 @@ class GenerationServiceV1:
                 lease_owner=lease_owner,
                 lease_duration_seconds=self._generate_lease_seconds,
             )
-        except IdempotencyConflictError:
+        except (IdempotencyConflictError, GenerateOperationIntegrityError):
             raise
         except PersistenceUnavailableError:
             return GenerationFailureV1(
@@ -220,10 +225,7 @@ class GenerationServiceV1:
             )
 
         if isinstance(began, GenerateBeginCompleted):
-            loaded = self._load_completed_candidate(
-                began.candidate_id,
-                candidate_expires_at=began.candidate_expires_at,
-            )
+            loaded = self._load_completed_candidate(began.operation)
             if isinstance(loaded, GenerationFailureV1):
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
@@ -265,10 +267,12 @@ class GenerationServiceV1:
                 )
             except IdempotencyConflictError:
                 raise
+            except GenerateOperationIntegrityError:
+                raise
             return GenerationFailureV1(snapshot.kind, snapshot.message)
 
         try:
-            stored = ops.complete_generate(
+            completed = ops.complete_generate(
                 caller_scope=caller_scope,
                 request_id=request_id,
                 request_digest=request_digest,
@@ -284,13 +288,10 @@ class GenerationServiceV1:
         except TransactionIndeterminateError:
             existing = ops.get_generate_operation(caller_scope, request_id)
             if existing is not None and existing.status.value == "completed":
-                loaded = self._load_completed_candidate(
-                    existing.candidate_id,
-                    candidate_expires_at=existing.candidate_expires_at,
-                )
+                loaded = self._load_completed_candidate(existing)
                 if isinstance(loaded, GenerationFailureV1):
                     return loaded
-                return GenerateOutcomeV1(candidate=loaded, replayed=False)
+                return GenerateOutcomeV1(candidate=loaded, replayed=True)
             if existing is not None and existing.failure is not None:
                 return GenerationFailureV1(existing.failure.kind, existing.failure.message)
             return GenerationFailureV1(
@@ -300,7 +301,12 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
             )
-        return GenerateOutcomeV1(candidate=stored, replayed=False)
+        except GenerateOperationIntegrityError:
+            raise
+        return GenerateOutcomeV1(
+            candidate=completed.candidate,
+            replayed=completed.already_completed,
+        )
 
     def _resolve_after_terminal_race(
         self,
@@ -320,10 +326,7 @@ class GenerationServiceV1:
                 "persistence_unavailable", "Persistence is unavailable"
             )
         if existing.status.value == "completed":
-            loaded = self._load_completed_candidate(
-                existing.candidate_id,
-                candidate_expires_at=existing.candidate_expires_at,
-            )
+            loaded = self._load_completed_candidate(existing)
             if isinstance(loaded, GenerationFailureV1):
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
@@ -340,17 +343,30 @@ class GenerationServiceV1:
 
     def _load_completed_candidate(
         self,
-        candidate_id: str,
-        *,
-        candidate_expires_at: datetime | None = None,
+        operation: CandidateGenerationOperationV1,
     ) -> GenerationResultV1:
+        """Load a completed generate's candidate, verifying operation binding.
+
+        Ownership (including request digest) is checked before returning. Missing
+        ``candidate_expires_at`` on a completed operation is an integrity failure,
+        never ordinary expiry.
+        """
+
+        if operation.candidate_expires_at is None:
+            raise GenerateOperationIntegrityError(
+                operation.request_id,
+                candidate_id=operation.candidate_id,
+                reason="Completed generate operation is missing candidate_expires_at",
+            )
+        candidate_id = operation.candidate_id
+        candidate_expires_at = operation.candidate_expires_at
         try:
-            return self._candidates.get(candidate_id, now=self._clock())
+            candidate = self._candidates.get(candidate_id, now=self._clock())
         except CandidateExpiredError:
             raise
         except CandidateNotFoundError as error:
             now = self._clock()
-            if candidate_expires_at is not None and now < candidate_expires_at:
+            if now < candidate_expires_at:
                 raise CandidateMissingBeforeExpiryError(
                     error.details.get("candidate_id", candidate_id)
                 ) from error
@@ -362,6 +378,16 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
             )
+        if not candidate_belongs_to_generate_operation(candidate, operation):
+            raise GenerateOperationIntegrityError(
+                operation.request_id,
+                candidate_id=candidate_id,
+                reason=(
+                    "Completed generate points to a candidate that does not belong "
+                    "to this operation"
+                ),
+            )
+        return candidate
 
     def _run(
         self,
@@ -470,6 +496,7 @@ class GenerationServiceV1:
                 schema_fingerprint=compiled.fingerprint,
                 generated_at=now,
                 caller_scope=intent.caller.caller_scope,
+                request_digest=intent.request_digest,
                 actor=intent.caller.actor,
                 source_description_digest=intent.source_description_digest,
                 source_definition_digest=intent.source_definition_digest,

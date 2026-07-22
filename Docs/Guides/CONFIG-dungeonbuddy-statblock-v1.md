@@ -51,7 +51,10 @@ Generate-request idempotency keys are body `request_id` values namespaced by
 budget (`timeout × (retries+1) + margin`, ceiling fractional timeouts) so an
 in-flight worker is not spuriously taken over. Completed operations retain
 `candidate_expires_at` so a missing candidate before that instant is treated as
-integrity failure rather than normal expiry.
+integrity failure rather than normal expiry. Document identity fields must match
+the hashed lookup key; completed records without `candidate_expires_at` are
+integrity failures. Completed replay also requires the candidate generation
+receipt to bind the same `request_digest`.
 
 The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore

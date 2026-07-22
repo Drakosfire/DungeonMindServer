@@ -16,7 +16,9 @@ from statblocks_v1.application.repositories import (
     GenerateBeginFailed,
     GenerateBeginInProgress,
     GenerateBeginResult,
+    GenerateCompleteResult,
     candidate_belongs_to_generate_operation,
+    verify_generate_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
@@ -29,6 +31,7 @@ from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateNotFoundError,
+    GenerateOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
@@ -144,7 +147,13 @@ class InMemoryCandidateGenerationOperationRepository:
     ) -> CandidateGenerationOperationV1 | None:
         with self._lock:
             record = self._operations.get((caller_scope, request_id))
-            return _copy(record) if record else None
+            if record is None:
+                return None
+            return _copy(
+                verify_generate_operation_lookup_identity(
+                    record, caller_scope=caller_scope, request_id=request_id
+                )
+            )
 
     def begin_generate(
         self,
@@ -177,14 +186,14 @@ class InMemoryCandidateGenerationOperationRepository:
                 self._operations[key] = operation
                 return GenerateBeginClaimed(operation=_copy(operation))
 
+            existing = verify_generate_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
 
             if existing.status is CandidateGenerationStatusV1.completed:
-                return GenerateBeginCompleted(
-                    candidate_id=existing.candidate_id,
-                    candidate_expires_at=existing.candidate_expires_at,
-                )
+                return GenerateBeginCompleted(operation=_copy(existing))
             if existing.status is CandidateGenerationStatusV1.failed:
                 if existing.failure is None:
                     raise PersistenceUnavailableError()
@@ -215,13 +224,16 @@ class InMemoryCandidateGenerationOperationRepository:
         request_digest: str,
         lease_owner: str,
         candidate: GeneratedStatblockCandidateV1,
-    ) -> GeneratedStatblockCandidateV1:
+    ) -> GenerateCompleteResult:
         with self._lock:
             now = self._clock()
             key = (caller_scope, request_id)
             existing = self._operations.get(key)
             if existing is None:
                 raise PersistenceUnavailableError()
+            existing = verify_generate_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
             if candidate.candidate_id != existing.candidate_id:
@@ -238,10 +250,15 @@ class InMemoryCandidateGenerationOperationRepository:
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
                 if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise ImmutableResourceConflictError(
-                        "candidate", existing.candidate_id
+                    raise GenerateOperationIntegrityError(
+                        request_id,
+                        candidate_id=existing.candidate_id,
+                        reason=(
+                            "Completed generate points to a candidate that does not "
+                            "belong to this operation"
+                        ),
                     )
-                return stored
+                return GenerateCompleteResult(candidate=stored, already_completed=True)
 
             try:
                 stored = self._candidates._create_unlocked(candidate)
@@ -263,7 +280,7 @@ class InMemoryCandidateGenerationOperationRepository:
                     "candidate_expires_at": stored.expires_at,
                 }
             )
-            return stored
+            return GenerateCompleteResult(candidate=stored, already_completed=False)
 
     def fail_generate(
         self,
@@ -280,6 +297,9 @@ class InMemoryCandidateGenerationOperationRepository:
             existing = self._operations.get(key)
             if existing is None:
                 raise PersistenceUnavailableError()
+            existing = verify_generate_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
             if existing.request_digest != request_digest:
                 raise IdempotencyConflictError(request_id)
 

@@ -68,6 +68,11 @@ class GenerationReceiptV1(StrictModel):
     schema_fingerprint: str = Field(min_length=1)
     generated_at: datetime
     caller_scope: str = Field(min_length=1)
+    # Bound generate-op digest; required for idempotent generate ownership checks.
+    # Optional so revise/legacy receipts remain readable; ownership fails closed if absent.
+    request_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
     actor: str | None = None
     source_description_digest: str | None = None
     source_definition_digest: str | None = Field(

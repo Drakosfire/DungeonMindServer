@@ -164,6 +164,7 @@
     "provider": "fake",
     "provider_request_id": null,
     "provider_response_id": null,
+    "request_digest": "sha256:fea4f726bd98ed730447b994642eafd0f88cb3c06050ca7c6742103676da0de2",
     "request_id": "fixture-generate-1",
     "schema_fingerprint": "sha256:3f692b9ed6a521c485e137e3d5c42526f17efdfce9280a9ab5b038a6c4424ef4",
     "schema_version": "statblock-openai-strict-compiler-v1",

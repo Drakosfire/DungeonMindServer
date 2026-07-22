@@ -7,9 +7,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from statblocks_v1.domain.primitives import StrictModel
 
@@ -48,3 +48,14 @@ class CandidateGenerationOperationV1(StrictModel):
     # Retained on completion so premature TTL/deletion can be distinguished from
     # normal expiry without keeping the full candidate mechanics.
     candidate_expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def completed_requires_candidate_expires_at(self) -> Self:
+        if (
+            self.status is CandidateGenerationStatusV1.completed
+            and self.candidate_expires_at is None
+        ):
+            raise ValueError(
+                "completed generate operations require candidate_expires_at"
+            )
+        return self

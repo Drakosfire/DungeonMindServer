@@ -100,6 +100,7 @@ def test_generate_and_exact_read(api_client) -> None:
     assert "combat_defaults" not in first.text
     assert "markdown" not in first.text.lower()
     assert first.json()["generation_receipt"]["caller_scope"] == "dungeonbuddy"
+    assert first.json()["generation_receipt"]["request_digest"].startswith("sha256:")
 
 
 def test_generate_replay_lost_response_and_conflict(api_client, caplog) -> None:

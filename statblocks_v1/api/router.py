@@ -81,8 +81,8 @@ _CANDIDATE_ERROR_RESPONSES = {
     500: {
         "model": ErrorEnvelopeV1,
         "description": (
-            "Unexpected generation failure or completed generate points to a "
-            "candidate missing before its declared expiry"
+            "Unexpected generation failure, generate-operation integrity failure, "
+            "or completed generate points to a candidate missing before its declared expiry"
         ),
     },
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
