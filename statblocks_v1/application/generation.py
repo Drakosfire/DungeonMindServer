@@ -259,6 +259,7 @@ class GenerationServiceV1:
                 return self._resolve_after_terminal_race(
                     caller_scope=caller_scope,
                     request_id=request_id,
+                    request_digest=request_digest,
                     reserved_candidate_id=claim.candidate_id,
                 )
             except (PersistenceUnavailableError, TransactionIndeterminateError):
@@ -283,19 +284,16 @@ class GenerationServiceV1:
             return self._resolve_after_terminal_race(
                 caller_scope=caller_scope,
                 request_id=request_id,
+                request_digest=request_digest,
                 reserved_candidate_id=claim.candidate_id,
             )
         except TransactionIndeterminateError:
-            existing = ops.get_generate_operation(caller_scope, request_id)
-            if existing is not None and existing.status.value == "completed":
-                loaded = self._load_completed_candidate(existing)
-                if isinstance(loaded, GenerationFailureV1):
-                    return loaded
-                return GenerateOutcomeV1(candidate=loaded, replayed=True)
-            if existing is not None and existing.failure is not None:
-                return GenerationFailureV1(existing.failure.kind, existing.failure.message)
-            return GenerationFailureV1(
-                "persistence_unavailable", "Persistence is unavailable"
+            return self._resolve_after_terminal_race(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                reserved_candidate_id=claim.candidate_id,
+                indeterminate=True,
             )
         except PersistenceUnavailableError:
             return GenerationFailureV1(
@@ -313,9 +311,15 @@ class GenerationServiceV1:
         *,
         caller_scope: str,
         request_id: str,
+        request_digest: str,
         reserved_candidate_id: str,
+        indeterminate: bool = False,
     ) -> GenerationResultV1:
-        """Reconcile when this worker lost the lease or lost a terminal race."""
+        """Reconcile when this worker lost the lease or lost a terminal race.
+
+        Reloaded terminal state must still match this attempt's reserved candidate
+        and pinned request digest before any completed candidate is returned.
+        """
 
         assert self._generate_operations is not None
         existing = self._generate_operations.get_generate_operation(
@@ -325,6 +329,24 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
             )
+        if existing.candidate_id != reserved_candidate_id:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Terminal generate operation candidate_id does not match "
+                    "this attempt's reservation"
+                ),
+            )
+        if existing.request_digest != request_digest:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Terminal generate operation request_digest does not match "
+                    "this attempt's pinned digest"
+                ),
+            )
         if existing.status.value == "completed":
             loaded = self._load_completed_candidate(existing)
             if isinstance(loaded, GenerationFailureV1):
@@ -333,6 +355,10 @@ class GenerationServiceV1:
         if existing.status.value == "failed" and existing.failure is not None:
             return GenerationFailureV1(existing.failure.kind, existing.failure.message)
         if existing.status.value == "pending":
+            if indeterminate:
+                return GenerationFailureV1(
+                    "persistence_unavailable", "Persistence is unavailable"
+                )
             return GenerationFailureV1(
                 "generation_in_progress",
                 "Candidate generation is already in progress for this request",
@@ -347,9 +373,9 @@ class GenerationServiceV1:
     ) -> GenerationResultV1:
         """Load a completed generate's candidate, verifying operation binding.
 
-        Ownership (including request digest) is checked before returning. Missing
-        ``candidate_expires_at`` on a completed operation is an integrity failure,
-        never ordinary expiry.
+        Durable expiry authority is ``operation.candidate_expires_at``, not the
+        live candidate document's ``expires_at``. Ownership is checked before any
+        document-TTL rejection can masquerade as ordinary expiry.
         """
 
         if operation.candidate_expires_at is None:
@@ -360,18 +386,19 @@ class GenerationServiceV1:
             )
         candidate_id = operation.candidate_id
         candidate_expires_at = operation.candidate_expires_at
+        now = self._clock()
+        if now >= candidate_expires_at:
+            # Operation-recorded expiry is authoritative even if a replaced
+            # candidate document still advertises a later expires_at.
+            raise CandidateExpiredError(candidate_id)
+
         try:
-            candidate = self._candidates.get(candidate_id, now=self._clock())
-        except CandidateExpiredError:
-            raise
+            # Do not enforce candidate-document TTL here: a foreign/replaced
+            # document with an earlier expires_at must not short-circuit to 410
+            # before ownership validation.
+            candidate = self._candidates.get_for_acceptance(candidate_id)
         except CandidateNotFoundError as error:
-            now = self._clock()
-            if now < candidate_expires_at:
-                raise CandidateMissingBeforeExpiryError(
-                    error.details.get("candidate_id", candidate_id)
-                ) from error
-            # TTL deletion after declared expiry: never regenerate under the same key.
-            raise CandidateExpiredError(
+            raise CandidateMissingBeforeExpiryError(
                 error.details.get("candidate_id", candidate_id)
             ) from error
         except PersistenceUnavailableError:

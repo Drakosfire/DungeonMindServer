@@ -188,6 +188,11 @@ def test_generate_terminal_failure_replay(api_client, load_fixture) -> None:
 
 
 def test_generate_expired_candidate_replay_410(api_client) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.api.dependencies import get_generation_service
+    from statblocks_v1.domain.candidate_operations import CandidateGenerationStatusV1
+
     client, provider, headers, _, candidates, now = api_client
     first = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
@@ -196,10 +201,19 @@ def test_generate_expired_candidate_replay_410(api_client) -> None:
     )
     assert first.status_code == 200
     candidate_id = first.json()["candidate_id"]
-    # Force expiry on stored candidate while keeping operation completed.
+    # Durable expiry authority is the operation record, not candidate-document TTL.
+    service = client.app.dependency_overrides[get_generation_service]()
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops._operations[("dungeonbuddy", "expire-key")]
+    assert operation.status is CandidateGenerationStatusV1.completed
+    ops._operations[("dungeonbuddy", "expire-key")] = operation.model_copy(
+        update={"candidate_expires_at": now - timedelta(seconds=1)}
+    )
+    # Also expire the document so ordinary get() paths stay consistent.
     stored = candidates.get_for_acceptance(candidate_id)
     candidates._candidates[candidate_id] = stored.model_copy(
-        update={"expires_at": now}
+        update={"expires_at": now - timedelta(seconds=1)}
     )
     replay = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",

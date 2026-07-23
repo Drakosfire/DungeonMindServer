@@ -154,15 +154,55 @@ def verify_generate_operation_lookup_identity(
             candidate_id=record.candidate_id,
             reason="Stored generate operation identity does not match lookup key",
         )
-    if (
-        record.status is CandidateGenerationStatusV1.completed
-        and record.candidate_expires_at is None
-    ):
-        raise GenerateOperationIntegrityError(
-            request_id,
-            candidate_id=record.candidate_id,
-            reason="Completed generate operation is missing candidate_expires_at",
-        )
+    if record.status is CandidateGenerationStatusV1.pending:
+        if (
+            record.failure is not None
+            or record.candidate_expires_at is not None
+            or record.completed_at is not None
+        ):
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Pending generate operation carries terminal fields",
+            )
+    elif record.status is CandidateGenerationStatusV1.completed:
+        if record.candidate_expires_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing candidate_expires_at",
+            )
+        if record.failure is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation must not carry failure",
+            )
+        if record.completed_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing completed_at",
+            )
+    elif record.status is CandidateGenerationStatusV1.failed:
+        if record.failure is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation is missing failure",
+            )
+        if record.candidate_expires_at is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation must not carry candidate_expires_at",
+            )
+        if record.completed_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation is missing completed_at",
+            )
     return record
 
 

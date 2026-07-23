@@ -198,6 +198,39 @@ class FirestoreCandidateGenerationOperationRepository:
                     raise PersistenceUnavailableError()
                 result_box["result"] = GenerateBeginFailed(failure=existing.failure)
                 return
+
+            # Pending must never coexist with an adopted candidate as a successful
+            # in-progress/claim path. Candidate create + completion are one unit.
+            candidate_ref = self._client.collection(self._candidates_collection).document(
+                existing.candidate_id
+            )
+            candidate_snap = candidate_ref.get(transaction=transaction)
+            if candidate_snap.exists:
+                stored = GeneratedStatblockCandidateV1.model_validate(
+                    candidate_snap.to_dict()
+                )
+                if not candidate_belongs_to_generate_operation(stored, existing):
+                    raise GenerateOperationIntegrityError(
+                        request_id,
+                        candidate_id=existing.candidate_id,
+                        reason=(
+                            "Pending generate points to a candidate that does not "
+                            "belong to this operation"
+                        ),
+                    )
+                completed = existing.model_copy(
+                    update={
+                        "status": CandidateGenerationStatusV1.completed,
+                        "updated_at": now,
+                        "completed_at": now,
+                        "failure": None,
+                        "candidate_expires_at": stored.expires_at,
+                    }
+                )
+                transaction.set(op_ref, _dump(completed))
+                result_box["result"] = GenerateBeginCompleted(operation=completed)
+                return
+
             if existing.lease_expires_at > now:
                 result_box["result"] = GenerateBeginInProgress(
                     candidate_id=existing.candidate_id,

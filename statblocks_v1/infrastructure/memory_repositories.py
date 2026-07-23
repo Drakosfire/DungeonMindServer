@@ -199,6 +199,36 @@ class InMemoryCandidateGenerationOperationRepository:
                     raise PersistenceUnavailableError()
                 return GenerateBeginFailed(failure=_copy(existing.failure))
 
+            # Pending must never coexist with an adopted candidate as a successful
+            # in-progress/claim path. Candidate create + completion are one unit.
+            try:
+                pre_existing = self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+            except CandidateNotFoundError:
+                pre_existing = None
+            if pre_existing is not None:
+                if not candidate_belongs_to_generate_operation(pre_existing, existing):
+                    raise GenerateOperationIntegrityError(
+                        request_id,
+                        candidate_id=existing.candidate_id,
+                        reason=(
+                            "Pending generate points to a candidate that does not "
+                            "belong to this operation"
+                        ),
+                    )
+                completed = existing.model_copy(
+                    update={
+                        "status": CandidateGenerationStatusV1.completed,
+                        "updated_at": now,
+                        "completed_at": now,
+                        "failure": None,
+                        "candidate_expires_at": pre_existing.expires_at,
+                    }
+                )
+                self._operations[key] = completed
+                return GenerateBeginCompleted(operation=_copy(completed))
+
             if existing.lease_expires_at > now:
                 return GenerateBeginInProgress(
                     candidate_id=existing.candidate_id,

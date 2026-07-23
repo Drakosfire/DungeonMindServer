@@ -50,12 +50,46 @@ class CandidateGenerationOperationV1(StrictModel):
     candidate_expires_at: datetime | None = None
 
     @model_validator(mode="after")
-    def completed_requires_candidate_expires_at(self) -> Self:
-        if (
-            self.status is CandidateGenerationStatusV1.completed
-            and self.candidate_expires_at is None
-        ):
-            raise ValueError(
-                "completed generate operations require candidate_expires_at"
-            )
+    def status_field_invariants(self) -> Self:
+        """Reject impossible pending/completed/failed field combinations."""
+
+        if self.status is CandidateGenerationStatusV1.pending:
+            if self.failure is not None:
+                raise ValueError("pending generate operations must not carry failure")
+            if self.candidate_expires_at is not None:
+                raise ValueError(
+                    "pending generate operations must not carry candidate_expires_at"
+                )
+            if self.completed_at is not None:
+                raise ValueError(
+                    "pending generate operations must not carry completed_at"
+                )
+            return self
+
+        if self.status is CandidateGenerationStatusV1.completed:
+            if self.candidate_expires_at is None:
+                raise ValueError(
+                    "completed generate operations require candidate_expires_at"
+                )
+            if self.failure is not None:
+                raise ValueError(
+                    "completed generate operations must not carry failure"
+                )
+            if self.completed_at is None:
+                raise ValueError(
+                    "completed generate operations require completed_at"
+                )
+            return self
+
+        if self.status is CandidateGenerationStatusV1.failed:
+            if self.failure is None:
+                raise ValueError("failed generate operations require failure")
+            if self.candidate_expires_at is not None:
+                raise ValueError(
+                    "failed generate operations must not carry candidate_expires_at"
+                )
+            if self.completed_at is None:
+                raise ValueError("failed generate operations require completed_at")
+            return self
+
         return self

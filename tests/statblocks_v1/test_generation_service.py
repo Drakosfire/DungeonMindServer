@@ -1023,3 +1023,241 @@ def test_different_request_ids_are_independent(load_fixture) -> None:
     assert isinstance(second, GenerateOutcomeV1)
     assert first.candidate_id != second.candidate_id
     assert len(provider.calls) == 2
+
+
+def test_replay_foreign_candidate_earlier_expiry_is_integrity_not_410(
+    load_fixture,
+) -> None:
+    """Foreign/replaced candidate TTL must not masquerade as ordinary expiry."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(
+        candidates, clock=lambda: now["t"]
+    )
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+    assert first.candidate.generation_receipt is not None
+
+    # Replace with a foreign document whose own expires_at is already past.
+    foreign = first.candidate.model_copy(
+        deep=True,
+        update={
+            "expires_at": now["t"] - timedelta(seconds=1),
+            "generation_receipt": first.candidate.generation_receipt.model_copy(
+                update={
+                    "request_id": "req_foreign",
+                    "request_digest": "sha256:" + ("a" * 64),
+                }
+            ),
+        },
+    )
+    candidates._candidates["cand_1"] = foreign
+    with pytest.raises(GenerateOperationIntegrityError):
+        service.generate(_command())
+    assert len(provider.calls) == 1
+
+
+def test_replay_respects_operation_expiry_over_extended_candidate_ttl(
+    load_fixture,
+) -> None:
+    """Extended candidate expires_at must not allow replay past operation expiry."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.domain.errors import CandidateExpiredError
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(
+        candidates, clock=lambda: now["t"]
+    )
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+
+    # Document TTL extended past the operation-recorded expiry.
+    extended = first.candidate.model_copy(
+        update={"expires_at": now["t"] + timedelta(hours=24)}
+    )
+    candidates._candidates["cand_1"] = extended
+    now["t"] = now["t"] + timedelta(seconds=120)
+    with pytest.raises(CandidateExpiredError) as exc:
+        service.generate(_command())
+    assert exc.value.details["candidate_id"] == "cand_1"
+    assert len(provider.calls) == 1
+
+
+def test_terminal_race_mismatched_reserved_candidate_id_fails_closed(
+    load_fixture,
+) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import (
+        GenerateOperationIntegrityError,
+        ImmutableResourceConflictError,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    digest = compute_generate_candidate_digest(_command())
+    claimed = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_reserved",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="worker-a",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    terminal = claimed.model_copy(
+        update={
+            "candidate_id": "cand_other",
+            "status": CandidateGenerationStatusV1.completed,
+            "completed_at": now,
+            "candidate_expires_at": now + timedelta(minutes=5),
+        }
+    )
+
+    class RaceOps:
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return terminal
+
+        def begin_generate(self, **kwargs):
+            return GenerateBeginClaimed(operation=claimed)
+
+        def fail_generate(self, **kwargs):
+            raise AssertionError("fail_generate should not be called")
+
+        def complete_generate(self, **kwargs):
+            raise ImmutableResourceConflictError("candidate", "cand_reserved")
+
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_reserved",
+        generate_operations=RaceOps(),
+        generate_lease_seconds=120,
+    )
+    with pytest.raises(GenerateOperationIntegrityError):
+        service.generate(_command())
+
+
+def test_terminal_race_mismatched_request_digest_fails_closed(load_fixture) -> None:
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import (
+        GenerateOperationIntegrityError,
+        ImmutableResourceConflictError,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    digest = compute_generate_candidate_digest(_command())
+    claimed = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_1",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="worker-a",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    terminal = claimed.model_copy(
+        update={
+            "request_digest": "sha256:" + ("f" * 64),
+            "status": CandidateGenerationStatusV1.completed,
+            "completed_at": now,
+            "candidate_expires_at": now + timedelta(minutes=5),
+        }
+    )
+
+    class RaceOps:
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return terminal
+
+        def begin_generate(self, **kwargs):
+            return GenerateBeginClaimed(operation=claimed)
+
+        def fail_generate(self, **kwargs):
+            raise AssertionError("fail_generate should not be called")
+
+        def complete_generate(self, **kwargs):
+            raise ImmutableResourceConflictError("candidate", "cand_1")
+
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=RaceOps(),
+        generate_lease_seconds=120,
+    )
+    with pytest.raises(GenerateOperationIntegrityError):
+        service.generate(_command())
