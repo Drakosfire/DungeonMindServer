@@ -17,7 +17,8 @@ from statblocks_v1.application.repositories import (
     GenerateBeginInProgress,
     GenerateBeginResult,
     GenerateCompleteResult,
-    candidate_belongs_to_generate_operation,
+    compute_candidate_outcome_digest,
+    require_candidate_owned_by_generate_operation,
     verify_generate_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
@@ -199,8 +200,8 @@ class InMemoryCandidateGenerationOperationRepository:
                     raise PersistenceUnavailableError()
                 return GenerateBeginFailed(failure=_copy(existing.failure))
 
-            # Pending must never coexist with an adopted candidate as a successful
-            # in-progress/claim path. Candidate create + completion are one unit.
+            # Pending + existing candidate is an impossible atomic state: create
+            # and completion share one commit. Fail closed; do not promote.
             try:
                 pre_existing = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
@@ -208,26 +209,13 @@ class InMemoryCandidateGenerationOperationRepository:
             except CandidateNotFoundError:
                 pre_existing = None
             if pre_existing is not None:
-                if not candidate_belongs_to_generate_operation(pre_existing, existing):
-                    raise GenerateOperationIntegrityError(
-                        request_id,
-                        candidate_id=existing.candidate_id,
-                        reason=(
-                            "Pending generate points to a candidate that does not "
-                            "belong to this operation"
-                        ),
-                    )
-                completed = existing.model_copy(
-                    update={
-                        "status": CandidateGenerationStatusV1.completed,
-                        "updated_at": now,
-                        "completed_at": now,
-                        "failure": None,
-                        "candidate_expires_at": pre_existing.expires_at,
-                    }
+                raise GenerateOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending generate points to an existing candidate document"
+                    ),
                 )
-                self._operations[key] = completed
-                return GenerateBeginCompleted(operation=_copy(completed))
 
             if existing.lease_expires_at > now:
                 return GenerateBeginInProgress(
@@ -279,16 +267,25 @@ class InMemoryCandidateGenerationOperationRepository:
                 stored = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
-                if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise GenerateOperationIntegrityError(
-                        request_id,
-                        candidate_id=existing.candidate_id,
-                        reason=(
-                            "Completed generate points to a candidate that does not "
-                            "belong to this operation"
-                        ),
-                    )
+                require_candidate_owned_by_generate_operation(
+                    stored,
+                    existing,
+                    reason=(
+                        "Completed generate points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
                 return GenerateCompleteResult(candidate=stored, already_completed=True)
+
+            # First write and stale-worker race: prove ownership before mutate.
+            require_candidate_owned_by_generate_operation(
+                candidate,
+                existing,
+                reason=(
+                    "Generate completion candidate does not belong to this operation"
+                ),
+            )
+            outcome_digest = compute_candidate_outcome_digest(candidate)
 
             try:
                 stored = self._candidates._create_unlocked(candidate)
@@ -296,10 +293,15 @@ class InMemoryCandidateGenerationOperationRepository:
                 stored = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
-                if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise ImmutableResourceConflictError(
-                        "candidate", existing.candidate_id
-                    )
+                require_candidate_owned_by_generate_operation(
+                    stored,
+                    existing,
+                    reason=(
+                        "Generate completion found a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
+                outcome_digest = compute_candidate_outcome_digest(stored)
 
             self._operations[key] = existing.model_copy(
                 update={
@@ -308,6 +310,7 @@ class InMemoryCandidateGenerationOperationRepository:
                     "completed_at": now,
                     "failure": None,
                     "candidate_expires_at": stored.expires_at,
+                    "outcome_digest": outcome_digest,
                 }
             )
             return GenerateCompleteResult(candidate=stored, already_completed=False)

@@ -48,6 +48,12 @@ class CandidateGenerationOperationV1(StrictModel):
     # Retained on completion so premature TTL/deletion can be distinguished from
     # normal expiry without keeping the full candidate mechanics.
     candidate_expires_at: datetime | None = None
+    # Canonical fingerprint of the generated outcome (definition/assets/warnings).
+    # Bound at completion so replay cannot accept a recreated document that only
+    # copies request receipt metadata.
+    outcome_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
 
     @model_validator(mode="after")
     def status_field_invariants(self) -> Self:
@@ -64,12 +70,20 @@ class CandidateGenerationOperationV1(StrictModel):
                 raise ValueError(
                     "pending generate operations must not carry completed_at"
                 )
+            if self.outcome_digest is not None:
+                raise ValueError(
+                    "pending generate operations must not carry outcome_digest"
+                )
             return self
 
         if self.status is CandidateGenerationStatusV1.completed:
             if self.candidate_expires_at is None:
                 raise ValueError(
                     "completed generate operations require candidate_expires_at"
+                )
+            if self.outcome_digest is None:
+                raise ValueError(
+                    "completed generate operations require outcome_digest"
                 )
             if self.failure is not None:
                 raise ValueError(
@@ -87,6 +101,10 @@ class CandidateGenerationOperationV1(StrictModel):
             if self.candidate_expires_at is not None:
                 raise ValueError(
                     "failed generate operations must not carry candidate_expires_at"
+                )
+            if self.outcome_digest is not None:
+                raise ValueError(
+                    "failed generate operations must not carry outcome_digest"
                 )
             if self.completed_at is None:
                 raise ValueError("failed generate operations require completed_at")

@@ -262,7 +262,15 @@ class GenerationServiceV1:
                     request_digest=request_digest,
                     reserved_candidate_id=claim.candidate_id,
                 )
-            except (PersistenceUnavailableError, TransactionIndeterminateError):
+            except TransactionIndeterminateError:
+                return self._resolve_after_terminal_race(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    reserved_candidate_id=claim.candidate_id,
+                    indeterminate=True,
+                )
+            except PersistenceUnavailableError:
                 return GenerationFailureV1(
                     "persistence_unavailable", "Persistence is unavailable"
                 )

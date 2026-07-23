@@ -112,6 +112,25 @@ def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> st
     )
 
 
+def compute_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -> str:
+    """Fingerprint the replayable generated outcome bound at completion.
+
+    Covers definition mechanics plus asset refs/warnings so a recreated document
+    that only copies request receipt metadata cannot pass completed replay.
+    """
+
+    return compute_request_digest(
+        "generate_candidate_outcome",
+        {
+            "definition": canonicalize_definition(candidate.definition),
+            "assets": [asset.model_dump(mode="json") for asset in candidate.assets],
+            "asset_warnings": [
+                warning.model_dump(mode="json") for warning in candidate.asset_warnings
+            ],
+        },
+    )
+
+
 def candidate_belongs_to_generate_operation(
     candidate: GeneratedStatblockCandidateV1,
     operation: CandidateGenerationOperationV1,
@@ -121,19 +140,49 @@ def candidate_belongs_to_generate_operation(
     Same-operation stale-worker convergence is valid. An unrelated or recreated
     document that happens to share ``candidate_id`` must fail closed. Binding
     includes ``request_digest`` so a replaced document under the same ID cannot
-    be treated as canonical for a different generate intent.
+    be treated as canonical for a different generate intent. When the operation
+    already stores ``outcome_digest``, the candidate's computed outcome must match.
     """
 
     if candidate.candidate_id != operation.candidate_id:
         return False
     receipt = candidate.generation_receipt
-    if receipt is None or receipt.request_digest is None:
+    if receipt is None:
         return False
-    return (
+    if isinstance(receipt, Mapping):
+        try:
+            from statblocks_v1.domain.resources import GenerationReceiptV1
+
+            receipt = GenerationReceiptV1.model_validate(receipt)
+        except Exception:
+            return False
+    if receipt.request_digest is None:
+        return False
+    if not (
         receipt.request_id == operation.request_id
         and receipt.caller_scope == operation.caller_scope
         and receipt.request_digest == operation.request_digest
-    )
+    ):
+        return False
+    if operation.outcome_digest is None:
+        return True
+    return compute_candidate_outcome_digest(candidate) == operation.outcome_digest
+
+
+def require_candidate_owned_by_generate_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateGenerationOperationV1,
+    *,
+    reason: str,
+) -> None:
+    """Fail closed when the candidate is not bound to the generate operation."""
+
+    if not candidate_belongs_to_generate_operation(candidate, operation):
+        raise GenerateOperationIntegrityError(
+            operation.request_id,
+            candidate_id=operation.candidate_id,
+            reason=reason,
+        )
 
 
 def verify_generate_operation_lookup_identity(
@@ -159,6 +208,7 @@ def verify_generate_operation_lookup_identity(
             record.failure is not None
             or record.candidate_expires_at is not None
             or record.completed_at is not None
+            or record.outcome_digest is not None
         ):
             raise GenerateOperationIntegrityError(
                 request_id,
@@ -171,6 +221,12 @@ def verify_generate_operation_lookup_identity(
                 request_id,
                 candidate_id=record.candidate_id,
                 reason="Completed generate operation is missing candidate_expires_at",
+            )
+        if record.outcome_digest is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing outcome_digest",
             )
         if record.failure is not None:
             raise GenerateOperationIntegrityError(
@@ -196,6 +252,12 @@ def verify_generate_operation_lookup_identity(
                 request_id,
                 candidate_id=record.candidate_id,
                 reason="Failed generate operation must not carry candidate_expires_at",
+            )
+        if record.outcome_digest is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation must not carry outcome_digest",
             )
         if record.completed_at is None:
             raise GenerateOperationIntegrityError(

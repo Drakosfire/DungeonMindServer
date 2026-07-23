@@ -51,8 +51,11 @@ Generate-request idempotency keys are body `request_id` values namespaced by
 budget (`timeout × (retries+1) + margin`, ceiling fractional timeouts) so an
 in-flight worker is not spuriously taken over. Completed operations retain
 `candidate_expires_at` so a missing candidate before that instant is treated as
-integrity failure rather than normal expiry. Document identity fields must match
-the hashed lookup key; completed records without `candidate_expires_at` are
+integrity failure rather than normal expiry. They also retain `outcome_digest`
+(canonical fingerprint of definition + assets + asset_warnings) so completed
+replay fails closed when a candidate is recreated under the same ID with only
+receipt metadata copied. Document identity fields must match the hashed lookup
+key; completed records without `candidate_expires_at` or `outcome_digest` are
 integrity failures. Completed replay also requires the candidate generation
 receipt to bind the same `request_digest`.
 

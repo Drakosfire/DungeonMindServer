@@ -711,7 +711,7 @@ def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
         SourceSnapshotV1,
     )
     from statblocks_v1.application.repositories import compute_generate_candidate_digest
-    from statblocks_v1.domain.errors import ImmutableResourceConflictError
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
     from statblocks_v1.domain.profiles import RulesetRef
     from statblocks_v1.infrastructure.memory_repositories import (
         InMemoryCandidateGenerationOperationRepository,
@@ -775,7 +775,7 @@ def test_generate_ops_rejects_unrelated_candidate_document(load_fixture):
             }
         }
     )
-    with pytest.raises(ImmutableResourceConflictError):
+    with pytest.raises(GenerateOperationIntegrityError):
         ops.complete_generate(
             caller_scope="tests",
             request_id="req_own",
@@ -837,6 +837,7 @@ def test_generate_ops_ownership_requires_request_digest(load_fixture):
         updated_at=now,
         completed_at=now,
         candidate_expires_at=now + timedelta(minutes=5),
+        outcome_digest="sha256:" + ("f" * 64),
     )
     mismatched = GeneratedStatblockCandidateV1(
         candidate_id="cand_digest",
@@ -990,9 +991,18 @@ def test_generate_operation_model_rejects_impossible_states():
             status=CandidateGenerationStatusV1.completed,
             completed_at=now,
             candidate_expires_at=now + timedelta(minutes=5),
+            outcome_digest="sha256:" + ("a" * 64),
             failure=CandidateGenerationFailureSnapshotV1(
                 kind="provider_refusal", message="nope"
             ),
+        )
+    with pytest.raises(ValueError, match="outcome_digest"):
+        CandidateGenerationOperationV1(
+            **base,
+            status=CandidateGenerationStatusV1.completed,
+            completed_at=now,
+            candidate_expires_at=now + timedelta(minutes=5),
+            outcome_digest=None,
         )
     with pytest.raises(ValueError, match="require failure"):
         CandidateGenerationOperationV1(
@@ -1011,6 +1021,16 @@ def test_generate_operation_model_rejects_impossible_states():
             ),
             candidate_expires_at=now + timedelta(minutes=5),
         )
+    with pytest.raises(ValueError, match="outcome_digest"):
+        CandidateGenerationOperationV1(
+            **base,
+            status=CandidateGenerationStatusV1.failed,
+            completed_at=now,
+            failure=CandidateGenerationFailureSnapshotV1(
+                kind="provider_refusal", message="nope"
+            ),
+            outcome_digest="sha256:" + ("a" * 64),
+        )
     with pytest.raises(ValueError, match="completed_at"):
         CandidateGenerationOperationV1(
             **base,
@@ -1023,12 +1043,18 @@ def test_generate_operation_model_rejects_impossible_states():
             status=CandidateGenerationStatusV1.pending,
             candidate_expires_at=now + timedelta(minutes=5),
         )
+    with pytest.raises(ValueError, match="outcome_digest"):
+        CandidateGenerationOperationV1(
+            **base,
+            status=CandidateGenerationStatusV1.pending,
+            outcome_digest="sha256:" + ("a" * 64),
+        )
 
 
-def test_generate_ops_begin_reconciles_pending_with_existing_owned_candidate(
+def test_generate_ops_begin_rejects_pending_with_existing_candidate(
     load_fixture,
 ):
-    """Pending + owned candidate must complete, never claim/in-progress."""
+    """Pending + existing candidate is an impossible atomic state; fail closed."""
     from datetime import datetime, timedelta, timezone
 
     from statblocks_v1.application.commands import (
@@ -1038,10 +1064,10 @@ def test_generate_ops_begin_reconciles_pending_with_existing_owned_candidate(
     )
     from statblocks_v1.application.repositories import (
         GenerateBeginClaimed,
-        GenerateBeginCompleted,
         compute_generate_candidate_digest,
     )
     from statblocks_v1.domain.candidate_operations import CandidateGenerationStatusV1
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
     from statblocks_v1.domain.profiles import RulesetRef
     from statblocks_v1.infrastructure.memory_repositories import (
         InMemoryCandidateGenerationOperationRepository,
@@ -1090,20 +1116,216 @@ def test_generate_ops_begin_reconciles_pending_with_existing_owned_candidate(
         expires_at=now + timedelta(minutes=5),
     )
     candidates._create_unlocked(owned)
-    began = ops.begin_generate(
-        caller_scope="tests",
-        request_id="req_pending_existing",
-        request_digest=digest,
-        candidate_id_factory=lambda: "cand_should_not_use",
-        lease_owner="owner-b",
-        lease_duration_seconds=60,
-    )
-    assert isinstance(began, GenerateBeginCompleted)
-    assert began.operation.status is CandidateGenerationStatusV1.completed
-    assert began.operation.candidate_expires_at == owned.expires_at
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.begin_generate(
+            caller_scope="tests",
+            request_id="req_pending_existing",
+            request_digest=digest,
+            candidate_id_factory=lambda: "cand_should_not_use",
+            lease_owner="owner-b",
+            lease_duration_seconds=60,
+        )
     stored = ops.get_generate_operation("tests", "req_pending_existing")
     assert stored is not None
-    assert stored.status is CandidateGenerationStatusV1.completed
+    assert stored.status is CandidateGenerationStatusV1.pending
+    assert stored.completed_at is None
+    assert candidates._get_unlocked("cand_pending1", now=now, enforce_expiry=False) is not None
+
+
+def test_generate_ops_complete_rejects_first_write_ownership_mismatch(load_fixture):
+    """First persistence must validate receipt binding before creating a candidate."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.candidate_operations import CandidateGenerationStatusV1
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_first_own",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_first_own",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_first1",
+        lease_owner="owner-a",
+        lease_duration_seconds=60,
+    )
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    base = dict(
+        candidate_id="cand_first1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    cases = [
+        {
+            "request_id": "req_wrong",
+            "caller_scope": "tests",
+            "request_digest": digest,
+        },
+        {
+            "request_id": "req_first_own",
+            "caller_scope": "other-scope",
+            "request_digest": digest,
+        },
+        {
+            "request_id": "req_first_own",
+            "caller_scope": "tests",
+            "request_digest": "sha256:" + ("b" * 64),
+        },
+        {
+            "request_id": "req_first_own",
+            "caller_scope": "tests",
+            "request_digest": None,
+        },
+    ]
+    for receipt_fields in cases:
+        malformed = GeneratedStatblockCandidateV1(
+            **base,
+            generation_receipt={
+                "request_id": receipt_fields["request_id"],
+                "provider": "test",
+                "model": "test-model",
+                "prompt_version": "v1",
+                "schema_version": "v1",
+                "schema_fingerprint": "fp",
+                "generated_at": now,
+                "caller_scope": receipt_fields["caller_scope"],
+                **(
+                    {"request_digest": receipt_fields["request_digest"]}
+                    if receipt_fields["request_digest"] is not None
+                    else {}
+                ),
+            },
+        )
+        with pytest.raises(GenerateOperationIntegrityError):
+            ops.complete_generate(
+                caller_scope="tests",
+                request_id="req_first_own",
+                request_digest=digest,
+                lease_owner="owner-a",
+                candidate=malformed,
+            )
+        assert "cand_first1" not in candidates._candidates
+        pending = ops.get_generate_operation("tests", "req_first_own")
+        assert pending is not None
+        assert pending.status is CandidateGenerationStatusV1.pending
+
+
+def test_generate_ops_replay_rejects_altered_mechanics_same_receipt(load_fixture):
+    """Same receipt metadata with altered definition must fail outcome binding."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        compute_candidate_outcome_digest,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_outcome",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_outcome",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_outcome",
+        lease_owner="owner-a",
+        lease_duration_seconds=60,
+    )
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    original = GeneratedStatblockCandidateV1(
+        candidate_id="cand_outcome",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt={
+            "request_id": "req_outcome",
+            "provider": "test",
+            "model": "test-model",
+            "prompt_version": "v1",
+            "schema_version": "v1",
+            "schema_fingerprint": "fp",
+            "generated_at": now,
+            "caller_scope": "tests",
+            "request_digest": digest,
+        },
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    completed = ops.complete_generate(
+        caller_scope="tests",
+        request_id="req_outcome",
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=original,
+    )
+    assert completed.already_completed is False
+    stored_op = ops.get_generate_operation("tests", "req_outcome")
+    assert stored_op is not None
+    assert stored_op.outcome_digest == compute_candidate_outcome_digest(original)
+
+    altered_definition = definition.model_copy(
+        update={"identity": definition.identity.model_copy(update={"name": "Altered"})}
+    )
+    altered = original.model_copy(
+        update={
+            "definition": altered_definition,
+            "validation_receipt": validate_definition(
+                altered_definition, ValidationMode.generation_candidate
+            ),
+        }
+    )
+    candidates._candidates["cand_outcome"] = altered
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.complete_generate(
+            caller_scope="tests",
+            request_id="req_outcome",
+            request_digest=digest,
+            lease_owner="owner-a",
+            candidate=altered,
+        )
 
 
 def test_generate_ops_begin_rejects_pending_with_foreign_candidate(load_fixture):

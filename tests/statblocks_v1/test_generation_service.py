@@ -1163,6 +1163,7 @@ def test_terminal_race_mismatched_reserved_candidate_id_fails_closed(
             "status": CandidateGenerationStatusV1.completed,
             "completed_at": now,
             "candidate_expires_at": now + timedelta(minutes=5),
+            "outcome_digest": "sha256:" + ("a" * 64),
         }
     )
 
@@ -1234,6 +1235,7 @@ def test_terminal_race_mismatched_request_digest_fails_closed(load_fixture) -> N
             "status": CandidateGenerationStatusV1.completed,
             "completed_at": now,
             "candidate_expires_at": now + timedelta(minutes=5),
+            "outcome_digest": "sha256:" + ("a" * 64),
         }
     )
 
@@ -1261,3 +1263,159 @@ def test_terminal_race_mismatched_request_digest_fails_closed(load_fixture) -> N
     )
     with pytest.raises(GenerateOperationIntegrityError):
         service.generate(_command())
+
+
+def test_fail_generate_indeterminate_recovers_concurrent_completed_candidate(
+    load_fixture,
+) -> None:
+    """Indeterminate fail write must return concurrent success, not persistence_unavailable."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        compute_candidate_outcome_digest,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import TransactionIndeterminateError
+    from statblocks_v1.domain.receipts import ValidationMode
+    from statblocks_v1.domain.resources import (
+        STATBLOCK_CONTRACT,
+        STATBLOCK_CONTRACT_VERSION,
+        GeneratedStatblockCandidateV1,
+        GenerationReceiptV1,
+    )
+    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+    from statblocks_v1.domain.validation import validate_definition
+    from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    digest = compute_generate_candidate_digest(_command())
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    stored = GeneratedStatblockCandidateV1(
+        candidate_id="cand_1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_generation",
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="tests",
+            request_digest=digest,
+        ),
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    candidates._create_unlocked(stored)
+    claimed = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_1",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="worker-fail",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    terminal = claimed.model_copy(
+        update={
+            "status": CandidateGenerationStatusV1.completed,
+            "completed_at": now,
+            "candidate_expires_at": stored.expires_at,
+            "outcome_digest": compute_candidate_outcome_digest(stored),
+        }
+    )
+
+    class IndeterminateFailOps:
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return terminal
+
+        def begin_generate(self, **kwargs):
+            return GenerateBeginClaimed(operation=claimed)
+
+        def fail_generate(self, **kwargs):
+            raise TransactionIndeterminateError()
+
+        def complete_generate(self, **kwargs):
+            raise AssertionError("complete_generate should not be called")
+
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(
+            ProviderOutcomeV1(kind=ProviderOutcomeKind.refusal, message="nope")
+        ),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=IndeterminateFailOps(),
+        generate_lease_seconds=120,
+    )
+    result = service.generate(_command())
+    assert isinstance(result, GenerateOutcomeV1)
+    assert result.candidate_id == "cand_1"
+    assert result.replayed is True
+
+
+def test_generate_replay_rejects_altered_mechanics_same_receipt(load_fixture) -> None:
+    """Completed replay must fail closed when mechanics change under the same receipt."""
+
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.receipts import ValidationMode
+    from statblocks_v1.domain.validation import validate_definition
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now["t"])
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+
+    altered_definition = first.candidate.definition.model_copy(
+        update={
+            "identity": first.candidate.definition.identity.model_copy(
+                update={"name": "Altered Brute"}
+            )
+        }
+    )
+    replaced = first.candidate.model_copy(
+        update={
+            "definition": altered_definition,
+            "validation_receipt": validate_definition(
+                altered_definition, ValidationMode.generation_candidate
+            ),
+        }
+    )
+    candidates._candidates["cand_1"] = replaced
+    with pytest.raises(GenerateOperationIntegrityError):
+        service.generate(_command())
+    assert len(provider.calls) == 1

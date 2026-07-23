@@ -23,7 +23,8 @@ from statblocks_v1.application.repositories import (
     GenerateBeginInProgress,
     GenerateBeginResult,
     GenerateCompleteResult,
-    candidate_belongs_to_generate_operation,
+    compute_candidate_outcome_digest,
+    require_candidate_owned_by_generate_operation,
     verify_generate_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
@@ -199,37 +200,20 @@ class FirestoreCandidateGenerationOperationRepository:
                 result_box["result"] = GenerateBeginFailed(failure=existing.failure)
                 return
 
-            # Pending must never coexist with an adopted candidate as a successful
-            # in-progress/claim path. Candidate create + completion are one unit.
+            # Pending + existing candidate is an impossible atomic state: create
+            # and completion share one commit. Fail closed; do not promote.
             candidate_ref = self._client.collection(self._candidates_collection).document(
                 existing.candidate_id
             )
             candidate_snap = candidate_ref.get(transaction=transaction)
             if candidate_snap.exists:
-                stored = GeneratedStatblockCandidateV1.model_validate(
-                    candidate_snap.to_dict()
+                raise GenerateOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending generate points to an existing candidate document"
+                    ),
                 )
-                if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise GenerateOperationIntegrityError(
-                        request_id,
-                        candidate_id=existing.candidate_id,
-                        reason=(
-                            "Pending generate points to a candidate that does not "
-                            "belong to this operation"
-                        ),
-                    )
-                completed = existing.model_copy(
-                    update={
-                        "status": CandidateGenerationStatusV1.completed,
-                        "updated_at": now,
-                        "completed_at": now,
-                        "failure": None,
-                        "candidate_expires_at": stored.expires_at,
-                    }
-                )
-                transaction.set(op_ref, _dump(completed))
-                result_box["result"] = GenerateBeginCompleted(operation=completed)
-                return
 
             if existing.lease_expires_at > now:
                 result_box["result"] = GenerateBeginInProgress(
@@ -312,16 +296,16 @@ class FirestoreCandidateGenerationOperationRepository:
                 if not candidate_snap.exists:
                     raise PersistenceUnavailableError()
                 stored = GeneratedStatblockCandidateV1.model_validate(candidate_snap.to_dict())
-                if not candidate_belongs_to_generate_operation(stored, existing):
-                    raise GenerateOperationIntegrityError(
-                        request_id,
-                        candidate_id=existing.candidate_id,
-                        reason=(
-                            "Completed generate points to a candidate that does not "
-                            "belong to this operation"
-                        ),
-                    )
+                require_candidate_owned_by_generate_operation(
+                    stored,
+                    existing,
+                    reason=(
+                        "Completed generate points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
                 if existing.status is not CandidateGenerationStatusV1.completed:
+                    outcome_digest = compute_candidate_outcome_digest(stored)
                     transaction.set(
                         op_ref,
                         _dump(
@@ -332,6 +316,7 @@ class FirestoreCandidateGenerationOperationRepository:
                                     "completed_at": now,
                                     "failure": None,
                                     "candidate_expires_at": stored.expires_at,
+                                    "outcome_digest": outcome_digest,
                                 }
                             )
                         ),
@@ -345,6 +330,14 @@ class FirestoreCandidateGenerationOperationRepository:
                     )
                 return
 
+            require_candidate_owned_by_generate_operation(
+                candidate,
+                existing,
+                reason=(
+                    "Generate completion candidate does not belong to this operation"
+                ),
+            )
+            outcome_digest = compute_candidate_outcome_digest(candidate)
             stored = candidate.model_copy(deep=True)
             transaction.create(candidate_ref, _dump(stored))
             transaction.set(
@@ -357,6 +350,7 @@ class FirestoreCandidateGenerationOperationRepository:
                             "completed_at": now,
                             "failure": None,
                             "candidate_expires_at": stored.expires_at,
+                            "outcome_digest": outcome_digest,
                         }
                     )
                 ),
@@ -463,11 +457,18 @@ class FirestoreCandidateGenerationOperationRepository:
             raise
         except Exception as error:
             record = self.get_generate_operation(caller_scope, request_id)
-            if record is not None and record.status is CandidateGenerationStatusV1.failed:
+            if record is not None:
                 if record.request_digest != request_digest:
                     raise IdempotencyConflictError(request_id) from error
-                if record.failure is not None:
-                    return record.failure
+                if record.status is CandidateGenerationStatusV1.failed:
+                    if record.failure is not None:
+                        return record.failure
+                if record.status is CandidateGenerationStatusV1.completed:
+                    # Concurrent success: surface as conflict so the service
+                    # returns the canonical completed candidate.
+                    raise ImmutableResourceConflictError(
+                        "candidate", record.candidate_id
+                    ) from error
             raise TransactionIndeterminateError() from error
         return result_box["result"]
 
@@ -500,15 +501,14 @@ class FirestoreCandidateGenerationOperationRepository:
                 raise PersistenceUnavailableError() from error
             if snapshot.exists:
                 stored = GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
-                if not candidate_belongs_to_generate_operation(stored, record):
-                    raise GenerateOperationIntegrityError(
-                        request_id,
-                        candidate_id=candidate_id,
-                        reason=(
-                            "Completed generate points to a candidate that does not "
-                            "belong to this operation"
-                        ),
-                    )
+                require_candidate_owned_by_generate_operation(
+                    stored,
+                    record,
+                    reason=(
+                        "Completed generate points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
                 return GenerateCompleteResult(candidate=stored, already_completed=True)
             raise PersistenceUnavailableError()
         if record.status is CandidateGenerationStatusV1.failed:

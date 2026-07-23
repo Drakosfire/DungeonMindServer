@@ -26,9 +26,15 @@ On completion they **must** retain `candidate_expires_at` (without embedding
 mechanics) so premature candidate loss fails closed as an integrity error while
 post-expiry TTL deletion returns typed expiry. A completed record missing
 `candidate_expires_at` is malformed and must not be treated as ordinary expiry.
-Candidate create and operation completion share one Firestore transaction.
-Completed replay also verifies the candidate generation receipt binds
-`request_id`, `caller_scope`, and `request_digest` to the operation.
+Completed operations also retain `outcome_digest` (canonical fingerprint of
+definition + assets + asset_warnings) so replay cannot accept a recreated
+candidate that only copies request receipt metadata. Candidate create and
+operation completion share one Firestore transaction. Pending operations must
+not coexist with a candidate document; that impossible state fails closed as
+integrity rather than being promoted to completed. Completed replay verifies
+the candidate generation receipt binds `request_id`, `caller_scope`, and
+`request_digest`, and that the computed outcome fingerprint matches
+`outcome_digest`.
 
 The only expected query is revisions beneath a known statblock. If chronological
 listing is required, add a composite/index configuration for `created_at`
