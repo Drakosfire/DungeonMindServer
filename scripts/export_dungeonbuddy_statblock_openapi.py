@@ -154,7 +154,11 @@ def export_fixture_pack() -> None:
     from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
     from statblocks_v1.api.models import GenerateCandidateRequestV1
     from statblocks_v1.application.commands import CallerProvenanceV1, GenerateStatblockCommandV1
-    from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+    from statblocks_v1.application.generation import (
+        GenerateOutcomeV1,
+        GenerationFailureV1,
+        GenerationServiceV1,
+    )
     from statblocks_v1.application.provider import ProviderOutcomeV1
     from statblocks_v1.application.settings import GenerationSettingsV1
     from statblocks_v1.domain.assets import AssetBindingV1
@@ -171,8 +175,10 @@ def export_fixture_pack() -> None:
     from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
     from statblocks_v1.domain.validation import validate_definition
     from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
-    from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
-
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
     fixtures_root = ROOT / "Docs" / "Design" / "fixtures" / "dungeonbuddy-statblock-v1"
     definition = StatblockDefinitionV1.model_validate(
         json.loads((fixtures_root / "simple_bruiser.json").read_text())
@@ -227,6 +233,7 @@ def export_fixture_pack() -> None:
         caller=CallerProvenanceV1(caller_scope="dungeonbuddy", actor=request.actor),
     )
     candidate_ttl_seconds = 86400
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(
             ProviderOutcomeV1.succeeded(
@@ -234,13 +241,17 @@ def export_fixture_pack() -> None:
                 latency_ms=0,
             )
         ),
-        candidates=InMemoryCandidateRepository(clock=lambda: now),
+        candidates=candidates,
         settings=GenerationSettingsV1("fixture-model", 1.0, 0, candidate_ttl_seconds),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_fixture1",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
-    candidate = service.generate(command)
-    assert not isinstance(candidate, GenerationFailureV1)
+    outcome = service.generate(command)
+    assert not isinstance(outcome, GenerationFailureV1)
+    candidate = outcome.candidate if isinstance(outcome, GenerateOutcomeV1) else outcome
     assert candidate.contract == CONTRACT_NAME
     assert candidate.contract_version == CONTRACT_VERSION
     assert candidate.generation_receipt is not None

@@ -10,12 +10,23 @@ import json
 import unicodedata
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
+from statblocks_v1.application.commands import GenerateStatblockCommandV1
 from statblocks_v1.domain.assets import AssetBindingV1
+from statblocks_v1.domain.candidate_operations import (
+    GENERATE_CANDIDATE_OPERATION,
+    CandidateGenerationFailureSnapshotV1,
+    CandidateGenerationOperationV1,
+    CandidateGenerationStatusV1,
+)
 from statblocks_v1.domain.canonicalization import canonicalize_definition
-from statblocks_v1.domain.errors import AmbiguousRequestPayloadError
+from statblocks_v1.domain.errors import (
+    AmbiguousRequestPayloadError,
+    GenerateOperationIntegrityError,
+)
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     IdempotencyRecordV1,
@@ -83,6 +94,262 @@ class CandidateRepository(Protocol):
     def get_for_acceptance(self, candidate_id: str) -> GeneratedStatblockCandidateV1:
         """Load retained candidate audit data without applying workflow expiry."""
         ...
+
+
+def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> str:
+    """Digest caller-controlled generate intent. ``request_id`` is the durable key, not digested."""
+
+    return compute_request_digest(
+        GENERATE_CANDIDATE_OPERATION,
+        {
+            "ruleset": command.ruleset.model_dump(mode="json"),
+            "source": command.source.model_dump(mode="json"),
+            "intent": command.intent.model_dump(mode="json"),
+            "context": command.context.model_dump(mode="json"),
+            "asset_options": command.asset_options.model_dump(mode="json"),
+            "actor": command.caller.actor,
+        },
+    )
+
+
+def compute_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -> str:
+    """Fingerprint the exact replayable candidate payload bound at completion.
+
+    Digests the full candidate model as persisted/returned on replay (definition,
+    receipts, assets, warnings, asset brief, timestamps, expiry, source locator,
+    and identity fields) so a recreated document cannot pass completed replay by
+    copying only a subset of fields.
+    """
+
+    return compute_request_digest(
+        "generate_candidate_outcome",
+        candidate.model_dump(mode="json"),
+    )
+
+
+def candidate_belongs_to_generate_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateGenerationOperationV1,
+) -> bool:
+    """True only when the stored candidate was produced for this generate operation.
+
+    Same-operation stale-worker convergence is valid. An unrelated or recreated
+    document that happens to share ``candidate_id`` must fail closed. Binding
+    includes ``request_digest`` so a replaced document under the same ID cannot
+    be treated as canonical for a different generate intent. When the operation
+    already stores ``outcome_digest``, the candidate's computed outcome must match.
+    """
+
+    if candidate.candidate_id != operation.candidate_id:
+        return False
+    receipt = candidate.generation_receipt
+    if receipt is None:
+        return False
+    if isinstance(receipt, Mapping):
+        try:
+            from statblocks_v1.domain.resources import GenerationReceiptV1
+
+            receipt = GenerationReceiptV1.model_validate(receipt)
+        except Exception:
+            return False
+    if receipt.request_digest is None:
+        return False
+    if not (
+        receipt.request_id == operation.request_id
+        and receipt.caller_scope == operation.caller_scope
+        and receipt.request_digest == operation.request_digest
+    ):
+        return False
+    if operation.outcome_digest is None:
+        return True
+    return compute_candidate_outcome_digest(candidate) == operation.outcome_digest
+
+
+def require_candidate_owned_by_generate_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateGenerationOperationV1,
+    *,
+    reason: str,
+) -> None:
+    """Fail closed when the candidate is not bound to the generate operation."""
+
+    if not candidate_belongs_to_generate_operation(candidate, operation):
+        raise GenerateOperationIntegrityError(
+            operation.request_id,
+            candidate_id=operation.candidate_id,
+            reason=reason,
+        )
+
+
+def verify_generate_operation_lookup_identity(
+    record: CandidateGenerationOperationV1,
+    *,
+    caller_scope: str,
+    request_id: str,
+) -> CandidateGenerationOperationV1:
+    """Fail closed when stored identity/state does not match the hashed lookup key."""
+
+    if (
+        record.caller_scope != caller_scope
+        or record.request_id != request_id
+        or record.operation != GENERATE_CANDIDATE_OPERATION
+    ):
+        raise GenerateOperationIntegrityError(
+            request_id,
+            candidate_id=record.candidate_id,
+            reason="Stored generate operation identity does not match lookup key",
+        )
+    if record.status is CandidateGenerationStatusV1.pending:
+        if (
+            record.failure is not None
+            or record.candidate_expires_at is not None
+            or record.completed_at is not None
+            or record.outcome_digest is not None
+        ):
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Pending generate operation carries terminal fields",
+            )
+    elif record.status is CandidateGenerationStatusV1.completed:
+        if record.candidate_expires_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing candidate_expires_at",
+            )
+        if record.outcome_digest is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing outcome_digest",
+            )
+        if record.failure is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation must not carry failure",
+            )
+        if record.completed_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed generate operation is missing completed_at",
+            )
+    elif record.status is CandidateGenerationStatusV1.failed:
+        if record.failure is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation is missing failure",
+            )
+        if record.candidate_expires_at is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation must not carry candidate_expires_at",
+            )
+        if record.outcome_digest is not None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation must not carry outcome_digest",
+            )
+        if record.completed_at is None:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed generate operation is missing completed_at",
+            )
+    return record
+
+
+@dataclass(frozen=True)
+class GenerateBeginClaimed:
+    """Caller owns a pending lease and must run generation against ``candidate_id``."""
+
+    operation: CandidateGenerationOperationV1
+
+
+@dataclass(frozen=True)
+class GenerateBeginCompleted:
+    """Durable completed operation; replay must verify candidate ownership."""
+
+    operation: CandidateGenerationOperationV1
+
+    @property
+    def candidate_id(self) -> str:
+        return self.operation.candidate_id
+
+    @property
+    def candidate_expires_at(self) -> datetime | None:
+        return self.operation.candidate_expires_at
+
+
+@dataclass(frozen=True)
+class GenerateBeginFailed:
+    failure: CandidateGenerationFailureSnapshotV1
+
+
+@dataclass(frozen=True)
+class GenerateBeginInProgress:
+    candidate_id: str
+    lease_expires_at: datetime
+
+
+@dataclass(frozen=True)
+class GenerateCompleteResult:
+    """Outcome of complete_generate with fresh-vs-convergence observability."""
+
+    candidate: GeneratedStatblockCandidateV1
+    already_completed: bool
+
+
+GenerateBeginResult = (
+    GenerateBeginClaimed
+    | GenerateBeginCompleted
+    | GenerateBeginFailed
+    | GenerateBeginInProgress
+)
+
+
+class CandidateGenerationOperationRepository(Protocol):
+    """Durable generate-request reservation, completion, and terminal-failure store."""
+
+    def get_generate_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateGenerationOperationV1 | None: ...
+
+    def begin_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> GenerateBeginResult: ...
+
+    def complete_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> GenerateCompleteResult: ...
+
+    def fail_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1: ...
 
 
 class StatblockRepository(Protocol):

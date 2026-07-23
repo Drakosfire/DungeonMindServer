@@ -21,7 +21,9 @@ from statblocks_v1.application.generation import GenerationFailureV1
 from statblocks_v1.domain.errors import (
     AmbiguousRequestPayloadError,
     CandidateExpiredError,
+    CandidateMissingBeforeExpiryError,
     CandidateNotFoundError,
+    GenerateOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
@@ -44,6 +46,8 @@ _DOMAIN_STATUS: dict[type[StatblockV1Error], int] = {
     InternalServiceMisconfiguredError: 503,
     CandidateNotFoundError: 404,
     CandidateExpiredError: 410,
+    CandidateMissingBeforeExpiryError: 500,
+    GenerateOperationIntegrityError: 500,
     StatblockNotFoundError: 404,
     RevisionNotFoundError: 404,
     IdempotencyConflictError: 409,
@@ -80,6 +84,16 @@ _GENERATION_FAILURE_POLICY: dict[str, tuple[int, str, str]] = {
     ),
     "revision_not_found": (404, "revision_not_found", "Revision was not found"),
     "statblock_not_found": (404, "statblock_not_found", "Statblock was not found"),
+    "generation_in_progress": (
+        409,
+        "generation_in_progress",
+        "Candidate generation is already in progress for this request",
+    ),
+    "generation_replay_expired": (
+        410,
+        "generation_replay_expired",
+        "Completed generation points to an expired candidate",
+    ),
 }
 
 

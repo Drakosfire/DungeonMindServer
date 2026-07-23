@@ -1,6 +1,7 @@
 """Validated, secret-safe runtime configuration for the statblock v1 boundary."""
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -61,6 +62,8 @@ class StatblocksV1Settings:
     candidates_collection: str
     statblocks_collection: str
     idempotency_collection: str
+    generate_ops_collection: str
+    generate_lease_seconds: int
     asset_gateway_enabled: bool
     asset_timeout_seconds: float
     feature_enabled: bool
@@ -82,20 +85,47 @@ class StatblocksV1Settings:
             model = configured_model if configured_model else _policy_model()
         except InternalServiceMisconfiguredError as error:
             raise ConfigurationError("structured generation model is not configured") from error
+        provider_timeout_seconds = _positive_float("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", 45)
+        provider_max_retries = _positive_int("STATBLOCKS_V1_OPENAI_MAX_RETRIES", 1)
+        asset_timeout_seconds = _positive_float("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", 20)
+        # Lease must cover provider retries, post-provider asset work, and margin.
+        # Ceil so fractional timeouts cannot shrink the budget via truncation.
+        provider_retry_budget_seconds = math.ceil(
+            provider_timeout_seconds * (provider_max_retries + 1)
+            + asset_timeout_seconds
+            + 30
+        )
+        default_lease = max(120, provider_retry_budget_seconds)
+        generate_lease_seconds = _positive_int(
+            "STATBLOCKS_V1_GENERATE_LEASE_SECONDS",
+            default_lease,
+            minimum=1,
+        )
+        if generate_lease_seconds < provider_retry_budget_seconds:
+            raise ConfigurationError(
+                "STATBLOCKS_V1_GENERATE_LEASE_SECONDS must cover the full provider "
+                "retry budget plus asset generation timeout "
+                "(timeout × (retries+1) + asset_timeout + margin)"
+            )
         return cls(
             internal_api_key=_required("DUNGEONBUDDY_INTERNAL_API_KEY"),
             openai_api_key=openai_api_key,
             model=model,
-            provider_timeout_seconds=_positive_float("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", 45),
-            provider_max_retries=_positive_int("STATBLOCKS_V1_OPENAI_MAX_RETRIES", 1),
+            provider_timeout_seconds=provider_timeout_seconds,
+            provider_max_retries=provider_max_retries,
             candidate_ttl_seconds=_positive_int("STATBLOCKS_V1_CANDIDATE_TTL_SECONDS", 86400, minimum=1),
             firestore_enabled=_boolean("STATBLOCKS_V1_FIRESTORE_ENABLED", True),
             firestore_namespace=namespace,
             candidates_collection=os.getenv("STATBLOCKS_V1_CANDIDATES_COLLECTION", "dungeonbuddy_statblock_candidates_v1"),
             statblocks_collection=os.getenv("STATBLOCKS_V1_STATBLOCKS_COLLECTION", "dungeonbuddy_statblocks_v1"),
             idempotency_collection=os.getenv("STATBLOCKS_V1_IDEMPOTENCY_COLLECTION", "dungeonbuddy_statblock_idempotency_v1"),
+            generate_ops_collection=os.getenv(
+                "STATBLOCKS_V1_GENERATE_OPS_COLLECTION",
+                "dungeonbuddy_statblock_candidate_generate_ops_v1",
+            ),
+            generate_lease_seconds=generate_lease_seconds,
             asset_gateway_enabled=_boolean("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", False),
-            asset_timeout_seconds=_positive_float("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", 20),
+            asset_timeout_seconds=asset_timeout_seconds,
             feature_enabled=feature_enabled,
             allow_reads_when_disabled=_boolean("STATBLOCKS_V1_ALLOW_READS_WHEN_DISABLED", True),
             structured_logging=_boolean("STATBLOCKS_V1_STRUCTURED_LOGGING", True),

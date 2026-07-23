@@ -26,8 +26,10 @@ from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 from statblocks_v1.infrastructure.firestore_repositories import (
     CANDIDATES_COLLECTION,
+    GENERATE_OPS_COLLECTION,
     IDEMPOTENCY_COLLECTION,
     STATBLOCKS_COLLECTION,
+    FirestoreCandidateGenerationOperationRepository,
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
     _dump,
@@ -53,10 +55,16 @@ def bruiser(load_fixture):
 
 
 def test_v1_collection_layout_is_isolated():
-    assert (CANDIDATES_COLLECTION, STATBLOCKS_COLLECTION, IDEMPOTENCY_COLLECTION) == (
+    assert (
+        CANDIDATES_COLLECTION,
+        STATBLOCKS_COLLECTION,
+        IDEMPOTENCY_COLLECTION,
+        GENERATE_OPS_COLLECTION,
+    ) == (
         "dungeonbuddy_statblock_candidates_v1",
         "dungeonbuddy_statblocks_v1",
         "dungeonbuddy_statblock_idempotency_v1",
+        "dungeonbuddy_statblock_candidate_generate_ops_v1",
     )
 
 
@@ -299,3 +307,122 @@ def test_firestore_missing_statblock_is_not_parent_mismatch(firestore_client, br
                 definition=bruiser,
             )
         )
+
+
+def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bruiser):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        GenerateBeginCompleted,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+    from statblocks_v1.domain.profiles import RulesetRef
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    candidates = FirestoreCandidateRepository(firestore_client, clock=lambda: now)
+    ops = FirestoreCandidateGenerationOperationRepository(
+        firestore_client,
+        clock=lambda: now,
+        candidates_collection=CANDIDATES_COLLECTION,
+        generate_ops_collection=GENERATE_OPS_COLLECTION,
+    )
+    command = GenerateStatblockCommandV1(
+        request_id=f"fs-gen-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    candidate_id = f"cand_fsgen{suffix}"
+
+    claimed = ops.begin_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: candidate_id,
+        lease_owner="owner-a",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(claimed, GenerateBeginClaimed)
+    assert claimed.operation.candidate_id == candidate_id
+
+    with pytest.raises(IdempotencyConflictError):
+        ops.begin_generate(
+            caller_scope="dungeonbuddy",
+            request_id=command.request_id,
+            request_digest=compute_generate_candidate_digest(
+                command.model_copy(
+                    update={"source": SourceSnapshotV1(name_hint="X", description="changed")}
+                )
+            ),
+            candidate_id_factory=lambda: f"cand_other{suffix}",
+            lease_owner="owner-b",
+            lease_duration_seconds=120,
+        )
+
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=bruiser,
+        validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
+        generation_receipt=GenerationReceiptV1(
+            request_id=command.request_id,
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="dungeonbuddy",
+            request_digest=digest,
+        ),
+        created_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    stored = ops.complete_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=candidate,
+    )
+    assert stored.candidate.candidate_id == candidate_id
+    assert stored.already_completed is False
+    assert candidates.get(candidate_id, now=now).candidate_id == candidate_id
+
+    # Restart-style replay via new repository instances.
+    ops2 = FirestoreCandidateGenerationOperationRepository(firestore_client, clock=lambda: now)
+    began = ops2.begin_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: f"cand_new{suffix}",
+        lease_owner="owner-c",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(began, GenerateBeginCompleted)
+    assert began.candidate_id == candidate_id
+
+    # Concurrent complete converges on one document.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                ops.complete_generate,
+                caller_scope="dungeonbuddy",
+                request_id=command.request_id,
+                request_digest=digest,
+                lease_owner="stale",
+                candidate=candidate,
+            )
+            for _ in range(2)
+        ]
+        results = [future.result() for future in futures]
+    assert {item.candidate.candidate_id for item in results} == {candidate_id}
+    assert all(item.already_completed for item in results)

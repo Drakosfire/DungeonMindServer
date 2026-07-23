@@ -18,6 +18,8 @@ old key; this version accepts one active key at a time.
 | `STATBLOCKS_V1_CANDIDATES_COLLECTION` | `dungeonbuddy_statblock_candidates_v1` | Candidate collection |
 | `STATBLOCKS_V1_STATBLOCKS_COLLECTION` | `dungeonbuddy_statblocks_v1` | Logical statblocks and revisions |
 | `STATBLOCKS_V1_IDEMPOTENCY_COLLECTION` | `dungeonbuddy_statblock_idempotency_v1` | Idempotency records |
+| `STATBLOCKS_V1_GENERATE_OPS_COLLECTION` | `dungeonbuddy_statblock_candidate_generate_ops_v1` | Candidate generate-operation leases |
+| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, ceil(timeout×(retries+1)+asset_timeout+30))` | Pending generate lease; must cover provider retries plus asset generation |
 | `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED` | `false` | Enables optional asset pipeline wiring |
 | `STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS` | `20` | Asset pipeline timeout policy |
 | `FAL_KEY` | required when assets enabled | fal.ai credential for text-to-image |
@@ -36,10 +38,30 @@ generation endpoints return `503 generation_disabled`; persisted reads retain
 service when Firestore is configured and `ALLOW_READS_WHEN_DISABLED=true`.
 
 Firestore documents use the PR15 layout: candidates, logical statblocks with
-`revisions` subcollections, and idempotency records. Configure a Firestore TTL
-policy on candidate `expires_at`; never TTL revisions or idempotency records.
+`revisions` subcollections, and idempotency records, plus PR23 generate-operation
+records in `STATBLOCKS_V1_GENERATE_OPS_COLLECTION`. Configure a Firestore TTL
+policy on candidate `expires_at`; never TTL revisions, PR15 idempotency records,
+or candidate generate-operation records.
 Provision indexes required by operational list/query workflows, least-privilege
 service-account access, and exports/backups for immutable revisions.
+
+Generate-request idempotency keys are body `request_id` values namespaced by
+`caller_scope` and operation `generate_candidate`. The pending lease
+(`STATBLOCKS_V1_GENERATE_LEASE_SECONDS`) must cover the full provider retry
+budget plus asset-generation timeout
+(`timeout × (retries+1) + asset_timeout + margin`, ceiling fractional timeouts)
+so an in-flight worker holding the lease through provider and asset work is not
+spuriously taken over. Completed operations retain `candidate_expires_at` (bound
+to the persisted candidate's `expires_at`) so a missing candidate before that
+instant is treated as integrity failure rather than normal expiry; a present
+candidate whose `expires_at` disagrees with the operation is also integrity
+failure. They also retain `outcome_digest` (canonical fingerprint of the full
+persisted candidate payload) so completed replay fails closed when a candidate
+is recreated under the same ID with any response-significant field changed.
+Document identity fields must match the hashed lookup key; completed records
+without `candidate_expires_at` or `outcome_digest` are integrity failures.
+Completed replay also requires the candidate generation receipt to bind the
+same `request_digest`.
 
 The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore

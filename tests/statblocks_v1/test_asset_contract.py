@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from statblocks_v1.application.assets import AssetGateway
 from statblocks_v1.application.commands import AssetOptionsV1
-from statblocks_v1.application.generation import GenerationServiceV1
+from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
 from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.assets import AssetBindingV1, AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.digests import compute_definition_digest
@@ -13,8 +13,10 @@ from statblocks_v1.domain.resources import AssetWarningCode
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.infrastructure.fake_asset_gateway import FakeAssetGateway
 from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
-from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
-
+from statblocks_v1.infrastructure.memory_repositories import (
+    InMemoryCandidateGenerationOperationRepository,
+    InMemoryCandidateRepository,
+)
 
 def _asset() -> AssetRefV1:
     return AssetRefV1(
@@ -52,19 +54,34 @@ def test_asset_gateway_populates_refs_and_failure_warns(load_fixture) -> None:
         caller=CallerProvenanceV1(caller_scope="tests"),
     )
 
-    def generate(gateway: AssetGateway):
+    def generate(gateway: AssetGateway, *, request_id: str, candidate_id: str):
+        candidates = InMemoryCandidateRepository(clock=lambda: now)
+        command_for_call = command.model_copy(update={"request_id": request_id})
         return GenerationServiceV1(
             provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
-            candidates=InMemoryCandidateRepository(clock=lambda: now),
+            candidates=candidates,
             settings=GenerationSettingsV1("test-model", 1, 0, 60),
             clock=lambda: now,
-            candidate_id_factory=lambda: "cand_asset",
+            candidate_id_factory=lambda: candidate_id,
             asset_gateway=gateway,
-        ).generate(command)
+            generate_operations=InMemoryCandidateGenerationOperationRepository(
+                candidates, clock=lambda: now
+            ),
+        ).generate(command_for_call)
 
-    generated = generate(FakeAssetGateway([_asset()]))
-    warning = generate(FakeAssetGateway(error=RuntimeError("pipeline unavailable")))
+    generated = generate(
+        FakeAssetGateway([_asset()]),
+        request_id="asset-contract-ok",
+        candidate_id="cand_assetok",
+    )
+    warning = generate(
+        FakeAssetGateway(error=RuntimeError("pipeline unavailable")),
+        request_id="asset-contract-warn",
+        candidate_id="cand_assetwarn",
+    )
 
+    assert not isinstance(generated, GenerationFailureV1)
+    assert not isinstance(warning, GenerationFailureV1)
     assert generated.assets == [_asset()]
     assert generated.asset_brief == AssetBriefV1(prompt="A brutal enforcer.")
     assert warning.assets == []

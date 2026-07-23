@@ -37,7 +37,11 @@ from statblocks_v1.application.commands import (
     GenerateStatblockCommandV1,
     ReviseStatblockCommandV1,
 )
-from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+from statblocks_v1.application.generation import (
+    GenerateOutcomeV1,
+    GenerationFailureV1,
+    GenerationServiceV1,
+)
 from statblocks_v1.application.repositories import (
     CandidateRepository,
     StatblockPersistenceRepository,
@@ -62,23 +66,42 @@ _AUTH_ERROR_RESPONSES = {
     },
 }
 
-_CANDIDATE_ERROR_RESPONSES = {
+_GENERATE_ERROR_RESPONSES = {
     **_AUTH_ERROR_RESPONSES,
+    409: {
+        "model": ErrorEnvelopeV1,
+        "description": "Idempotency conflict or generation already in progress",
+    },
+    410: {
+        "model": ErrorEnvelopeV1,
+        "description": "Completed generation points to an expired or TTL-deleted candidate",
+    },
     422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
     429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
     500: {
         "model": ErrorEnvelopeV1,
-        "description": "Unexpected generation failure (fail-closed unknown outcome)",
+        "description": (
+            "Unexpected generation failure, generate-operation integrity failure, "
+            "or completed generate points to a candidate missing before its declared expiry"
+        ),
     },
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
 
+# Revise remains non-idempotent: do not advertise generate-only replay/conflict codes.
 _REVISE_ERROR_RESPONSES = {
-    **_CANDIDATE_ERROR_RESPONSES,
+    **_AUTH_ERROR_RESPONSES,
     404: {
         "model": ErrorEnvelopeV1,
         "description": "Source statblock or revision not found",
     },
+    422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
+    429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
+    500: {
+        "model": ErrorEnvelopeV1,
+        "description": "Unexpected generation failure",
+    },
+    504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
 
 _CANDIDATE_READ_ERROR_RESPONSES = {
@@ -139,7 +162,12 @@ def _issue_counts(receipt: object) -> dict[str, int]:
     return counts
 
 
-def _bind_candidate(http_request: Request, candidate: GeneratedStatblockCandidateV1) -> None:
+def _bind_candidate(
+    http_request: Request,
+    candidate: GeneratedStatblockCandidateV1,
+    *,
+    replayed: bool = False,
+) -> None:
     receipt = candidate.generation_receipt
     bind_outcome(
         http_request,
@@ -155,20 +183,22 @@ def _bind_candidate(http_request: Request, candidate: GeneratedStatblockCandidat
         provider_latency_ms=receipt.latency_ms if receipt else None,
         input_tokens=receipt.input_tokens if receipt else None,
         output_tokens=receipt.output_tokens if receipt else None,
+        idempotency_replay=replayed,
     )
     log_operation(
-        "candidate_persisted",
+        "candidate_generate_replay" if replayed else "candidate_persisted",
         candidate_id=candidate.candidate_id,
         definition_digest=candidate.validation_receipt.definition_digest,
         asset_count=len(candidate.assets),
         asset_warning_count=len(candidate.asset_warnings),
+        idempotency_replay=replayed,
     )
 
 
 @router.post(
     "/statblock-candidates:generate",
     response_model=GeneratedStatblockCandidateV1,
-    responses=_CANDIDATE_ERROR_RESPONSES,
+    responses=_GENERATE_ERROR_RESPONSES,
     operation_id="generate_statblock_candidate_v1",
     dependencies=[Depends(require_generation_enabled)],
 )
@@ -190,7 +220,10 @@ async def generate_candidate(
     if isinstance(result, GenerationFailureV1):
         bind_outcome(http_request, result.kind, operation="candidate_generate")
         raise_for_generation_failure(result)
-    _bind_candidate(http_request, result)
+    if isinstance(result, GenerateOutcomeV1):
+        _bind_candidate(http_request, result.candidate, replayed=result.replayed)
+        return result.candidate
+    _bind_candidate(http_request, result, replayed=False)
     return result
 
 
