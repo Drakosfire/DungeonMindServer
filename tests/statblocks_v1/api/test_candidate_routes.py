@@ -285,6 +285,7 @@ def test_generation_failures_use_typed_envelopes(api_client, outcome, status, co
         candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
         candidate_id_factory=lambda: "cand_2",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
     )
 
     response = client.post(
@@ -303,11 +304,13 @@ def test_ruleset_and_source_digest_mismatches_are_not_provider_unavailable(
     client, _, headers, *_ = api_client
     payload = dict(load_fixture("simple_bruiser"))
     payload["ruleset"] = {"system": "dnd5e", "edition": "2014", "house_ruleset_id": None}
+    candidates = InMemoryCandidateRepository()
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider(payload),
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
         candidate_id_factory=lambda: "cand_ruleset",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
     )
 
     ruleset = client.post(
@@ -499,6 +502,13 @@ def test_validate_and_openapi_models(api_client, load_fixture) -> None:
     assert "422" in revise["responses"]
     assert "500" in revise["responses"]
     assert "503" in revise["responses"]
+    # Revise remains non-idempotent: do not advertise generate-only replay codes.
+    assert "409" not in revise["responses"]
+    assert "410" not in revise["responses"]
+    assert "idempotency" not in revise["responses"].get("500", {}).get("description", "").lower()
+    assert "generate-operation" not in revise["responses"].get("500", {}).get(
+        "description", ""
+    ).lower()
 
 
 class _LegacyEchoBody(BaseModel):
@@ -558,6 +568,7 @@ def test_production_generation_service_wires_persistence_resolver(monkeypatch) -
     service = build_generation_service(
         candidates=candidates,
         persistence=persistence,
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
         provider=DummyProvider(),
     )
     assert isinstance(service._definition_resolver, PersistenceDefinitionResolver)

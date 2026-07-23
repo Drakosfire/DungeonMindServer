@@ -23,9 +23,12 @@ Stored `caller_scope`, `operation`, and `request_id` must match those key
 components; mismatches fail closed as integrity errors. Records reserve one
 `candidate_id` before provider work and transition `pending → completed|failed`.
 On completion they **must** retain `candidate_expires_at` (without embedding
-mechanics) so premature candidate loss fails closed as an integrity error while
-post-expiry TTL deletion returns typed expiry. A completed record missing
-`candidate_expires_at` is malformed and must not be treated as ordinary expiry.
+mechanics) equal to the persisted candidate's `expires_at` so premature candidate
+loss fails closed as an integrity error while post-expiry TTL deletion returns
+typed expiry. A completed record missing `candidate_expires_at` is malformed and
+must not be treated as ordinary expiry. Replay treats `operation.candidate_expires_at`
+as the authority for 410 decisions, but a present candidate whose `expires_at`
+disagrees with that field is an integrity failure (not success and not 410).
 Completed operations also retain `outcome_digest` (canonical fingerprint of the
 full persisted candidate payload) so replay cannot accept a recreated candidate
 that only copies a subset of fields. Candidate create and operation completion

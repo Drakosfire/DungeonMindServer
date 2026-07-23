@@ -66,7 +66,7 @@ _AUTH_ERROR_RESPONSES = {
     },
 }
 
-_CANDIDATE_ERROR_RESPONSES = {
+_GENERATE_ERROR_RESPONSES = {
     **_AUTH_ERROR_RESPONSES,
     409: {
         "model": ErrorEnvelopeV1,
@@ -88,12 +88,20 @@ _CANDIDATE_ERROR_RESPONSES = {
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
 
+# Revise remains non-idempotent: do not advertise generate-only replay/conflict codes.
 _REVISE_ERROR_RESPONSES = {
-    **_CANDIDATE_ERROR_RESPONSES,
+    **_AUTH_ERROR_RESPONSES,
     404: {
         "model": ErrorEnvelopeV1,
         "description": "Source statblock or revision not found",
     },
+    422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
+    429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
+    500: {
+        "model": ErrorEnvelopeV1,
+        "description": "Unexpected generation failure",
+    },
+    504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
 
 _CANDIDATE_READ_ERROR_RESPONSES = {
@@ -190,7 +198,7 @@ def _bind_candidate(
 @router.post(
     "/statblock-candidates:generate",
     response_model=GeneratedStatblockCandidateV1,
-    responses=_CANDIDATE_ERROR_RESPONSES,
+    responses=_GENERATE_ERROR_RESPONSES,
     operation_id="generate_statblock_candidate_v1",
     dependencies=[Depends(require_generation_enabled)],
 )

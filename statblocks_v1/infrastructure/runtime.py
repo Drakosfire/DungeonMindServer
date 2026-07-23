@@ -159,6 +159,10 @@ def build_generation_service(
     generate_ops = generate_operations
     if generate_ops is None and client is not None:
         generate_ops = build_generate_operation_repository(client)
+    if generate_ops is None:
+        raise InternalServiceMisconfiguredError(
+            "Candidate generate-operation repository is not configured"
+        )
     try:
         asset_gateway = build_asset_gateway(settings, pipeline=asset_pipeline)
     except InternalServiceMisconfiguredError:

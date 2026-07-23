@@ -35,18 +35,27 @@ def test_generate_lease_must_cover_full_provider_retry_budget(monkeypatch) -> No
     monkeypatch.setenv("OPENAI_API_KEY", "openai")
     monkeypatch.setenv("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "45.7")
     monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "1")
-    # Full budget = ceil(45.7 * 2 + 30) = ceil(121.4) = 122
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "121")
-    with pytest.raises(ConfigurationError, match="full provider"):
+    monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
+    # Full budget = ceil(45.7 * 2 + 20 + 30) = ceil(141.4) = 142
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "141")
+    with pytest.raises(ConfigurationError, match="asset generation"):
         StatblocksV1Settings.from_environment()
 
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "122")
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "142")
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == 122
+    assert settings.generate_lease_seconds == 142
     # Default without explicit lease uses ceil, not truncating int().
     monkeypatch.delenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", raising=False)
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == max(120, 122)
+    assert settings.generate_lease_seconds == max(120, 142)
+
+    # Asset timeout above the fixed margin must still force a larger lease.
+    monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "60")
+    settings = StatblocksV1Settings.from_environment()
+    assert settings.generate_lease_seconds == max(120, 182)
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "181")
+    with pytest.raises(ConfigurationError, match="asset generation"):
+        StatblocksV1Settings.from_environment()
 
 
 def test_firestore_disabled_blocks_repository_construction(monkeypatch) -> None:
@@ -104,6 +113,7 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
 
     from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
         InMemoryCandidateRepository,
         InMemoryStatblockPersistenceRepository,
     )
@@ -112,9 +122,11 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
         return []
 
     provider = DummyProvider()
+    candidates = InMemoryCandidateRepository()
     service = build_generation_service(
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         persistence=InMemoryStatblockPersistenceRepository(),
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
         asset_pipeline=pipeline,
         provider=provider,
     )
@@ -124,8 +136,31 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
     assert service._settings.candidate_ttl_seconds == 30
     assert service._asset_gateway is not None
     assert service._provider is provider
-    assert service._generate_operations is None  # no firestore client in this composition
+    assert service._generate_operations is not None
     assert service._generate_lease_seconds >= 120
+
+
+def test_build_generation_service_requires_generate_operations(monkeypatch) -> None:
+    class DummyProvider:
+        provider_name = "dummy"
+
+        def generate_definition(self, **kwargs):
+            raise AssertionError("not called")
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRepository,
+        InMemoryStatblockPersistenceRepository,
+    )
+
+    with pytest.raises(InternalServiceMisconfiguredError, match="generate-operation"):
+        build_generation_service(
+            candidates=InMemoryCandidateRepository(),
+            persistence=InMemoryStatblockPersistenceRepository(),
+            provider=DummyProvider(),
+        )
 
 
 def test_logging_settings_applied(monkeypatch) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import secrets
 import time
 import unicodedata
@@ -182,11 +183,12 @@ class GenerationServiceV1:
         pinned = _pin_generate_intent(command)
         if isinstance(pinned, GenerationFailureV1):
             return pinned
+        # Fail closed: never allocate a candidate without durable idempotency.
         if self._generate_operations is None:
-            result = self._run(pinned)
-            if isinstance(result, GenerationFailureV1):
-                return result
-            return GenerateOutcomeV1(candidate=result, replayed=False)
+            return GenerationFailureV1(
+                "persistence_unavailable",
+                "Candidate generate-operation repository is not configured",
+            )
         return self._generate_idempotent(pinned)
 
     def revise(self, command: ReviseStatblockCommandV1) -> GenerationResultV1:
@@ -320,6 +322,8 @@ class GenerationServiceV1:
         return self._outcome_from_completed_generate(
             caller_scope=caller_scope,
             request_id=request_id,
+            request_digest=request_digest,
+            reserved_candidate_id=claim.candidate_id,
             replayed=completed.already_completed,
         )
 
@@ -328,9 +332,16 @@ class GenerationServiceV1:
         *,
         caller_scope: str,
         request_id: str,
+        request_digest: str,
+        reserved_candidate_id: str,
         replayed: bool,
     ) -> GenerationResultV1:
-        """Apply authoritative expiry after repository complete/reconcile success."""
+        """Apply authoritative expiry after repository complete/reconcile success.
+
+        Reloaded completed state must still match this attempt's reserved candidate
+        and pinned request digest before any candidate is returned (same binding
+        checks as terminal-race reconciliation).
+        """
 
         assert self._generate_operations is not None
         existing = self._generate_operations.get_generate_operation(
@@ -339,6 +350,24 @@ class GenerationServiceV1:
         if existing is None:
             return GenerationFailureV1(
                 "persistence_unavailable", "Persistence is unavailable"
+            )
+        if existing.candidate_id != reserved_candidate_id:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Completed generate operation candidate_id does not match "
+                    "this attempt's reservation"
+                ),
+            )
+        if existing.request_digest != request_digest:
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Completed generate operation request_digest does not match "
+                    "this attempt's pinned digest"
+                ),
             )
         if existing.status.value != "completed":
             raise GenerateOperationIntegrityError(
@@ -460,6 +489,15 @@ class GenerationServiceV1:
                 reason=(
                     "Completed generate points to a candidate that does not belong "
                     "to this operation"
+                ),
+            )
+        if _as_utc(candidate.expires_at) != _as_utc(candidate_expires_at):
+            raise GenerateOperationIntegrityError(
+                operation.request_id,
+                candidate_id=candidate_id,
+                reason=(
+                    "Completed generate candidate.expires_at does not match "
+                    "operation.candidate_expires_at"
                 ),
             )
         return candidate
@@ -594,11 +632,25 @@ class GenerationServiceV1:
         return self._candidates.create(candidate)
 
 
-def _default_generate_lease_seconds(settings: GenerationSettingsV1) -> int:
-    """Lease must outlast the full provider retry budget (timeout × attempts + margin)."""
+def _as_utc(value: datetime) -> datetime:
+    """Normalize naive datetimes to UTC for equality checks."""
 
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _default_generate_lease_seconds(settings: GenerationSettingsV1) -> int:
+    """Lease must outlast provider retries, asset generation, and fixed margin."""
+
+    # Match StatblocksV1Settings default when composition does not pass an explicit lease.
+    asset_timeout_seconds = float(
+        os.getenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
+    )
     provider_budget = math.ceil(
-        float(settings.timeout_seconds) * (settings.max_retries + 1) + 30
+        float(settings.timeout_seconds) * (settings.max_retries + 1)
+        + asset_timeout_seconds
+        + 30
     )
     return max(120, provider_budget)
 
