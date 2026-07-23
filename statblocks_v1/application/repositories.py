@@ -113,21 +113,17 @@ def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> st
 
 
 def compute_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -> str:
-    """Fingerprint the replayable generated outcome bound at completion.
+    """Fingerprint the exact replayable candidate payload bound at completion.
 
-    Covers definition mechanics plus asset refs/warnings so a recreated document
-    that only copies request receipt metadata cannot pass completed replay.
+    Digests the full candidate model as persisted/returned on replay (definition,
+    receipts, assets, warnings, asset brief, timestamps, expiry, source locator,
+    and identity fields) so a recreated document cannot pass completed replay by
+    copying only a subset of fields.
     """
 
     return compute_request_digest(
         "generate_candidate_outcome",
-        {
-            "definition": canonicalize_definition(candidate.definition),
-            "assets": [asset.model_dump(mode="json") for asset in candidate.assets],
-            "asset_warnings": [
-                warning.model_dump(mode="json") for warning in candidate.asset_warnings
-            ],
-        },
+        candidate.model_dump(mode="json"),
     )
 
 

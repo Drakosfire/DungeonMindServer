@@ -277,7 +277,9 @@ class InMemoryCandidateGenerationOperationRepository:
                 )
                 return GenerateCompleteResult(candidate=stored, already_completed=True)
 
-            # First write and stale-worker race: prove ownership before mutate.
+            # First write: prove ownership, then atomic create+complete.
+            # Pending + pre-existing candidate is corruption (create and
+            # completion share one commit); never adopt/promote that state.
             require_candidate_owned_by_generate_operation(
                 candidate,
                 existing,
@@ -285,24 +287,23 @@ class InMemoryCandidateGenerationOperationRepository:
                     "Generate completion candidate does not belong to this operation"
                 ),
             )
-            outcome_digest = compute_candidate_outcome_digest(candidate)
-
             try:
-                stored = self._candidates._create_unlocked(candidate)
-            except ImmutableResourceConflictError:
-                stored = self._candidates._get_unlocked(
+                pre_existing = self._candidates._get_unlocked(
                     existing.candidate_id, now=now, enforce_expiry=False
                 )
-                require_candidate_owned_by_generate_operation(
-                    stored,
-                    existing,
+            except CandidateNotFoundError:
+                pre_existing = None
+            if pre_existing is not None:
+                raise GenerateOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
                     reason=(
-                        "Generate completion found a candidate that does not "
-                        "belong to this operation"
+                        "Pending generate points to an existing candidate document"
                     ),
                 )
-                outcome_digest = compute_candidate_outcome_digest(stored)
 
+            outcome_digest = compute_candidate_outcome_digest(candidate)
+            stored = self._candidates._create_unlocked(candidate)
             self._operations[key] = existing.model_copy(
                 update={
                     "status": CandidateGenerationStatusV1.completed,

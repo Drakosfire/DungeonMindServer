@@ -303,16 +303,56 @@ class GenerationServiceV1:
                 reserved_candidate_id=claim.candidate_id,
                 indeterminate=True,
             )
-        except PersistenceUnavailableError:
-            return GenerationFailureV1(
-                "persistence_unavailable", "Persistence is unavailable"
+        except (PersistenceUnavailableError, CandidateNotFoundError):
+            # Prefer durable completed-op expiry/premature-loss authority over a
+            # generic unavailable mapping when the operation already committed.
+            return self._resolve_after_terminal_race(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                reserved_candidate_id=claim.candidate_id,
+                indeterminate=True,
             )
         except GenerateOperationIntegrityError:
             raise
-        return GenerateOutcomeV1(
-            candidate=completed.candidate,
+        # Never return the repository candidate verbatim: apply the same
+        # operation-expiry + premature-loss semantics as completed replay.
+        return self._outcome_from_completed_generate(
+            caller_scope=caller_scope,
+            request_id=request_id,
             replayed=completed.already_completed,
         )
+
+    def _outcome_from_completed_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        replayed: bool,
+    ) -> GenerationResultV1:
+        """Apply authoritative expiry after repository complete/reconcile success."""
+
+        assert self._generate_operations is not None
+        existing = self._generate_operations.get_generate_operation(
+            caller_scope, request_id
+        )
+        if existing is None:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        if existing.status.value != "completed":
+            raise GenerateOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Generate completion reported success without a completed "
+                    "operation record"
+                ),
+            )
+        loaded = self._load_completed_candidate(existing)
+        if isinstance(loaded, GenerationFailureV1):
+            return loaded
+        return GenerateOutcomeV1(candidate=loaded, replayed=replayed)
 
     def _resolve_after_terminal_race(
         self,

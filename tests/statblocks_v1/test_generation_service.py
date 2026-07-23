@@ -1419,3 +1419,182 @@ def test_generate_replay_rejects_altered_mechanics_same_receipt(load_fixture) ->
     with pytest.raises(GenerateOperationIntegrityError):
         service.generate(_command())
     assert len(provider.calls) == 1
+
+
+def test_complete_path_respects_operation_expiry_when_candidate_retained(
+    load_fixture,
+) -> None:
+    """complete_generate success must not return a candidate past operation expiry."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        GenerateCompleteResult,
+        compute_candidate_outcome_digest,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import CandidateExpiredError
+    from statblocks_v1.domain.receipts import ValidationMode
+    from statblocks_v1.domain.resources import (
+        STATBLOCK_CONTRACT,
+        STATBLOCK_CONTRACT_VERSION,
+        GeneratedStatblockCandidateV1,
+        GenerationReceiptV1,
+    )
+    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+    from statblocks_v1.domain.validation import validate_definition
+    from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    digest = compute_generate_candidate_digest(_command())
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    retained = GeneratedStatblockCandidateV1(
+        candidate_id="cand_1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_generation",
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now["t"],
+            caller_scope="tests",
+            request_digest=digest,
+        ),
+        created_at=now["t"],
+        expires_at=now["t"] + timedelta(hours=24),
+    )
+    candidates._create_unlocked(retained)
+    claimed = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_1",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="worker-a",
+        lease_expires_at=now["t"] + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now["t"],
+        updated_at=now["t"],
+    )
+    terminal = claimed.model_copy(
+        update={
+            "status": CandidateGenerationStatusV1.completed,
+            "completed_at": now["t"],
+            "candidate_expires_at": now["t"] - timedelta(seconds=1),
+            "outcome_digest": compute_candidate_outcome_digest(retained),
+        }
+    )
+
+    class ExpiredCompleteOps:
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return terminal
+
+        def begin_generate(self, **kwargs):
+            return GenerateBeginClaimed(operation=claimed)
+
+        def fail_generate(self, **kwargs):
+            raise AssertionError("fail_generate should not be called")
+
+        def complete_generate(self, **kwargs):
+            return GenerateCompleteResult(candidate=retained, already_completed=True)
+
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ExpiredCompleteOps(),
+        generate_lease_seconds=120,
+    )
+    with pytest.raises(CandidateExpiredError) as exc:
+        service.generate(_command())
+    assert exc.value.details["candidate_id"] == "cand_1"
+
+
+def test_complete_path_missing_candidate_before_expiry_is_premature_loss(
+    load_fixture,
+) -> None:
+    """Missing completed candidate with future op expiry must not be persistence_unavailable."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        GENERATE_CANDIDATE_OPERATION,
+        CandidateGenerationOperationV1,
+        CandidateGenerationStatusV1,
+    )
+    from statblocks_v1.domain.errors import (
+        CandidateMissingBeforeExpiryError,
+        PersistenceUnavailableError,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import InMemoryCandidateRepository
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    digest = compute_generate_candidate_digest(_command())
+    claimed = CandidateGenerationOperationV1(
+        caller_scope="tests",
+        operation=GENERATE_CANDIDATE_OPERATION,
+        request_id="req_generation",
+        request_digest=digest,
+        candidate_id="cand_1",
+        status=CandidateGenerationStatusV1.pending,
+        lease_owner="worker-a",
+        lease_expires_at=now + timedelta(seconds=60),
+        attempt_count=1,
+        created_at=now,
+        updated_at=now,
+    )
+    terminal = claimed.model_copy(
+        update={
+            "status": CandidateGenerationStatusV1.completed,
+            "completed_at": now,
+            "candidate_expires_at": now + timedelta(minutes=5),
+            "outcome_digest": "sha256:" + ("a" * 64),
+        }
+    )
+
+    class MissingCompleteOps:
+        def get_generate_operation(self, caller_scope: str, request_id: str):
+            return terminal
+
+        def begin_generate(self, **kwargs):
+            return GenerateBeginClaimed(operation=claimed)
+
+        def fail_generate(self, **kwargs):
+            raise AssertionError("fail_generate should not be called")
+
+        def complete_generate(self, **kwargs):
+            raise PersistenceUnavailableError()
+
+    service = GenerationServiceV1(
+        provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=MissingCompleteOps(),
+        generate_lease_seconds=120,
+    )
+    with pytest.raises(CandidateMissingBeforeExpiryError) as exc:
+        service.generate(_command())
+    assert exc.value.details["candidate_id"] == "cand_1"

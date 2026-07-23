@@ -52,12 +52,12 @@ budget (`timeout × (retries+1) + margin`, ceiling fractional timeouts) so an
 in-flight worker is not spuriously taken over. Completed operations retain
 `candidate_expires_at` so a missing candidate before that instant is treated as
 integrity failure rather than normal expiry. They also retain `outcome_digest`
-(canonical fingerprint of definition + assets + asset_warnings) so completed
-replay fails closed when a candidate is recreated under the same ID with only
-receipt metadata copied. Document identity fields must match the hashed lookup
-key; completed records without `candidate_expires_at` or `outcome_digest` are
-integrity failures. Completed replay also requires the candidate generation
-receipt to bind the same `request_digest`.
+(canonical fingerprint of the full persisted candidate payload) so completed
+replay fails closed when a candidate is recreated under the same ID with any
+response-significant field changed. Document identity fields must match the
+hashed lookup key; completed records without `candidate_expires_at` or
+`outcome_digest` are integrity failures. Completed replay also requires the
+candidate generation receipt to bind the same `request_digest`.
 
 The provider uses one retry only for transient SDK/provider failures. It never
 retries refusals, malformed/semantic output, or validation failures. Firestore

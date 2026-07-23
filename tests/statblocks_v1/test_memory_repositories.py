@@ -1051,6 +1051,86 @@ def test_generate_operation_model_rejects_impossible_states():
         )
 
 
+def test_generate_ops_complete_rejects_pending_with_existing_candidate(
+    load_fixture,
+):
+    """Pending + existing candidate must not be promoted through complete_generate."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        GenerateBeginClaimed,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import CandidateGenerationStatusV1
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_complete_pending_existing",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    claimed = ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_complete_pending_existing",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_cpend1",
+        lease_owner="owner-a",
+        lease_duration_seconds=60,
+    )
+    assert isinstance(claimed, GenerateBeginClaimed)
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    owned = GeneratedStatblockCandidateV1(
+        candidate_id="cand_cpend1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt={
+            "request_id": "req_complete_pending_existing",
+            "provider": "test",
+            "model": "test-model",
+            "prompt_version": "v1",
+            "schema_version": "v1",
+            "schema_fingerprint": "fp",
+            "generated_at": now,
+            "caller_scope": "tests",
+            "request_digest": digest,
+        },
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+    )
+    candidates._create_unlocked(owned)
+    with pytest.raises(GenerateOperationIntegrityError):
+        ops.complete_generate(
+            caller_scope="tests",
+            request_id="req_complete_pending_existing",
+            request_digest=digest,
+            lease_owner="owner-a",
+            candidate=owned,
+        )
+    stored = ops.get_generate_operation("tests", "req_complete_pending_existing")
+    assert stored is not None
+    assert stored.status is CandidateGenerationStatusV1.pending
+    assert stored.completed_at is None
+    assert stored.outcome_digest is None
+
+
 def test_generate_ops_begin_rejects_pending_with_existing_candidate(
     load_fixture,
 ):
@@ -1326,6 +1406,132 @@ def test_generate_ops_replay_rejects_altered_mechanics_same_receipt(load_fixture
             lease_owner="owner-a",
             candidate=altered,
         )
+
+
+def test_generate_ops_replay_rejects_non_mechanics_payload_mutations(load_fixture):
+    """Outcome digest must bind receipts, expiry, and locator—not just definition."""
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        compute_candidate_outcome_digest,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.errors import GenerateOperationIntegrityError
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_outcome_full",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_outcome_full",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_outfull",
+        lease_owner="owner-a",
+        lease_duration_seconds=60,
+    )
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    receipt = validate_definition(definition, ValidationMode.generation_candidate)
+    original = GeneratedStatblockCandidateV1(
+        candidate_id="cand_outfull",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt={
+            "request_id": "req_outcome_full",
+            "provider": "test",
+            "model": "test-model",
+            "prompt_version": "v1",
+            "schema_version": "v1",
+            "schema_fingerprint": "fp",
+            "generated_at": now,
+            "caller_scope": "tests",
+            "request_digest": digest,
+        },
+        created_at=now,
+        expires_at=now + timedelta(minutes=5),
+        source_locator={
+            "statblock_id": "sb_source01",
+            "revision_id": "rev_source01",
+        },
+    )
+    ops.complete_generate(
+        caller_scope="tests",
+        request_id="req_outcome_full",
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=original,
+    )
+    bound = compute_candidate_outcome_digest(original)
+    stored_op = ops.get_generate_operation("tests", "req_outcome_full")
+    assert stored_op is not None
+    assert stored_op.outcome_digest == bound
+
+    mutations = [
+        original.model_copy(
+            update={
+                "expires_at": now + timedelta(minutes=30),
+            }
+        ),
+        original.model_copy(
+            update={
+                "generation_receipt": original.generation_receipt.model_copy(
+                    update={"model": "mutated-model"}
+                )
+            }
+        ),
+        original.model_copy(
+            update={
+                "validation_receipt": receipt.model_copy(
+                    update={"validated_at": now + timedelta(seconds=1)}
+                )
+            }
+        ),
+        original.model_copy(
+            update={
+                "source_locator": original.source_locator.model_copy(
+                    update={
+                        "statblock_id": "sb_other01",
+                        "revision_id": "rev_other01",
+                    }
+                )
+            }
+        ),
+        original.model_copy(
+            update={"created_at": now + timedelta(seconds=1)}
+        ),
+    ]
+    assert original.generation_receipt is not None
+    assert original.source_locator is not None
+    for mutated in mutations:
+        assert compute_candidate_outcome_digest(mutated) != bound
+        assert mutated.definition == original.definition
+        candidates._candidates["cand_outfull"] = mutated
+        with pytest.raises(GenerateOperationIntegrityError):
+            ops.complete_generate(
+                caller_scope="tests",
+                request_id="req_outcome_full",
+                request_digest=digest,
+                lease_owner="owner-a",
+                candidate=mutated,
+            )
 
 
 def test_generate_ops_begin_rejects_pending_with_foreign_candidate(load_fixture):
