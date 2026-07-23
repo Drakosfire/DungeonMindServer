@@ -202,18 +202,24 @@ def test_generate_expired_candidate_replay_410(api_client) -> None:
     assert first.status_code == 200
     candidate_id = first.json()["candidate_id"]
     # Durable expiry authority is the operation record, not candidate-document TTL.
+    from statblocks_v1.application.repositories import compute_candidate_outcome_digest
+
     service = client.app.dependency_overrides[get_generation_service]()
     ops = service._generate_operations
     assert ops is not None
     operation = ops._operations[("dungeonbuddy", "expire-key")]
     assert operation.status is CandidateGenerationStatusV1.completed
-    ops._operations[("dungeonbuddy", "expire-key")] = operation.model_copy(
-        update={"candidate_expires_at": now - timedelta(seconds=1)}
-    )
-    # Also expire the document so ordinary get() paths stay consistent.
+    past = now - timedelta(seconds=1)
+    # Keep op/candidate expiry agreement and outcome_digest aligned so this is
+    # ordinary 410 after load+verify, not an integrity mismatch.
     stored = candidates.get_for_acceptance(candidate_id)
-    candidates._candidates[candidate_id] = stored.model_copy(
-        update={"expires_at": now - timedelta(seconds=1)}
+    expired_candidate = stored.model_copy(update={"expires_at": past})
+    candidates._candidates[candidate_id] = expired_candidate
+    ops._operations[("dungeonbuddy", "expire-key")] = operation.model_copy(
+        update={
+            "candidate_expires_at": past,
+            "outcome_digest": compute_candidate_outcome_digest(expired_candidate),
+        }
     )
     replay = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",

@@ -450,9 +450,12 @@ class GenerationServiceV1:
     ) -> GenerationResultV1:
         """Load a completed generate's candidate, verifying operation binding.
 
-        Durable expiry authority is ``operation.candidate_expires_at``, not the
-        live candidate document's ``expires_at``. Ownership is checked before any
-        document-TTL rejection can masquerade as ordinary expiry.
+        Load and verify the retained candidate before applying authoritative
+        ``operation.candidate_expires_at``. A present candidate whose
+        ``expires_at`` disagrees with the operation must fail closed as
+        integrity — never as ordinary 410 — even when the operation expiry is
+        already past. Document TTL alone must not short-circuit before
+        ownership / expiry-agreement checks.
         """
 
         if operation.candidate_expires_at is None:
@@ -464,10 +467,6 @@ class GenerationServiceV1:
         candidate_id = operation.candidate_id
         candidate_expires_at = operation.candidate_expires_at
         now = self._clock()
-        if now >= candidate_expires_at:
-            # Operation-recorded expiry is authoritative even if a replaced
-            # candidate document still advertises a later expires_at.
-            raise CandidateExpiredError(candidate_id)
 
         try:
             # Do not enforce candidate-document TTL here: a foreign/replaced
@@ -475,6 +474,9 @@ class GenerationServiceV1:
             # before ownership validation.
             candidate = self._candidates.get_for_acceptance(candidate_id)
         except CandidateNotFoundError as error:
+            # Truly missing: only then is operation expiry an ordinary 410.
+            if now >= candidate_expires_at:
+                raise CandidateExpiredError(candidate_id) from error
             raise CandidateMissingBeforeExpiryError(
                 error.details.get("candidate_id", candidate_id)
             ) from error
@@ -500,6 +502,8 @@ class GenerationServiceV1:
                     "operation.candidate_expires_at"
                 ),
             )
+        if now >= candidate_expires_at:
+            raise CandidateExpiredError(candidate_id)
         return candidate
 
     def _run(

@@ -1122,11 +1122,14 @@ def test_replay_foreign_candidate_earlier_expiry_is_integrity_not_410(
 def test_replay_respects_operation_expiry_over_extended_candidate_ttl(
     load_fixture,
 ) -> None:
-    """Extended candidate expires_at must not allow replay past operation expiry."""
+    """Extended candidate expires_at disagrees with the operation → integrity, not success."""
 
     from datetime import timedelta
 
-    from statblocks_v1.domain.errors import CandidateExpiredError
+    from statblocks_v1.domain.errors import (
+        CandidateExpiredError,
+        GenerateOperationIntegrityError,
+    )
     from statblocks_v1.infrastructure.memory_repositories import (
         InMemoryCandidateGenerationOperationRepository,
         InMemoryCandidateRepository,
@@ -1156,9 +1159,13 @@ def test_replay_respects_operation_expiry_over_extended_candidate_ttl(
     )
     candidates._candidates["cand_1"] = extended
     now["t"] = now["t"] + timedelta(seconds=120)
-    with pytest.raises(CandidateExpiredError) as exc:
-        service.generate(_command())
-    assert exc.value.details["candidate_id"] == "cand_1"
+    with pytest.raises(GenerateOperationIntegrityError):
+        try:
+            service.generate(_command())
+        except CandidateExpiredError as expired:
+            raise AssertionError(
+                "extended candidate TTL mismatch must not become 410"
+            ) from expired
     assert len(provider.calls) == 1
 
 
@@ -1517,7 +1524,7 @@ def test_complete_path_respects_operation_expiry_when_candidate_retained(
             request_digest=digest,
         ),
         created_at=now["t"],
-        expires_at=now["t"] + timedelta(hours=24),
+        expires_at=now["t"] - timedelta(seconds=1),
     )
     candidates._create_unlocked(retained)
     claimed = CandidateGenerationOperationV1(
@@ -1537,7 +1544,7 @@ def test_complete_path_respects_operation_expiry_when_candidate_retained(
         update={
             "status": CandidateGenerationStatusV1.completed,
             "completed_at": now["t"],
-            "candidate_expires_at": now["t"] - timedelta(seconds=1),
+            "candidate_expires_at": retained.expires_at,
             "outcome_digest": compute_candidate_outcome_digest(retained),
         }
     )
@@ -1901,3 +1908,112 @@ def test_replay_mismatched_operation_and_candidate_expiry_fails_closed(
             service.generate(_command())
         except CandidateExpiredError as expired:
             raise AssertionError("expiry mismatch must not become 410") from expired
+
+
+def test_replay_past_op_expiry_with_later_candidate_expiry_is_integrity(
+    load_fixture,
+) -> None:
+    """Corrupted past op expiry must not 410 when retained candidate still agrees later.
+
+    Candidate expires at 12:00; operation corrupted to 11:00; replay at 11:30.
+    Present candidate with disagreeing expiry → integrity, not ordinary 410.
+    """
+
+    from statblocks_v1.application.repositories import compute_candidate_outcome_digest
+    from statblocks_v1.domain.errors import (
+        CandidateExpiredError,
+        GenerateOperationIntegrityError,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, 10, 0, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(
+        candidates, clock=lambda: now["t"]
+    )
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    # TTL 2h → candidate.expires_at = 12:00 when created at 10:00.
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 7200),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+    assert first.candidate.expires_at == datetime(
+        2026, 1, 1, 12, 0, tzinfo=timezone.utc
+    )
+
+    key = ("tests", "req_generation")
+    existing = ops._operations[key]
+    # Corrupt operation expiry to 11:00 while candidate remains at 12:00.
+    corrupted_op_expiry = datetime(2026, 1, 1, 11, 0, tzinfo=timezone.utc)
+    ops._operations[key] = existing.model_copy(
+        update={
+            "candidate_expires_at": corrupted_op_expiry,
+            "outcome_digest": compute_candidate_outcome_digest(first.candidate),
+        }
+    )
+    # Replay at 11:30: op expiry past, candidate still present and unexpired.
+    now["t"] = datetime(2026, 1, 1, 11, 30, tzinfo=timezone.utc)
+    with pytest.raises(GenerateOperationIntegrityError) as exc:
+        try:
+            service.generate(_command())
+        except CandidateExpiredError as expired:
+            raise AssertionError(
+                "past op expiry with later candidate expiry must not become 410"
+            ) from expired
+    reason = exc.value.details.get("reason") or exc.value.message
+    assert "expires_at" in reason
+    assert len(provider.calls) == 1
+
+
+def test_replay_missing_candidate_after_op_expiry_raises_410(load_fixture) -> None:
+    """Missing candidate with past operation expiry is ordinary 410, not premature loss."""
+
+    from datetime import timedelta
+
+    from statblocks_v1.domain.errors import (
+        CandidateExpiredError,
+        CandidateMissingBeforeExpiryError,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateGenerationOperationRepository(
+        candidates, clock=lambda: now["t"]
+    )
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now["t"],
+        candidate_id_factory=lambda: "cand_1",
+        generate_operations=ops,
+        generate_lease_seconds=120,
+    )
+    first = service.generate(_command())
+    assert isinstance(first, GenerateOutcomeV1)
+    del candidates._candidates["cand_1"]
+    now["t"] = now["t"] + timedelta(seconds=120)
+    with pytest.raises(CandidateExpiredError) as exc:
+        try:
+            service.generate(_command())
+        except CandidateMissingBeforeExpiryError as missing:
+            raise AssertionError(
+                "missing candidate after op expiry must be 410, not premature loss"
+            ) from missing
+    assert exc.value.details["candidate_id"] == "cand_1"
+    assert len(provider.calls) == 1
