@@ -115,6 +115,7 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
     from statblocks_v1.infrastructure.memory_repositories import (
         InMemoryCandidateGenerationOperationRepository,
         InMemoryCandidateRepository,
+        InMemoryCandidateRevisionOperationRepository,
         InMemoryStatblockPersistenceRepository,
     )
 
@@ -127,6 +128,7 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
         candidates=candidates,
         persistence=InMemoryStatblockPersistenceRepository(),
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
         asset_pipeline=pipeline,
         provider=provider,
     )
@@ -137,7 +139,34 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
     assert service._asset_gateway is not None
     assert service._provider is provider
     assert service._generate_operations is not None
+    assert service._revise_operations is not None
     assert service._generate_lease_seconds >= 120
+
+
+def test_build_generation_service_requires_revise_operations(monkeypatch) -> None:
+    class DummyProvider:
+        provider_name = "dummy"
+
+        def generate_definition(self, **kwargs):
+            raise AssertionError("not called")
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+        InMemoryStatblockPersistenceRepository,
+    )
+
+    candidates = InMemoryCandidateRepository()
+    with pytest.raises(InternalServiceMisconfiguredError, match="revise-operation"):
+        build_generation_service(
+            candidates=candidates,
+            persistence=InMemoryStatblockPersistenceRepository(),
+            generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
+            provider=DummyProvider(),
+        )
 
 
 def test_build_generation_service_requires_generate_operations(monkeypatch) -> None:

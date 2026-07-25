@@ -31,13 +31,20 @@ from statblocks_v1.application.provider import (
 )
 from statblocks_v1.application.repositories import (
     CandidateGenerationOperationRepository,
+    CandidateRevisionOperationRepository,
     CandidateRepository,
     GenerateBeginClaimed,
     GenerateBeginCompleted,
     GenerateBeginFailed,
     GenerateBeginInProgress,
+    ReviseBeginClaimed,
+    ReviseBeginCompleted,
+    ReviseBeginFailed,
+    ReviseBeginInProgress,
     candidate_belongs_to_generate_operation,
+    candidate_belongs_to_revise_operation,
     compute_generate_candidate_digest,
+    compute_revise_candidate_digest,
 )
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
@@ -45,6 +52,7 @@ from statblocks_v1.domain.assets import AssetBriefV1, AssetRefV1
 from statblocks_v1.domain.candidate_operations import (
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
+    CandidateRevisionOperationV1,
 )
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
@@ -52,6 +60,7 @@ from statblocks_v1.domain.errors import (
     CandidateMissingBeforeExpiryError,
     CandidateNotFoundError,
     GenerateOperationIntegrityError,
+    ReviseOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     PersistenceUnavailableError,
@@ -161,8 +170,10 @@ class GenerationServiceV1:
         definition_resolver: DefinitionResolver | None = None,
         asset_gateway: AssetGateway | None = None,
         generate_operations: CandidateGenerationOperationRepository | None = None,
+        revise_operations: CandidateRevisionOperationRepository | None = None,
         lease_owner_factory: LeaseOwnerFactory | None = None,
         generate_lease_seconds: int | None = None,
+        revise_lease_seconds: int | None = None,
     ) -> None:
         self._provider = provider
         self._candidates = candidates
@@ -172,10 +183,16 @@ class GenerationServiceV1:
         self._definition_resolver = definition_resolver
         self._asset_gateway = asset_gateway
         self._generate_operations = generate_operations
+        self._revise_operations = revise_operations
         self._lease_owner_factory = lease_owner_factory or (lambda: f"lease_{uuid.uuid4().hex}")
         self._generate_lease_seconds = (
             generate_lease_seconds
             if generate_lease_seconds is not None
+            else _default_generate_lease_seconds(settings)
+        )
+        self._revise_lease_seconds = (
+            revise_lease_seconds
+            if revise_lease_seconds is not None
             else _default_generate_lease_seconds(settings)
         )
 
@@ -195,7 +212,12 @@ class GenerationServiceV1:
         pinned = _pin_revise_intent(command, self._definition_resolver)
         if isinstance(pinned, GenerationFailureV1):
             return pinned
-        return self._run(pinned)
+        if self._revise_operations is None:
+            return GenerationFailureV1(
+                "persistence_unavailable",
+                "Candidate revise-operation repository is not configured",
+            )
+        return self._revise_idempotent(pinned)
 
     def _generate_idempotent(self, pinned: _PinnedOperationIntent) -> GenerationResultV1:
         assert self._generate_operations is not None
@@ -506,6 +528,315 @@ class GenerationServiceV1:
             raise CandidateExpiredError(candidate_id)
         return candidate
 
+    def _revise_idempotent(self, pinned: _PinnedOperationIntent) -> GenerationResultV1:
+        assert self._revise_operations is not None
+        assert pinned.request_digest is not None
+        ops = self._revise_operations
+        request_id = pinned.request_id
+        request_digest = pinned.request_digest
+        caller_scope = pinned.caller.caller_scope
+
+        lease_owner = self._lease_owner_factory()
+        try:
+            began = ops.begin_revise(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                candidate_id_factory=self._candidate_id_factory,
+                lease_owner=lease_owner,
+                lease_duration_seconds=self._revise_lease_seconds,
+            )
+        except (IdempotencyConflictError, ReviseOperationIntegrityError):
+            raise
+        except PersistenceUnavailableError:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        except Exception:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+
+        if isinstance(began, ReviseBeginCompleted):
+            loaded = self._load_completed_revise_candidate(began.operation)
+            if isinstance(loaded, GenerationFailureV1):
+                return loaded
+            return GenerateOutcomeV1(candidate=loaded, replayed=True)
+        if isinstance(began, ReviseBeginFailed):
+            return GenerationFailureV1(began.failure.kind, began.failure.message)
+        if isinstance(began, ReviseBeginInProgress):
+            return GenerationFailureV1(
+                "generation_in_progress",
+                "Candidate generation is already in progress for this request",
+            )
+        if not isinstance(began, ReviseBeginClaimed):
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence returned an unexpected begin state"
+            )
+
+        claim = began.operation
+        lease_owner = claim.lease_owner
+        result = self._run(pinned, reserved_candidate_id=claim.candidate_id, persist=False)
+        if isinstance(result, GenerationFailureV1):
+            try:
+                snapshot = ops.fail_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    lease_owner=lease_owner,
+                    failure=CandidateGenerationFailureSnapshotV1(
+                        kind=result.kind, message=result.message
+                    ),
+                )
+            except ImmutableResourceConflictError:
+                return self._resolve_after_terminal_race_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    reserved_candidate_id=claim.candidate_id,
+                )
+            except TransactionIndeterminateError:
+                return self._resolve_after_terminal_race_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    reserved_candidate_id=claim.candidate_id,
+                    indeterminate=True,
+                )
+            except PersistenceUnavailableError:
+                return GenerationFailureV1(
+                    "persistence_unavailable", "Persistence is unavailable"
+                )
+            except IdempotencyConflictError:
+                raise
+            except ReviseOperationIntegrityError:
+                raise
+            return GenerationFailureV1(snapshot.kind, snapshot.message)
+
+        try:
+            completed = ops.complete_revise(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                lease_owner=lease_owner,
+                candidate=result,
+            )
+        except ImmutableResourceConflictError:
+            return self._resolve_after_terminal_race_revise(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                reserved_candidate_id=claim.candidate_id,
+            )
+        except TransactionIndeterminateError:
+            return self._resolve_after_terminal_race_revise(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                reserved_candidate_id=claim.candidate_id,
+                indeterminate=True,
+            )
+        except (PersistenceUnavailableError, CandidateNotFoundError):
+            # Prefer durable completed-op expiry/premature-loss authority over a
+            # generic unavailable mapping when the operation already committed.
+            return self._resolve_after_terminal_race_revise(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                reserved_candidate_id=claim.candidate_id,
+                indeterminate=True,
+            )
+        except ReviseOperationIntegrityError:
+            raise
+        # Never return the repository candidate verbatim: apply the same
+        # operation-expiry + premature-loss semantics as completed replay.
+        return self._outcome_from_completed_revise(
+            caller_scope=caller_scope,
+            request_id=request_id,
+            request_digest=request_digest,
+            reserved_candidate_id=claim.candidate_id,
+            replayed=completed.already_completed,
+        )
+
+    def _outcome_from_completed_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        reserved_candidate_id: str,
+        replayed: bool,
+    ) -> GenerationResultV1:
+        """Apply authoritative expiry after repository complete/reconcile success.
+
+        Reloaded completed state must still match this attempt's reserved candidate
+        and pinned request digest before any candidate is returned (same binding
+        checks as terminal-race reconciliation).
+        """
+
+        assert self._revise_operations is not None
+        existing = self._revise_operations.get_revise_operation(
+            caller_scope, request_id
+        )
+        if existing is None:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        if existing.candidate_id != reserved_candidate_id:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Completed revise operation candidate_id does not match "
+                    "this attempt's reservation"
+                ),
+            )
+        if existing.request_digest != request_digest:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Completed revise operation request_digest does not match "
+                    "this attempt's pinned digest"
+                ),
+            )
+        if existing.status.value != "completed":
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Revise completion reported success without a completed "
+                    "operation record"
+                ),
+            )
+        loaded = self._load_completed_revise_candidate(existing)
+        if isinstance(loaded, GenerationFailureV1):
+            return loaded
+        return GenerateOutcomeV1(candidate=loaded, replayed=replayed)
+
+    def _resolve_after_terminal_race_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        reserved_candidate_id: str,
+        indeterminate: bool = False,
+    ) -> GenerationResultV1:
+        """Reconcile when this worker lost the lease or lost a terminal race.
+
+        Reloaded terminal state must still match this attempt's reserved candidate
+        and pinned request digest before any completed candidate is returned.
+        """
+
+        assert self._revise_operations is not None
+        existing = self._revise_operations.get_revise_operation(
+            caller_scope, request_id
+        )
+        if existing is None:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        if existing.candidate_id != reserved_candidate_id:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Terminal revise operation candidate_id does not match "
+                    "this attempt's reservation"
+                ),
+            )
+        if existing.request_digest != request_digest:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=existing.candidate_id,
+                reason=(
+                    "Terminal revise operation request_digest does not match "
+                    "this attempt's pinned digest"
+                ),
+            )
+        if existing.status.value == "completed":
+            loaded = self._load_completed_revise_candidate(existing)
+            if isinstance(loaded, GenerationFailureV1):
+                return loaded
+            return GenerateOutcomeV1(candidate=loaded, replayed=True)
+        if existing.status.value == "failed" and existing.failure is not None:
+            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+        if existing.status.value == "pending":
+            if indeterminate:
+                return GenerationFailureV1(
+                    "persistence_unavailable", "Persistence is unavailable"
+                )
+            return GenerationFailureV1(
+                "generation_in_progress",
+                "Candidate generation is already in progress for this request",
+            )
+        return GenerationFailureV1(
+            "persistence_unavailable", "Persistence is unavailable"
+        )
+
+    def _load_completed_revise_candidate(
+        self,
+        operation: CandidateRevisionOperationV1,
+    ) -> GenerationResultV1:
+        """Load a completed generate's candidate, verifying operation binding.
+
+        Load and verify the retained candidate before applying authoritative
+        ``operation.candidate_expires_at``. A present candidate whose
+        ``expires_at`` disagrees with the operation must fail closed as
+        integrity — never as ordinary 410 — even when the operation expiry is
+        already past. Document TTL alone must not short-circuit before
+        ownership / expiry-agreement checks.
+        """
+
+        if operation.candidate_expires_at is None:
+            raise ReviseOperationIntegrityError(
+                operation.request_id,
+                candidate_id=operation.candidate_id,
+                reason="Completed revise operation is missing candidate_expires_at",
+            )
+        candidate_id = operation.candidate_id
+        candidate_expires_at = operation.candidate_expires_at
+        now = self._clock()
+
+        try:
+            # Do not enforce candidate-document TTL here: a foreign/replaced
+            # document with an earlier expires_at must not short-circuit to 410
+            # before ownership validation.
+            candidate = self._candidates.get_for_acceptance(candidate_id)
+        except CandidateNotFoundError as error:
+            # Truly missing: only then is operation expiry an ordinary 410.
+            if now >= candidate_expires_at:
+                raise CandidateExpiredError(candidate_id) from error
+            raise CandidateMissingBeforeExpiryError(
+                error.details.get("candidate_id", candidate_id)
+            ) from error
+        except PersistenceUnavailableError:
+            return GenerationFailureV1(
+                "persistence_unavailable", "Persistence is unavailable"
+            )
+        if not candidate_belongs_to_revise_operation(candidate, operation):
+            raise ReviseOperationIntegrityError(
+                operation.request_id,
+                candidate_id=candidate_id,
+                reason=(
+                    "Completed revise points to a candidate that does not belong "
+                    "to this operation"
+                ),
+            )
+        if _as_utc(candidate.expires_at) != _as_utc(candidate_expires_at):
+            raise ReviseOperationIntegrityError(
+                operation.request_id,
+                candidate_id=candidate_id,
+                reason=(
+                    "Completed revise candidate.expires_at does not match "
+                    "operation.candidate_expires_at"
+                ),
+            )
+        if now >= candidate_expires_at:
+            raise CandidateExpiredError(candidate_id)
+        return candidate
+
     def _run(
         self,
         intent: _PinnedOperationIntent,
@@ -698,6 +1029,10 @@ def _pin_revise_intent(
     """Deep-copy and derive all revise inputs before any provider call."""
 
     snapshot = command.model_copy(deep=True)
+    try:
+        request_digest = compute_revise_candidate_digest(snapshot)
+    except StatblockV1Error as error:
+        return GenerationFailureV1(error.code, error.message)
     source = snapshot.source_definition
     source_locator = snapshot.source_locator
     if source is None:
@@ -727,7 +1062,7 @@ def _pin_revise_intent(
 
     return _PinnedOperationIntent(
         request_id=snapshot.request_id,
-        request_digest=None,
+        request_digest=request_digest,
         ruleset=snapshot.ruleset,
         caller=snapshot.caller,
         prompt=build_revision_prompt(snapshot, source),

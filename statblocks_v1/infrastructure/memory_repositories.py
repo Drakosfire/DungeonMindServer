@@ -17,15 +17,26 @@ from statblocks_v1.application.repositories import (
     GenerateBeginInProgress,
     GenerateBeginResult,
     GenerateCompleteResult,
+    ReviseBeginClaimed,
+    ReviseBeginCompleted,
+    ReviseBeginFailed,
+    ReviseBeginInProgress,
+    ReviseBeginResult,
+    ReviseCompleteResult,
     compute_candidate_outcome_digest,
+    compute_revise_candidate_outcome_digest,
     require_candidate_owned_by_generate_operation,
+    require_candidate_owned_by_revise_operation,
     verify_generate_operation_lookup_identity,
+    verify_revise_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
+    REVISE_CANDIDATE_OPERATION,
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
     CandidateGenerationStatusV1,
+    CandidateRevisionOperationV1,
 )
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.digests import compute_definition_digest
@@ -33,6 +44,7 @@ from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateNotFoundError,
     GenerateOperationIntegrityError,
+    ReviseOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
@@ -332,6 +344,238 @@ class InMemoryCandidateGenerationOperationRepository:
             if existing is None:
                 raise PersistenceUnavailableError()
             existing = verify_generate_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                return _copy(existing.failure)
+
+            if existing.lease_owner != lease_owner:
+                # Lease taken over; never echo an uncommitted local failure.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            snapshot = _copy(failure)
+            self._operations[key] = existing.model_copy(
+                update={
+                    "status": CandidateGenerationStatusV1.failed,
+                    "failure": snapshot,
+                    "updated_at": now,
+                    "completed_at": now,
+                }
+            )
+            return snapshot
+
+
+
+class InMemoryCandidateRevisionOperationRepository:
+    """In-memory revise-operation state machine sharing the candidate lock."""
+
+    def __init__(
+        self,
+        candidates: InMemoryCandidateRepository,
+        *,
+        clock: Clock | None = None,
+    ) -> None:
+        self._candidates = candidates
+        self._clock = clock or candidates._clock
+        self._lock = candidates._lock
+        self._operations: dict[tuple[str, str], CandidateRevisionOperationV1] = {}
+
+    def get_revise_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateRevisionOperationV1 | None:
+        with self._lock:
+            record = self._operations.get((caller_scope, request_id))
+            if record is None:
+                return None
+            return _copy(
+                verify_revise_operation_lookup_identity(
+                    record, caller_scope=caller_scope, request_id=request_id
+                )
+            )
+
+    def begin_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> ReviseBeginResult:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                operation = CandidateRevisionOperationV1(
+                    caller_scope=caller_scope,
+                    operation=REVISE_CANDIDATE_OPERATION,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate_id_factory(),
+                    status=CandidateGenerationStatusV1.pending,
+                    lease_owner=lease_owner,
+                    lease_expires_at=now + timedelta(seconds=lease_duration_seconds),
+                    attempt_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                self._operations[key] = operation
+                return ReviseBeginClaimed(operation=_copy(operation))
+
+            existing = verify_revise_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                return ReviseBeginCompleted(operation=_copy(existing))
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                return ReviseBeginFailed(failure=_copy(existing.failure))
+
+            # Pending + existing candidate is an impossible atomic state: create
+            # and completion share one commit. Fail closed; do not promote.
+            try:
+                pre_existing = self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+            except CandidateNotFoundError:
+                pre_existing = None
+            if pre_existing is not None:
+                raise ReviseOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending revise points to an existing candidate document"
+                    ),
+                )
+
+            if existing.lease_expires_at > now:
+                return ReviseBeginInProgress(
+                    candidate_id=existing.candidate_id,
+                    lease_expires_at=existing.lease_expires_at,
+                )
+
+            claimed = existing.model_copy(
+                update={
+                    "lease_owner": lease_owner,
+                    "lease_expires_at": now + timedelta(seconds=lease_duration_seconds),
+                    "attempt_count": existing.attempt_count + 1,
+                    "updated_at": now,
+                }
+            )
+            self._operations[key] = claimed
+            return ReviseBeginClaimed(operation=_copy(claimed))
+
+    def complete_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> ReviseCompleteResult:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                raise PersistenceUnavailableError()
+            existing = verify_revise_operation_lookup_identity(
+                existing, caller_scope=caller_scope, request_id=request_id
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if candidate.candidate_id != existing.candidate_id:
+                raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                # Terminal failure is immutable; do not create under this request key.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                stored = self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+                require_candidate_owned_by_revise_operation(
+                    stored,
+                    existing,
+                    reason=(
+                        "Completed revise points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
+                return ReviseCompleteResult(candidate=stored, already_completed=True)
+
+            # First write: prove ownership, then atomic create+complete.
+            # Pending + pre-existing candidate is corruption (create and
+            # completion share one commit); never adopt/promote that state.
+            require_candidate_owned_by_revise_operation(
+                candidate,
+                existing,
+                reason=(
+                    "Revise completion candidate does not belong to this operation"
+                ),
+            )
+            try:
+                pre_existing = self._candidates._get_unlocked(
+                    existing.candidate_id, now=now, enforce_expiry=False
+                )
+            except CandidateNotFoundError:
+                pre_existing = None
+            if pre_existing is not None:
+                raise ReviseOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending revise points to an existing candidate document"
+                    ),
+                )
+
+            outcome_digest = compute_revise_candidate_outcome_digest(candidate)
+            stored = self._candidates._create_unlocked(candidate)
+            self._operations[key] = existing.model_copy(
+                update={
+                    "status": CandidateGenerationStatusV1.completed,
+                    "updated_at": now,
+                    "completed_at": now,
+                    "failure": None,
+                    "candidate_expires_at": stored.expires_at,
+                    "outcome_digest": outcome_digest,
+                }
+            )
+            return ReviseCompleteResult(candidate=stored, already_completed=False)
+
+    def fail_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1:
+        with self._lock:
+            now = self._clock()
+            key = (caller_scope, request_id)
+            existing = self._operations.get(key)
+            if existing is None:
+                raise PersistenceUnavailableError()
+            existing = verify_revise_operation_lookup_identity(
                 existing, caller_scope=caller_scope, request_id=request_id
             )
             if existing.request_digest != request_digest:

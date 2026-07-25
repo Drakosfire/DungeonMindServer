@@ -14,6 +14,7 @@ from pydantic import Field, model_validator
 from statblocks_v1.domain.primitives import StrictModel
 
 GENERATE_CANDIDATE_OPERATION: Literal["generate_candidate"] = "generate_candidate"
+REVISE_CANDIDATE_OPERATION: Literal["revise_candidate"] = "revise_candidate"
 
 
 class CandidateGenerationStatusV1(str, Enum):
@@ -108,6 +109,83 @@ class CandidateGenerationOperationV1(StrictModel):
                 )
             if self.completed_at is None:
                 raise ValueError("failed generate operations require completed_at")
+            return self
+
+        return self
+
+
+class CandidateRevisionOperationV1(StrictModel):
+    """Lease-bearing revise operation bound to one reserved candidate_id."""
+
+    caller_scope: str = Field(min_length=1)
+    operation: Literal["revise_candidate"] = REVISE_CANDIDATE_OPERATION
+    request_id: str = Field(min_length=1)
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    candidate_id: str = Field(pattern=r"^cand_[a-z0-9]+$")
+    status: CandidateGenerationStatusV1
+    lease_owner: str = Field(min_length=1)
+    lease_expires_at: datetime
+    attempt_count: int = Field(ge=1)
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+    failure: CandidateGenerationFailureSnapshotV1 | None = None
+    candidate_expires_at: datetime | None = None
+    outcome_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+
+    @model_validator(mode="after")
+    def status_field_invariants(self) -> Self:
+        if self.status is CandidateGenerationStatusV1.pending:
+            if self.failure is not None:
+                raise ValueError("pending revise operations must not carry failure")
+            if self.candidate_expires_at is not None:
+                raise ValueError(
+                    "pending revise operations must not carry candidate_expires_at"
+                )
+            if self.completed_at is not None:
+                raise ValueError(
+                    "pending revise operations must not carry completed_at"
+                )
+            if self.outcome_digest is not None:
+                raise ValueError(
+                    "pending revise operations must not carry outcome_digest"
+                )
+            return self
+
+        if self.status is CandidateGenerationStatusV1.completed:
+            if self.candidate_expires_at is None:
+                raise ValueError(
+                    "completed revise operations require candidate_expires_at"
+                )
+            if self.outcome_digest is None:
+                raise ValueError(
+                    "completed revise operations require outcome_digest"
+                )
+            if self.failure is not None:
+                raise ValueError(
+                    "completed revise operations must not carry failure"
+                )
+            if self.completed_at is None:
+                raise ValueError(
+                    "completed revise operations require completed_at"
+                )
+            return self
+
+        if self.status is CandidateGenerationStatusV1.failed:
+            if self.failure is None:
+                raise ValueError("failed revise operations require failure")
+            if self.candidate_expires_at is not None:
+                raise ValueError(
+                    "failed revise operations must not carry candidate_expires_at"
+                )
+            if self.outcome_digest is not None:
+                raise ValueError(
+                    "failed revise operations must not carry outcome_digest"
+                )
+            if self.completed_at is None:
+                raise ValueError("failed revise operations require completed_at")
             return self
 
         return self

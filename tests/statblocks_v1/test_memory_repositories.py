@@ -443,6 +443,100 @@ def test_concurrent_readers_observe_committed_state_only(load_fixture):
     assert len(repository.list_for_statblock(statblock.statblock_id)) == 26
 
 
+def test_revise_ops_reserve_complete_and_replay(load_fixture):
+    from datetime import datetime, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        ReviseBeginCompleted,
+        compute_revise_candidate_digest,
+        compute_revise_candidate_outcome_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now)
+    command = ReviseStatblockCommandV1(
+        request_id="req_revise_ops",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Tweak the bruiser"],
+        caller=CallerProvenanceV1(caller_scope="tests"),
+        source_definition=source,
+    )
+    digest = compute_revise_candidate_digest(command)
+
+    claimed = ops.begin_revise(
+        caller_scope="tests",
+        request_id="req_revise_ops",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_rev1",
+        lease_owner="owner-a",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(claimed, ReviseBeginClaimed)
+
+    from statblocks_v1.domain.resources import (
+        STATBLOCK_CONTRACT,
+        STATBLOCK_CONTRACT_VERSION,
+        GeneratedStatblockCandidateV1,
+        GenerationReceiptV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationMode
+    from statblocks_v1.domain.validation import validate_definition
+
+    definition = source.model_copy(deep=True)
+    receipt = validate_definition(definition, ValidationMode.generation_candidate, validated_at=now)
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id="cand_rev1",
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        validation_receipt=receipt,
+        generation_receipt=GenerationReceiptV1(
+            request_id="req_revise_ops",
+            provider="fake",
+            model="test",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="sha256:" + "0" * 64,
+            generated_at=now,
+            caller_scope="tests",
+            request_digest=digest,
+        ),
+        created_at=now,
+        expires_at=now.replace(hour=2),
+    )
+    stored = ops.complete_revise(
+        caller_scope="tests",
+        request_id="req_revise_ops",
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=candidate,
+    )
+    assert stored.already_completed is False
+    assert compute_revise_candidate_outcome_digest(stored.candidate) is not None
+
+    replay = ops.begin_revise(
+        caller_scope="tests",
+        request_id="req_revise_ops",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_other",
+        lease_owner="owner-b",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(replay, ReviseBeginCompleted)
+
 
 def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
     from datetime import datetime, timedelta, timezone

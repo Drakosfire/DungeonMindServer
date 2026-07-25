@@ -61,17 +61,22 @@ def _service(
     definition_resolver=None,
     candidates=None,
     generate_operations=None,
+    revise_operations=None,
     clock=None,
     provider=None,
 ) -> GenerationServiceV1:
     from statblocks_v1.infrastructure.memory_repositories import (
         InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRevisionOperationRepository,
     )
 
     fixed = datetime(2026, 1, 1, tzinfo=timezone.utc)
     clock_fn = clock or (lambda: fixed)
     candidate_repo = candidates or InMemoryCandidateRepository(clock=clock_fn)
-    ops = generate_operations or InMemoryCandidateGenerationOperationRepository(
+    gen_ops = generate_operations or InMemoryCandidateGenerationOperationRepository(
+        candidate_repo, clock=clock_fn
+    )
+    rev_ops = revise_operations or InMemoryCandidateRevisionOperationRepository(
         candidate_repo, clock=clock_fn
     )
     counter = {"n": 0}
@@ -93,7 +98,8 @@ def _service(
         candidate_id_factory=next_candidate_id,
         asset_gateway=asset_gateway,
         definition_resolver=definition_resolver,
-        generate_operations=ops,
+        generate_operations=gen_ops,
+        revise_operations=rev_ops,
     )
 
 
@@ -520,6 +526,10 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
 
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
     candidates = InMemoryCandidateRepository(clock=lambda: now)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+    )
+
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider({}, callback=blocking_callback),
         candidates=candidates,
@@ -527,6 +537,9 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_pinned",
         definition_resolver=PersistenceDefinitionResolver(persistence),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
 
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -678,6 +691,18 @@ def test_settings_direct_construction_fails_closed(kwargs, match) -> None:
         GenerationSettingsV1(**kwargs)
 
 
+def _revise_command(source_definition, **overrides) -> ReviseStatblockCommandV1:
+    base = dict(
+        request_id="req_revision",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Adjust the creature for testing."],
+        caller=CallerProvenanceV1(caller_scope="tests", actor="unit"),
+        source_definition=source_definition,
+    )
+    base.update(overrides)
+    return ReviseStatblockCommandV1(**base)
+
+
 def test_generate_replay_returns_same_candidate_without_provider(load_fixture) -> None:
     provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
     service = _service(None, provider=provider)
@@ -691,6 +716,69 @@ def test_generate_replay_returns_same_candidate_without_provider(load_fixture) -
     assert first.candidate_id == second.candidate_id == "cand_1"
     assert first.candidate.model_dump(mode="json") == second.candidate.model_dump(mode="json")
     assert len(provider.calls) == 1
+
+
+def test_revise_replay_returns_same_candidate_without_provider(load_fixture) -> None:
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    provider = FakeDefinitionProvider(source.model_dump(mode="json"))
+    service = _service(source.model_dump(mode="json"), provider=provider)
+    command = _revise_command(source, revision_instructions=["Bump challenge slightly"])
+    first = service.revise(command)
+    second = service.revise(command)
+
+    assert isinstance(first, GenerateOutcomeV1)
+    assert isinstance(second, GenerateOutcomeV1)
+    assert first.replayed is False
+    assert second.replayed is True
+    assert first.candidate_id == second.candidate_id == "cand_1"
+    assert first.candidate.generation_receipt.request_digest is not None
+    assert first.candidate.generation_receipt.request_digest.startswith("sha256:")
+    assert len(provider.calls) == 1
+
+    with pytest.raises(IdempotencyConflictError):
+        service.revise(
+            _revise_command(source, revision_instructions=["Different instructions"])
+        )
+    assert len(provider.calls) == 1
+
+
+def test_revise_without_operations_repository_fails_closed(load_fixture) -> None:
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+
+    class TrackingProvider:
+        provider_name = "track"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate_definition(self, **kwargs):
+            self.calls += 1
+            raise AssertionError("provider must not be called without revise ops repo")
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+    )
+
+    provider = TrackingProvider()
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_x",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(
+            candidates, clock=lambda: now
+        ),
+        revise_operations=None,
+    )
+    result = service.revise(_revise_command(source))
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "persistence_unavailable"
+    assert provider.calls == 0
 
 
 def test_generate_changed_digest_conflicts_without_provider(load_fixture) -> None:
