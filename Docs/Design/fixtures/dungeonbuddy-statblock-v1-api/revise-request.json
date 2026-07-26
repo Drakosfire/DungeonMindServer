@@ -166,5 +166,5 @@
     "generate_images": false
   },
   "preserve_element_keys": true,
-  "actor": null
+  "actor": "fixture"
 }
