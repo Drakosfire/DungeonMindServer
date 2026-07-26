@@ -199,6 +199,70 @@ def test_revise_replay_lost_response_and_conflict(api_client, load_fixture, capl
     assert len(provider.calls) == 1
 
 
+def test_revise_locator_replay_lost_response_and_conflict(
+    api_client, load_fixture, caplog
+) -> None:
+    import logging
+
+    client, provider, headers, persistence, *_ = api_client
+    definition = load_fixture("simple_bruiser")
+    created_statblock, created_revision = persistence.create_statblock(
+        CreateStatblockCommand(
+            caller_scope="tests",
+            idempotency_key="revise-locator-replay",
+            definition=StatblockDefinitionV1.model_validate(definition),
+            created_by="tests",
+        )
+    )
+    locator = {
+        "statblock_id": created_statblock.statblock_id,
+        "revision_id": created_revision.revision_id,
+    }
+    payload = {
+        "request_id": "req_revise_locator_replay_1",
+        "ruleset": {"system": "dnd5e", "edition": "2024"},
+        "revision_instructions": ["Make it scarier via locator"],
+        "source_locator": locator,
+    }
+
+    with caplog.at_level(logging.INFO):
+        first = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    assert first.json()["generation_receipt"]["request_digest"].startswith("sha256:")
+    assert first.json()["source_locator"] == locator
+    assert len(provider.calls) == 1
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        replay = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert replay.status_code == 200
+    assert replay.json()["candidate_id"] == candidate_id
+    assert replay.json() == first.json()
+    assert len(provider.calls) == 1
+    assert any("candidate_revise_replay" in message for message in caplog.messages)
+    assert any("idempotency_replay" in message for message in caplog.messages)
+
+    conflict = dict(payload)
+    conflict["revision_instructions"] = ["Totally different locator edit"]
+    conflict_response = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json=conflict,
+        headers=headers,
+    )
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["error"]["code"] == "idempotency_conflict"
+    assert len(provider.calls) == 1
+
+
 def test_generate_premature_candidate_loss_returns_500(api_client) -> None:
     client, provider, headers, _, candidates, _ = api_client
     first = client.post(
@@ -470,7 +534,7 @@ def test_revise_invalid_source_combinations_are_422(api_client, load_fixture) ->
 
 
 def test_revise_missing_revision_is_typed_404(api_client) -> None:
-    client, _, headers, *_ = api_client
+    client, _, headers, _, candidates, now = api_client
 
     class MissingResolver:
         def resolve(self, locator):
@@ -478,9 +542,13 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
 
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
         definition_resolver=MissingResolver(),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
     response = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
@@ -497,7 +565,7 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
 
 
 def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
-    client, _, headers, *_ = api_client
+    client, _, headers, _, candidates, now = api_client
 
     class UnavailableResolver:
         def resolve(self, locator):
@@ -505,9 +573,13 @@ def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
 
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
         definition_resolver=UnavailableResolver(),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
     response = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",

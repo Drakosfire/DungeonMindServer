@@ -28,9 +28,11 @@ from statblocks_v1.infrastructure.firestore_repositories import (
     CANDIDATES_COLLECTION,
     GENERATE_OPS_COLLECTION,
     IDEMPOTENCY_COLLECTION,
+    REVISE_OPS_COLLECTION,
     STATBLOCKS_COLLECTION,
     FirestoreCandidateGenerationOperationRepository,
     FirestoreCandidateRepository,
+    FirestoreCandidateRevisionOperationRepository,
     FirestoreStatblockPersistenceRepository,
     _dump,
 )
@@ -415,6 +417,123 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
         futures = [
             pool.submit(
                 ops.complete_generate,
+                caller_scope="dungeonbuddy",
+                request_id=command.request_id,
+                request_digest=digest,
+                lease_owner="stale",
+                candidate=candidate,
+            )
+            for _ in range(2)
+        ]
+        results = [future.result() for future in futures]
+    assert {item.candidate.candidate_id for item in results} == {candidate_id}
+    assert all(item.already_completed for item in results)
+
+
+def test_firestore_revise_ops_atomic_complete_and_replay(firestore_client, bruiser):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        ReviseBeginCompleted,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+    from statblocks_v1.domain.profiles import RulesetRef
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    candidates = FirestoreCandidateRepository(firestore_client, clock=lambda: now)
+    ops = FirestoreCandidateRevisionOperationRepository(
+        firestore_client,
+        clock=lambda: now,
+        candidates_collection=CANDIDATES_COLLECTION,
+        revise_ops_collection=REVISE_OPS_COLLECTION,
+    )
+    command = ReviseStatblockCommandV1(
+        request_id=f"fs-rev-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Adjust for Firestore revise ops"],
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+        source_definition=bruiser,
+    )
+    digest = compute_revise_candidate_digest(command)
+    candidate_id = f"cand_fsrev{suffix}"
+
+    claimed = ops.begin_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: candidate_id,
+        lease_owner="owner-a",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(claimed, ReviseBeginClaimed)
+    assert claimed.operation.candidate_id == candidate_id
+
+    with pytest.raises(IdempotencyConflictError):
+        ops.begin_revise(
+            caller_scope="dungeonbuddy",
+            request_id=command.request_id,
+            request_digest=compute_revise_candidate_digest(
+                command.model_copy(update={"revision_instructions": ["Changed instructions"]})
+            ),
+            candidate_id_factory=lambda: f"cand_other{suffix}",
+            lease_owner="owner-b",
+            lease_duration_seconds=120,
+        )
+
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=bruiser,
+        validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
+        generation_receipt=GenerationReceiptV1(
+            request_id=command.request_id,
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="dungeonbuddy",
+            request_digest=digest,
+        ),
+        created_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    stored = ops.complete_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=candidate,
+    )
+    assert stored.candidate.candidate_id == candidate_id
+    assert stored.already_completed is False
+    assert candidates.get(candidate_id, now=now).candidate_id == candidate_id
+
+    ops2 = FirestoreCandidateRevisionOperationRepository(
+        firestore_client, clock=lambda: now
+    )
+    began = ops2.begin_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: f"cand_new{suffix}",
+        lease_owner="owner-c",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(began, ReviseBeginCompleted)
+    assert began.operation.candidate_id == candidate_id
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(
+                ops.complete_revise,
                 caller_scope="dungeonbuddy",
                 request_id=command.request_id,
                 request_digest=digest,

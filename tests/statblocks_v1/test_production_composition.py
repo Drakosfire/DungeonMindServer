@@ -68,6 +68,18 @@ def test_firestore_disabled_blocks_repository_construction(monkeypatch) -> None:
         build_persistence_repository(_FakeFirestore())
 
 
+def test_build_revise_operation_repository_uses_configured_collection(monkeypatch) -> None:
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.setenv(
+        "STATBLOCKS_V1_REVISE_OPS_COLLECTION", "custom_revise_ops_collection_v1"
+    )
+    from statblocks_v1.infrastructure.runtime import build_revise_operation_repository
+
+    repo = build_revise_operation_repository(_FakeFirestore())
+    assert repo._revise_ops_collection == "custom_revise_ops_collection_v1"
+
+
 def test_asset_gateway_wired_only_when_enabled_with_pipeline(monkeypatch) -> None:
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")

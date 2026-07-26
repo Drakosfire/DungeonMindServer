@@ -1,0 +1,28 @@
+{
+  "candidate_id": "cand_fixture_revise_replay",
+  "contract": "dungeonmind.dungeonbuddy-statblocks",
+  "contract_version": "1.0.0",
+  "created_at": "2026-01-01T00:00:00Z",
+  "expires_at": "2026-01-01T01:00:00Z",
+  "generation_receipt": {
+    "caller_scope": "dungeonbuddy",
+    "generated_at": "2026-01-01T00:00:00Z",
+    "model": "gpt-5.4-nano",
+    "prompt_version": "statblock-generation-v1",
+    "provider": "openai_responses",
+    "request_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "request_id": "fixture-revise-locator-1",
+    "schema_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "schema_version": "1.0.0",
+    "source_definition_digest": "sha256:ffa75f84c36431706a8e3dc3409c0b8371ed1ef403b6dd52704181aa6a88aac1",
+    "source_locator": {
+      "revision_id": "rev_fixture0001",
+      "statblock_id": "sb_fixture00001"
+    }
+  },
+  "source_locator": {
+    "revision_id": "rev_fixture0001",
+    "statblock_id": "sb_fixture00001"
+  },
+  "_note": "Sanitized 200 replay-equivalent envelope fields for Buddy SBW06a; definition body omitted."
+}

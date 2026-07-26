@@ -642,6 +642,187 @@ def test_revision_resolver_errors_are_typed(load_fixture) -> None:
     assert result.kind == "revision_not_found"
 
 
+class _TrackingDefinitionResolver:
+    """Counts resolve() calls; optional hard failure after a completed revise replay path."""
+
+    def __init__(self, inner, *, fail: bool = False) -> None:
+        self._inner = inner
+        self.fail = fail
+        self.resolve_calls = 0
+
+    def resolve(self, locator):
+        self.resolve_calls += 1
+        if self.fail:
+            raise RevisionNotFoundError(locator.revision_id)
+        return self._inner.resolve(locator)
+
+
+def _revision_locator_setup(load_fixture):
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    persistence = InMemoryStatblockPersistenceRepository(
+        clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),
+        id_factory=DeterministicIdFactory(),
+    )
+    statblock, revision = persistence.create_statblock(
+        CreateStatblockCommand(
+            caller_scope="tests",
+            idempotency_key="locator-revise-source",
+            definition=definition,
+            created_by="tests",
+        )
+    )
+    locator = ExactRevisionLocatorV1(
+        statblock_id=statblock.statblock_id, revision_id=revision.revision_id
+    )
+    return definition, persistence, locator
+
+
+def test_revise_locator_replay_skips_resolver_after_completion(load_fixture) -> None:
+    definition, persistence, locator = _revision_locator_setup(load_fixture)
+    inner = PersistenceDefinitionResolver(persistence)
+    tracking = _TrackingDefinitionResolver(inner)
+    provider = FakeDefinitionProvider(definition.model_dump(mode="json"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+    )
+
+    rev_ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now)
+    command = ReviseStatblockCommandV1(
+        request_id="req_locator_replay",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Tighten the club damage"],
+        caller=CallerProvenanceV1(caller_scope="tests"),
+        source_locator=locator,
+    )
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_locreplay1",
+        definition_resolver=tracking,
+        revise_operations=rev_ops,
+    )
+    first = service.revise(command)
+    assert not isinstance(first, GenerationFailureV1)
+    assert first.replayed is False
+    assert tracking.resolve_calls == 1
+    assert len(provider.calls) == 1
+
+    replay_tracking = _TrackingDefinitionResolver(inner, fail=True)
+    replay_service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_other",
+        definition_resolver=replay_tracking,
+        revise_operations=rev_ops,
+    )
+    second = replay_service.revise(command)
+    assert not isinstance(second, GenerationFailureV1)
+    assert second.replayed is True
+    assert second.candidate_id == first.candidate_id
+    assert replay_tracking.resolve_calls == 0
+    assert len(provider.calls) == 1
+
+
+def test_revise_locator_changed_body_conflicts_before_resolver(load_fixture) -> None:
+    from statblocks_v1.domain.errors import IdempotencyConflictError
+
+    definition, persistence, locator = _revision_locator_setup(load_fixture)
+    inner = PersistenceDefinitionResolver(persistence)
+    provider = FakeDefinitionProvider(definition.model_dump(mode="json"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+    )
+
+    rev_ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now)
+    command = ReviseStatblockCommandV1(
+        request_id="req_locator_conflict",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Tighten the club damage"],
+        caller=CallerProvenanceV1(caller_scope="tests"),
+        source_locator=locator,
+    )
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_locconflict1",
+        definition_resolver=inner,
+        revise_operations=rev_ops,
+    )
+    assert not isinstance(service.revise(command), GenerationFailureV1)
+    assert len(provider.calls) == 1
+
+    conflict_tracking = _TrackingDefinitionResolver(inner, fail=True)
+    conflict_service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_other",
+        definition_resolver=conflict_tracking,
+        revise_operations=rev_ops,
+    )
+    with pytest.raises(IdempotencyConflictError):
+        conflict_service.revise(
+            ReviseStatblockCommandV1(
+                request_id=command.request_id,
+                ruleset=RulesetRef(system="dnd5e", edition="2024"),
+                revision_instructions=["Totally different edit"],
+                caller=CallerProvenanceV1(caller_scope="tests"),
+                source_locator=ExactRevisionLocatorV1(
+                    statblock_id="sb_other000001", revision_id="rev_other00001"
+                ),
+            )
+        )
+    assert conflict_tracking.resolve_calls == 0
+    assert len(provider.calls) == 1
+
+
+def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    provider = FakeDefinitionProvider(source.model_dump(mode="json"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRevisionOperationRepository,
+    )
+
+    rev_ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now)
+    gen_ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = _revise_command(source, revision_instructions=["Bump challenge slightly"])
+
+    def build_service() -> GenerationServiceV1:
+        return GenerationServiceV1(
+            provider=provider,
+            candidates=candidates,
+            settings=GenerationSettingsV1("test-model", 1, 0, 60),
+            clock=lambda: now,
+            candidate_id_factory=lambda: "cand_freshrev1",
+            generate_operations=gen_ops,
+            revise_operations=rev_ops,
+        )
+
+    first = build_service().revise(command)
+    second = build_service().revise(command)
+
+    assert isinstance(first, GenerateOutcomeV1)
+    assert isinstance(second, GenerateOutcomeV1)
+    assert first.replayed is False
+    assert second.replayed is True
+    assert first.candidate_id == second.candidate_id == "cand_freshrev1"
+    assert len(provider.calls) == 1
+
+
 def test_settings_resolve_in_repo_model_policy(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()

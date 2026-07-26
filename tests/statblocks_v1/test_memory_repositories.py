@@ -538,6 +538,115 @@ def test_revise_ops_reserve_complete_and_replay(load_fixture):
     assert isinstance(replay, ReviseBeginCompleted)
 
 
+def test_revise_ops_concurrent_first_claims_reserve_one_candidate_id(load_fixture):
+    from datetime import datetime, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        ReviseBeginInProgress,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now)
+    command = ReviseStatblockCommandV1(
+        request_id="req_revise_race",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Race to claim"],
+        caller=CallerProvenanceV1(caller_scope="tests"),
+        source_definition=source,
+    )
+    digest = compute_revise_candidate_digest(command)
+
+    def attempt(owner: str):
+        return ops.begin_revise(
+            caller_scope="tests",
+            request_id=command.request_id,
+            request_digest=digest,
+            candidate_id_factory=lambda: f"cand_unused{owner}",
+            lease_owner=owner,
+            lease_duration_seconds=60,
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(attempt, ["a", "b", "c", "d"]))
+
+    claimed = [item for item in results if isinstance(item, ReviseBeginClaimed)]
+    in_progress = [item for item in results if isinstance(item, ReviseBeginInProgress)]
+    assert len(claimed) == 1
+    reserved_id = claimed[0].operation.candidate_id
+    assert all(item.operation.candidate_id == reserved_id for item in claimed)
+    assert all(item.candidate_id == reserved_id for item in in_progress)
+
+
+def test_revise_ops_expired_lease_takeover_retains_reserved_candidate_id(load_fixture):
+    from datetime import datetime, timedelta, timezone
+
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateRevisionOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    source = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    candidates = InMemoryCandidateRepository(clock=lambda: now["t"])
+    ops = InMemoryCandidateRevisionOperationRepository(candidates, clock=lambda: now["t"])
+    command = ReviseStatblockCommandV1(
+        request_id="req_revise_takeover",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Hold the lease"],
+        caller=CallerProvenanceV1(caller_scope="tests"),
+        source_definition=source,
+    )
+    digest = compute_revise_candidate_digest(command)
+
+    claimed = ops.begin_revise(
+        caller_scope="tests",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_revtakeover1",
+        lease_owner="owner-a",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(claimed, ReviseBeginClaimed)
+    assert claimed.operation.candidate_id == "cand_revtakeover1"
+
+    now["t"] = now["t"] + timedelta(seconds=31)
+    takeover = ops.begin_revise(
+        caller_scope="tests",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_shouldnot1",
+        lease_owner="owner-b",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(takeover, ReviseBeginClaimed)
+    assert takeover.operation.candidate_id == "cand_revtakeover1"
+    assert takeover.operation.attempt_count == 2
+
+
 def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
     from datetime import datetime, timedelta, timezone
 

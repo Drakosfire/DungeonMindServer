@@ -209,15 +209,18 @@ class GenerationServiceV1:
         return self._generate_idempotent(pinned)
 
     def revise(self, command: ReviseStatblockCommandV1) -> GenerationResultV1:
-        pinned = _pin_revise_intent(command, self._definition_resolver)
-        if isinstance(pinned, GenerationFailureV1):
-            return pinned
+        # Authority pin only: digest + XOR/basic shape. Locator resolution and
+        # provider work happen only after begin_revise returns ReviseBeginClaimed,
+        # so completed/conflict authority wins over transient source unreadability.
+        authority = _pin_revise_authority(command)
+        if isinstance(authority, GenerationFailureV1):
+            return authority
         if self._revise_operations is None:
             return GenerationFailureV1(
                 "persistence_unavailable",
                 "Candidate revise-operation repository is not configured",
             )
-        return self._revise_idempotent(pinned)
+        return self._revise_idempotent(authority)
 
     def _generate_idempotent(self, pinned: _PinnedOperationIntent) -> GenerationResultV1:
         assert self._generate_operations is not None
@@ -528,13 +531,12 @@ class GenerationServiceV1:
             raise CandidateExpiredError(candidate_id)
         return candidate
 
-    def _revise_idempotent(self, pinned: _PinnedOperationIntent) -> GenerationResultV1:
+    def _revise_idempotent(self, authority: "_ReviseAuthorityPin") -> GenerationResultV1:
         assert self._revise_operations is not None
-        assert pinned.request_digest is not None
         ops = self._revise_operations
-        request_id = pinned.request_id
-        request_digest = pinned.request_digest
-        caller_scope = pinned.caller.caller_scope
+        request_id = authority.snapshot.request_id
+        request_digest = authority.request_digest
+        caller_scope = authority.snapshot.caller.caller_scope
 
         lease_owner = self._lease_owner_factory()
         try:
@@ -576,6 +578,43 @@ class GenerationServiceV1:
 
         claim = began.operation
         lease_owner = claim.lease_owner
+        # Locator / definition resolution happens only after a durable claim.
+        pinned = _materialize_revise_intent(authority, self._definition_resolver)
+        if isinstance(pinned, GenerationFailureV1):
+            try:
+                snapshot = ops.fail_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    lease_owner=lease_owner,
+                    failure=CandidateGenerationFailureSnapshotV1(
+                        kind=pinned.kind, message=pinned.message
+                    ),
+                )
+            except ImmutableResourceConflictError:
+                return self._resolve_after_terminal_race_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    reserved_candidate_id=claim.candidate_id,
+                )
+            except TransactionIndeterminateError:
+                return self._resolve_after_terminal_race_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    reserved_candidate_id=claim.candidate_id,
+                    indeterminate=True,
+                )
+            except PersistenceUnavailableError:
+                return GenerationFailureV1(
+                    "persistence_unavailable", "Persistence is unavailable"
+                )
+            except IdempotencyConflictError:
+                raise
+            except ReviseOperationIntegrityError:
+                raise
+            return GenerationFailureV1(snapshot.kind, snapshot.message)
         result = self._run(pinned, reserved_candidate_id=claim.candidate_id, persist=False)
         if isinstance(result, GenerationFailureV1):
             try:
@@ -1022,17 +1061,56 @@ def _pin_generate_intent(
     )
 
 
-def _pin_revise_intent(
+@dataclass(frozen=True)
+class _ReviseAuthorityPin:
+    """Pre-begin revise authority: exact request identity without source I/O.
+
+    Locator resolution and prompt construction are deferred until after
+    ``begin_revise`` returns ``ReviseBeginClaimed``.
+    """
+
+    snapshot: ReviseStatblockCommandV1
+    request_digest: str
+    source_description_digest: str | None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "snapshot", self.snapshot.model_copy(deep=True))
+
+
+def _pin_revise_authority(
     command: ReviseStatblockCommandV1,
-    definition_resolver: DefinitionResolver | None,
-) -> _PinnedOperationIntent | GenerationFailureV1:
-    """Deep-copy and derive all revise inputs before any provider call."""
+) -> _ReviseAuthorityPin | GenerationFailureV1:
+    """Deep-copy, validate XOR/basic shape, and compute digest — no locator I/O."""
 
     snapshot = command.model_copy(deep=True)
+    if (snapshot.source_definition is None) == (snapshot.source_locator is None):
+        return GenerationFailureV1("invalid_request", "Revision source is missing")
     try:
         request_digest = compute_revise_candidate_digest(snapshot)
     except StatblockV1Error as error:
         return GenerationFailureV1(error.code, error.message)
+
+    source_digest: str | None = None
+    if snapshot.source is not None:
+        digest_error = _verified_source_digest(snapshot.source)
+        if isinstance(digest_error, GenerationFailureV1):
+            return digest_error
+        source_digest = digest_error
+
+    return _ReviseAuthorityPin(
+        snapshot=snapshot,
+        request_digest=request_digest,
+        source_description_digest=source_digest,
+    )
+
+
+def _materialize_revise_intent(
+    authority: _ReviseAuthorityPin,
+    definition_resolver: DefinitionResolver | None,
+) -> _PinnedOperationIntent | GenerationFailureV1:
+    """Resolve locator / inline definition only after a durable revise claim."""
+
+    snapshot = authority.snapshot
     source = snapshot.source_definition
     source_locator = snapshot.source_locator
     if source is None:
@@ -1053,20 +1131,13 @@ def _pin_revise_intent(
     else:
         source = source.model_copy(deep=True)
 
-    source_digest: str | None = None
-    if snapshot.source is not None:
-        digest_error = _verified_source_digest(snapshot.source)
-        if isinstance(digest_error, GenerationFailureV1):
-            return digest_error
-        source_digest = digest_error
-
     return _PinnedOperationIntent(
         request_id=snapshot.request_id,
-        request_digest=request_digest,
+        request_digest=authority.request_digest,
         ruleset=snapshot.ruleset,
         caller=snapshot.caller,
         prompt=build_revision_prompt(snapshot, source),
-        source_description_digest=source_digest,
+        source_description_digest=authority.source_description_digest,
         source_definition_digest=compute_definition_digest(source),
         source_locator=source_locator,
         source_definition=source,
@@ -1079,6 +1150,22 @@ def _pin_revise_intent(
         generate_assets=snapshot.asset_options.generate_images,
         include_generation_brief=snapshot.asset_options.include_generation_brief,
     )
+
+
+def _pin_revise_intent(
+    command: ReviseStatblockCommandV1,
+    definition_resolver: DefinitionResolver | None,
+) -> _PinnedOperationIntent | GenerationFailureV1:
+    """Compatibility helper: authority pin + immediate materialization.
+
+    Production ``revise()`` must not use this for the begin path — it would
+    resolve locators before consulting durable operation authority.
+    """
+
+    authority = _pin_revise_authority(command)
+    if isinstance(authority, GenerationFailureV1):
+        return authority
+    return _materialize_revise_intent(authority, definition_resolver)
 
 
 def _verified_source_digest(source: SourceSnapshotV1) -> str | GenerationFailureV1:

@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "idempotency_conflict",
+    "details": {
+      "request_id": "fixture-revise-locator-1"
+    },
+    "message": "Request body does not match the stored idempotency digest for this request_id"
+  },
+  "_note": "Sanitized 409 idempotency_conflict envelope for Buddy SBW06a; captured-from-test illustrative transport evidence."
+}

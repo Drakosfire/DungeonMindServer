@@ -1,0 +1,16 @@
+{
+  "request_id": "fixture-revise-locator-1",
+  "ruleset": {
+    "edition": "2024",
+    "house_ruleset_id": null,
+    "system": "dnd5e"
+  },
+  "revision_instructions": [
+    "Tighten melee damage for table pace."
+  ],
+  "source_locator": {
+    "revision_id": "rev_fixture0001",
+    "statblock_id": "sb_fixture00001"
+  },
+  "_note": "Illustrative v1 transport body captured from statblocks_v1 tests; source_definition alternative uses simple_bruiser.json in the sibling fixture directory."
+}
