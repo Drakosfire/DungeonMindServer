@@ -62,11 +62,13 @@ def test_v1_collection_layout_is_isolated():
         STATBLOCKS_COLLECTION,
         IDEMPOTENCY_COLLECTION,
         GENERATE_OPS_COLLECTION,
+        REVISE_OPS_COLLECTION,
     ) == (
         "dungeonbuddy_statblock_candidates_v1",
         "dungeonbuddy_statblocks_v1",
         "dungeonbuddy_statblock_idempotency_v1",
         "dungeonbuddy_statblock_candidate_generate_ops_v1",
+        "dungeonbuddy_statblock_candidate_revise_ops_v1",
     )
 
 
@@ -545,3 +547,251 @@ def test_firestore_revise_ops_atomic_complete_and_replay(firestore_client, bruis
         results = [future.result() for future in futures]
     assert {item.candidate.candidate_id for item in results} == {candidate_id}
     assert all(item.already_completed for item in results)
+
+
+def test_firestore_revise_ops_concurrent_first_claims_reserve_one_candidate_id(
+    firestore_client, bruiser
+):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        ReviseBeginInProgress,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    ops = FirestoreCandidateRevisionOperationRepository(
+        firestore_client,
+        clock=lambda: now,
+        candidates_collection=CANDIDATES_COLLECTION,
+        revise_ops_collection=REVISE_OPS_COLLECTION,
+    )
+    command = ReviseStatblockCommandV1(
+        request_id=f"fs-rev-race-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Race to claim revise lease"],
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+        source_definition=bruiser,
+    )
+    digest = compute_revise_candidate_digest(command)
+
+    def attempt(owner: str):
+        return ops.begin_revise(
+            caller_scope="dungeonbuddy",
+            request_id=command.request_id,
+            request_digest=digest,
+            candidate_id_factory=lambda: f"cand_unused{owner}{suffix}",
+            lease_owner=owner,
+            lease_duration_seconds=120,
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(attempt, ["a", "b", "c", "d"]))
+
+    claimed = [item for item in results if isinstance(item, ReviseBeginClaimed)]
+    in_progress = [item for item in results if isinstance(item, ReviseBeginInProgress)]
+    assert len(claimed) == 1
+    reserved_id = claimed[0].operation.candidate_id
+    assert all(item.operation.candidate_id == reserved_id for item in claimed)
+    assert all(item.candidate_id == reserved_id for item in in_progress)
+
+
+def test_firestore_revise_ops_expired_lease_takeover_retains_reserved_candidate_id(
+    firestore_client, bruiser
+):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+
+    now = {"t": datetime(2026, 1, 1, tzinfo=timezone.utc)}
+    suffix = uuid.uuid4().hex[:8]
+    ops = FirestoreCandidateRevisionOperationRepository(
+        firestore_client,
+        clock=lambda: now["t"],
+        candidates_collection=CANDIDATES_COLLECTION,
+        revise_ops_collection=REVISE_OPS_COLLECTION,
+    )
+    command = ReviseStatblockCommandV1(
+        request_id=f"fs-rev-takeover-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Hold the revise lease"],
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+        source_definition=bruiser,
+    )
+    digest = compute_revise_candidate_digest(command)
+    reserved = f"cand_fsvrtake{suffix}"
+
+    claimed = ops.begin_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: reserved,
+        lease_owner="owner-a",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(claimed, ReviseBeginClaimed)
+    assert claimed.operation.candidate_id == reserved
+
+    now["t"] = now["t"] + timedelta(seconds=31)
+    takeover = ops.begin_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: f"cand_shouldnot{suffix}",
+        lease_owner="owner-b",
+        lease_duration_seconds=30,
+    )
+    assert isinstance(takeover, ReviseBeginClaimed)
+    assert takeover.operation.candidate_id == reserved
+    assert takeover.operation.attempt_count == 2
+
+
+def test_firestore_revise_ops_indeterminate_complete_reconciles(firestore_client, bruiser):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.repositories import (
+        ReviseBeginClaimed,
+        compute_revise_candidate_digest,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    ops = FirestoreCandidateRevisionOperationRepository(
+        firestore_client,
+        clock=lambda: now,
+        candidates_collection=CANDIDATES_COLLECTION,
+        revise_ops_collection=REVISE_OPS_COLLECTION,
+    )
+    command = ReviseStatblockCommandV1(
+        request_id=f"fs-rev-reconcile-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Complete once then stale-worker replay"],
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+        source_definition=bruiser,
+    )
+    digest = compute_revise_candidate_digest(command)
+    candidate_id = f"cand_fsrecon{suffix}"
+
+    claimed = ops.begin_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: candidate_id,
+        lease_owner="owner-a",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(claimed, ReviseBeginClaimed)
+
+    candidate = GeneratedStatblockCandidateV1(
+        candidate_id=candidate_id,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=bruiser,
+        validation_receipt=validate_definition(bruiser, ValidationMode.generation_candidate),
+        generation_receipt=GenerationReceiptV1(
+            request_id=command.request_id,
+            provider="test",
+            model="test-model",
+            prompt_version="v1",
+            schema_version="v1",
+            schema_fingerprint="fp",
+            generated_at=now,
+            caller_scope="dungeonbuddy",
+            request_digest=digest,
+        ),
+        created_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    stored = ops.complete_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-a",
+        candidate=candidate,
+    )
+    assert stored.already_completed is False
+
+    stale_payload = candidate.model_copy(update={"asset_brief": None})
+    again = ops.complete_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-stale",
+        candidate=stale_payload,
+    )
+    assert again.candidate.candidate_id == candidate_id
+    assert again.already_completed is True
+    assert again.candidate.model_dump(mode="json") == stored.candidate.model_dump(mode="json")
+
+
+def test_firestore_revise_replay_through_fresh_generation_service(
+    firestore_client, bruiser, load_fixture
+):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        ReviseStatblockCommandV1,
+    )
+    from statblocks_v1.application.generation import GenerateOutcomeV1, GenerationServiceV1
+    from statblocks_v1.application.settings import GenerationSettingsV1
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    command = ReviseStatblockCommandV1(
+        request_id=f"fs-rev-svc-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        revision_instructions=["Service-level Firestore replay proof"],
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy", actor="emulator"),
+        source_definition=bruiser,
+    )
+    fixed_candidate_id = f"cand_fssvc{suffix}"
+
+    def build_service() -> GenerationServiceV1:
+        candidates = FirestoreCandidateRepository(firestore_client, clock=lambda: now)
+        revise_ops = FirestoreCandidateRevisionOperationRepository(
+            firestore_client,
+            clock=lambda: now,
+            candidates_collection=CANDIDATES_COLLECTION,
+            revise_ops_collection=REVISE_OPS_COLLECTION,
+        )
+        generate_ops = FirestoreCandidateGenerationOperationRepository(
+            firestore_client,
+            clock=lambda: now,
+            candidates_collection=CANDIDATES_COLLECTION,
+            generate_ops_collection=GENERATE_OPS_COLLECTION,
+        )
+        return GenerationServiceV1(
+            provider=provider,
+            candidates=candidates,
+            settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+            clock=lambda: now,
+            candidate_id_factory=lambda: fixed_candidate_id,
+            generate_operations=generate_ops,
+            revise_operations=revise_ops,
+        )
+
+    first = build_service().revise(command)
+    second = build_service().revise(command)
+
+    assert isinstance(first, GenerateOutcomeV1)
+    assert isinstance(second, GenerateOutcomeV1)
+    assert first.replayed is False
+    assert second.replayed is True
+    assert first.candidate_id == second.candidate_id == fixed_candidate_id
+    assert len(provider.calls) == 1

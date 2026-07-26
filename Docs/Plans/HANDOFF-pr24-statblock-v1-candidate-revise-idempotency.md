@@ -33,12 +33,42 @@ Outcome binding uses operation string `revise_candidate_outcome`.
 ## CI baseline waiver
 
 ```text
-Workflow: redteam-hardening.yml
-Run (this PR): https://github.com/Drakosfire/DungeonMindServer/actions/runs/30176374090
-Failure identity:
+Head SHA: 0d746164e5f4bd24d6cb2622dd63b40badaad576
+Current workflow run: https://github.com/Drakosfire/DungeonMindServer/actions/runs/30185843127
+Failure identity (same as main/PR23):
   ERROR collecting tests/test_redteam_hardening.py
   ERROR collecting tests/test_ruleslawyer_router.py
-  Root cause: storegenerator/store_helper.py:5 client = OpenAI() at import time without OPENAI_API_KEY
-Predecessor PR #23 / main: same workflow fails with the same collection errors (not introduced by revise idempotency).
-Waiver: out of scope for this PR; not a revise-ops regression.
+  openai.OpenAIError: storegenerator/store_helper.py OpenAI() at import without OPENAI_API_KEY
+Comparison: identical collection failure mode to predecessor PR #23 and main redteam-hardening runs.
+Waiver: inherited baseline; not introduced by revise idempotency.
+```
+
+## Emulator evidence (Firestore revise durability)
+
+Run against a live Firestore emulator (do not commit emulator data):
+
+```bash
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8085
+export GOOGLE_CLOUD_PROJECT=demo-revise-idempotency
+uv run pytest tests/statblocks_v1/integration/test_firestore_repositories.py -q --tb=short \
+  | tee /tmp/firestore-emulator/revise-suite.txt
+```
+
+Revise-focused tests in that module:
+
+- `test_firestore_revise_ops_atomic_complete_and_replay`
+- `test_firestore_revise_ops_concurrent_first_claims_reserve_one_candidate_id`
+- `test_firestore_revise_ops_expired_lease_takeover_retains_reserved_candidate_id`
+- `test_firestore_revise_ops_indeterminate_complete_reconciles`
+- `test_firestore_revise_replay_through_fresh_generation_service`
+
+Paste pass counts from `revise-suite.txt` into PR review when updating this handoff.
+
+Latest local emulator run (2026-07-25):
+
+```text
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8085
+GOOGLE_CLOUD_PROJECT=demo-revise-idempotency
+uv run pytest tests/statblocks_v1/integration/test_firestore_repositories.py -q --tb=short
+14 passed in 2.87s
 ```
