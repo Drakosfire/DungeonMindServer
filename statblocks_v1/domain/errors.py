@@ -75,6 +75,26 @@ class GenerateOperationIntegrityError(StatblockV1Error):
         )
 
 
+class ReviseOperationIntegrityError(StatblockV1Error):
+    """Revise-operation document failed key/state/binding integrity checks."""
+
+    def __init__(
+        self,
+        request_id: str,
+        *,
+        candidate_id: str | None = None,
+        reason: str = "Revise operation record failed integrity checks",
+    ) -> None:
+        details: dict[str, Any] = {"request_id": request_id}
+        if candidate_id is not None:
+            details["candidate_id"] = candidate_id
+        super().__init__(
+            "revise_operation_integrity",
+            reason,
+            details,
+        )
+
+
 class StatblockNotFoundError(StatblockV1Error):
     def __init__(self, statblock_id: str) -> None:
         super().__init__("statblock_not_found", "Statblock was not found", {"statblock_id": statblock_id})

@@ -23,20 +23,32 @@ from statblocks_v1.application.repositories import (
     GenerateBeginInProgress,
     GenerateBeginResult,
     GenerateCompleteResult,
+    ReviseBeginClaimed,
+    ReviseBeginCompleted,
+    ReviseBeginFailed,
+    ReviseBeginInProgress,
+    ReviseBeginResult,
+    ReviseCompleteResult,
     compute_candidate_outcome_digest,
+    compute_revise_candidate_outcome_digest,
     require_candidate_owned_by_generate_operation,
+    require_candidate_owned_by_revise_operation,
     verify_generate_operation_lookup_identity,
+    verify_revise_operation_lookup_identity,
 )
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
+    REVISE_CANDIDATE_OPERATION,
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
     CandidateGenerationStatusV1,
+    CandidateRevisionOperationV1,
 )
 from statblocks_v1.domain.errors import (
     CandidateExpiredError,
     CandidateNotFoundError,
     GenerateOperationIntegrityError,
+    ReviseOperationIntegrityError,
     IdempotencyConflictError,
     ImmutableResourceConflictError,
     ImmutableRevisionConflictError,
@@ -66,6 +78,7 @@ CANDIDATES_COLLECTION = "dungeonbuddy_statblock_candidates_v1"
 STATBLOCKS_COLLECTION = "dungeonbuddy_statblocks_v1"
 IDEMPOTENCY_COLLECTION = "dungeonbuddy_statblock_idempotency_v1"
 GENERATE_OPS_COLLECTION = "dungeonbuddy_statblock_candidate_generate_ops_v1"
+REVISE_OPS_COLLECTION = "dungeonbuddy_statblock_candidate_revise_ops_v1"
 
 
 class FirestoreCandidateRepository:
@@ -550,6 +563,441 @@ class FirestoreCandidateGenerationOperationRepository:
             f"{caller_scope}\x1f{GENERATE_CANDIDATE_OPERATION}\x1f{request_id}".encode()
         ).hexdigest()
         return self._client.collection(self._generate_ops_collection).document(digest)
+
+
+
+class FirestoreCandidateRevisionOperationRepository:
+    """Transactional revise-operation adapter with atomic candidate completion."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+        candidates_collection: str = CANDIDATES_COLLECTION,
+        revise_ops_collection: str = REVISE_OPS_COLLECTION,
+    ) -> None:
+        self._client = client
+        self._clock = clock
+        self._candidates_collection = candidates_collection
+        self._revise_ops_collection = revise_ops_collection
+
+    def get_revise_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateRevisionOperationV1 | None:
+        try:
+            snapshot = self._operation_document(caller_scope, request_id).get()
+        except Exception as error:
+            raise PersistenceUnavailableError() from error
+        if not snapshot.exists:
+            return None
+        return self._parse_operation(
+            snapshot.to_dict(), caller_scope=caller_scope, request_id=request_id
+        )
+
+    def begin_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> ReviseBeginResult:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        result_box: dict[str, ReviseBeginResult] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                operation = CandidateRevisionOperationV1(
+                    caller_scope=caller_scope,
+                    operation=REVISE_CANDIDATE_OPERATION,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate_id_factory(),
+                    status=CandidateGenerationStatusV1.pending,
+                    lease_owner=lease_owner,
+                    lease_expires_at=now + timedelta(seconds=lease_duration_seconds),
+                    attempt_count=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+                transaction.create(op_ref, _dump(operation))
+                result_box["result"] = ReviseBeginClaimed(operation=operation)
+                return
+
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if existing.status is CandidateGenerationStatusV1.completed:
+                result_box["result"] = ReviseBeginCompleted(operation=existing)
+                return
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                result_box["result"] = ReviseBeginFailed(failure=existing.failure)
+                return
+
+            # Pending + existing candidate is an impossible atomic state: create
+            # and completion share one commit. Fail closed; do not promote.
+            candidate_ref = self._client.collection(self._candidates_collection).document(
+                existing.candidate_id
+            )
+            candidate_snap = candidate_ref.get(transaction=transaction)
+            if candidate_snap.exists:
+                raise ReviseOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending revise points to an existing candidate document"
+                    ),
+                )
+
+            if existing.lease_expires_at > now:
+                result_box["result"] = ReviseBeginInProgress(
+                    candidate_id=existing.candidate_id,
+                    lease_expires_at=existing.lease_expires_at,
+                )
+                return
+
+            claimed = existing.model_copy(
+                update={
+                    "lease_owner": lease_owner,
+                    "lease_expires_at": now + timedelta(seconds=lease_duration_seconds),
+                    "attempt_count": existing.attempt_count + 1,
+                    "updated_at": now,
+                }
+            )
+            transaction.set(op_ref, _dump(claimed))
+            result_box["result"] = ReviseBeginClaimed(operation=claimed)
+
+        try:
+            operation_fn(self._client.transaction())
+        except (
+            IdempotencyConflictError,
+            ReviseOperationIntegrityError,
+            PersistenceUnavailableError,
+        ):
+            raise
+        except Exception as error:
+            if _is_already_exists(error):
+                # Concurrent first-create: re-enter begin semantics via re-read.
+                return self.begin_revise(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id_factory=candidate_id_factory,
+                    lease_owner=lease_owner,
+                    lease_duration_seconds=lease_duration_seconds,
+                )
+            raise PersistenceUnavailableError() from error
+        return result_box["result"]
+
+    def complete_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> ReviseCompleteResult:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        candidate_ref = self._client.collection(self._candidates_collection).document(
+            candidate.candidate_id
+        )
+        result_box: dict[str, ReviseCompleteResult] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                raise PersistenceUnavailableError()
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+            if candidate.candidate_id != existing.candidate_id:
+                raise ImmutableResourceConflictError("candidate", candidate.candidate_id)
+
+            if existing.status is CandidateGenerationStatusV1.failed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            candidate_snap = candidate_ref.get(transaction=transaction)
+            if existing.status is CandidateGenerationStatusV1.completed:
+                # Stale-worker convergence after a successful atomic complete.
+                if not candidate_snap.exists:
+                    raise PersistenceUnavailableError()
+                stored = GeneratedStatblockCandidateV1.model_validate(
+                    candidate_snap.to_dict()
+                )
+                require_candidate_owned_by_revise_operation(
+                    stored,
+                    existing,
+                    reason=(
+                        "Completed revise points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
+                result_box["result"] = ReviseCompleteResult(
+                    candidate=stored, already_completed=True
+                )
+                return
+
+            # Pending + pre-existing candidate is corruption: create and
+            # completion share one commit. Never adopt/promote that state.
+            if candidate_snap.exists:
+                raise ReviseOperationIntegrityError(
+                    request_id,
+                    candidate_id=existing.candidate_id,
+                    reason=(
+                        "Pending revise points to an existing candidate document"
+                    ),
+                )
+
+            require_candidate_owned_by_revise_operation(
+                candidate,
+                existing,
+                reason=(
+                    "Revise completion candidate does not belong to this operation"
+                ),
+            )
+            outcome_digest = compute_revise_candidate_outcome_digest(candidate)
+            stored = candidate.model_copy(deep=True)
+            transaction.create(candidate_ref, _dump(stored))
+            transaction.set(
+                op_ref,
+                _dump(
+                    existing.model_copy(
+                        update={
+                            "status": CandidateGenerationStatusV1.completed,
+                            "updated_at": now,
+                            "completed_at": now,
+                            "failure": None,
+                            "candidate_expires_at": stored.expires_at,
+                            "outcome_digest": outcome_digest,
+                        }
+                    )
+                ),
+            )
+            result_box["result"] = ReviseCompleteResult(
+                candidate=stored, already_completed=False
+            )
+
+        try:
+            operation_fn(self._client.transaction())
+        except (
+            IdempotencyConflictError,
+            ImmutableResourceConflictError,
+            ReviseOperationIntegrityError,
+            PersistenceUnavailableError,
+        ):
+            raise
+        except Exception as error:
+            # Indeterminate: reconcile from durable operation + candidate.
+            reconciled = self._reconcile_complete(
+                caller_scope=caller_scope,
+                request_id=request_id,
+                request_digest=request_digest,
+                candidate_id=candidate.candidate_id,
+            )
+            if reconciled is not None:
+                return reconciled
+            if _is_already_exists(error):
+                reconciled = self._reconcile_complete(
+                    caller_scope=caller_scope,
+                    request_id=request_id,
+                    request_digest=request_digest,
+                    candidate_id=candidate.candidate_id,
+                )
+                if reconciled is not None:
+                    return reconciled
+            raise TransactionIndeterminateError() from error
+        return result_box["result"]
+
+    def fail_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1:
+        from google.cloud.firestore_v1 import transactional
+
+        op_ref = self._operation_document(caller_scope, request_id)
+        result_box: dict[str, CandidateGenerationFailureSnapshotV1] = {}
+
+        @transactional
+        def operation_fn(transaction):
+            now = self._clock()
+            existing_snap = op_ref.get(transaction=transaction)
+            if not existing_snap.exists:
+                raise PersistenceUnavailableError()
+            existing = self._parse_operation(
+                existing_snap.to_dict(),
+                caller_scope=caller_scope,
+                request_id=request_id,
+            )
+            if existing.request_digest != request_digest:
+                raise IdempotencyConflictError(request_id)
+
+            if existing.status is CandidateGenerationStatusV1.completed:
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+            if existing.status is CandidateGenerationStatusV1.failed:
+                if existing.failure is None:
+                    raise PersistenceUnavailableError()
+                result_box["result"] = existing.failure
+                return
+
+            if existing.lease_owner != lease_owner:
+                # Lease taken over; never echo an uncommitted local failure.
+                raise ImmutableResourceConflictError("candidate", existing.candidate_id)
+
+            snapshot = failure.model_copy(deep=True)
+            transaction.set(
+                op_ref,
+                _dump(
+                    existing.model_copy(
+                        update={
+                            "status": CandidateGenerationStatusV1.failed,
+                            "failure": snapshot,
+                            "updated_at": now,
+                            "completed_at": now,
+                        }
+                    )
+                ),
+            )
+            result_box["result"] = snapshot
+
+        try:
+            operation_fn(self._client.transaction())
+        except (
+            IdempotencyConflictError,
+            ImmutableResourceConflictError,
+            ReviseOperationIntegrityError,
+            PersistenceUnavailableError,
+        ):
+            raise
+        except Exception as error:
+            record = self.get_revise_operation(caller_scope, request_id)
+            if record is not None:
+                if record.request_digest != request_digest:
+                    raise IdempotencyConflictError(request_id) from error
+                if record.status is CandidateGenerationStatusV1.failed:
+                    if record.failure is not None:
+                        return record.failure
+                if record.status is CandidateGenerationStatusV1.completed:
+                    # Concurrent success: surface as conflict so the service
+                    # returns the canonical completed candidate.
+                    raise ImmutableResourceConflictError(
+                        "candidate", record.candidate_id
+                    ) from error
+            raise TransactionIndeterminateError() from error
+        return result_box["result"]
+
+    def _reconcile_complete(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id: str,
+    ) -> ReviseCompleteResult | None:
+        try:
+            record = self.get_revise_operation(caller_scope, request_id)
+        except PersistenceUnavailableError:
+            return None
+        if record is None:
+            return None
+        if record.request_digest != request_digest:
+            raise IdempotencyConflictError(request_id)
+        if record.candidate_id != candidate_id:
+            raise ImmutableResourceConflictError("candidate", candidate_id)
+        if record.status is CandidateGenerationStatusV1.completed:
+            try:
+                snapshot = (
+                    self._client.collection(self._candidates_collection)
+                    .document(candidate_id)
+                    .get()
+                )
+            except Exception as error:
+                raise PersistenceUnavailableError() from error
+            if snapshot.exists:
+                stored = GeneratedStatblockCandidateV1.model_validate(snapshot.to_dict())
+                require_candidate_owned_by_revise_operation(
+                    stored,
+                    record,
+                    reason=(
+                        "Completed revise points to a candidate that does not "
+                        "belong to this operation"
+                    ),
+                )
+                return ReviseCompleteResult(candidate=stored, already_completed=True)
+            raise PersistenceUnavailableError()
+        if record.status is CandidateGenerationStatusV1.failed:
+            raise ImmutableResourceConflictError("candidate", candidate_id)
+        # Pending: candidate must not exist yet (atomic create+complete).
+        try:
+            snapshot = (
+                self._client.collection(self._candidates_collection)
+                .document(candidate_id)
+                .get()
+            )
+        except Exception:
+            return None
+        if snapshot.exists:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=candidate_id,
+                reason=(
+                    "Pending revise points to an existing candidate document"
+                ),
+            )
+        return None
+
+    def _parse_operation(
+        self,
+        payload: dict[str, Any] | None,
+        *,
+        caller_scope: str,
+        request_id: str,
+    ) -> CandidateRevisionOperationV1:
+        try:
+            record = CandidateRevisionOperationV1.model_validate(payload or {})
+        except ValidationError as error:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                reason="Stored revise operation failed schema/state validation",
+            ) from error
+        return verify_revise_operation_lookup_identity(
+            record, caller_scope=caller_scope, request_id=request_id
+        )
+
+    def _operation_document(self, caller_scope: str, request_id: str) -> Any:
+        import hashlib
+
+        digest = hashlib.sha256(
+            f"{caller_scope}\x1f{REVISE_CANDIDATE_OPERATION}\x1f{request_id}".encode()
+        ).hexdigest()
+        return self._client.collection(self._revise_ops_collection).document(digest)
 
 
 class FirestoreStatblockPersistenceRepository:

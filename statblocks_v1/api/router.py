@@ -88,18 +88,29 @@ _GENERATE_ERROR_RESPONSES = {
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
 
-# Revise remains non-idempotent: do not advertise generate-only replay/conflict codes.
+# Revise uses the same durable request-id idempotency contract as generate.
 _REVISE_ERROR_RESPONSES = {
     **_AUTH_ERROR_RESPONSES,
     404: {
         "model": ErrorEnvelopeV1,
         "description": "Source statblock or revision not found",
     },
+    409: {
+        "model": ErrorEnvelopeV1,
+        "description": "Idempotency conflict or revision already in progress",
+    },
+    410: {
+        "model": ErrorEnvelopeV1,
+        "description": "Completed revision points to an expired or TTL-deleted candidate",
+    },
     422: {"model": ErrorEnvelopeV1, "description": "Invalid request or generation validation failure"},
     429: {"model": ErrorEnvelopeV1, "description": "Provider rate limited"},
     500: {
         "model": ErrorEnvelopeV1,
-        "description": "Unexpected generation failure",
+        "description": (
+            "Unexpected generation failure, revise-operation integrity failure, "
+            "or completed revision points to a candidate missing before its declared expiry"
+        ),
     },
     504: {"model": ErrorEnvelopeV1, "description": "Provider timeout"},
 }
@@ -167,12 +178,13 @@ def _bind_candidate(
     candidate: GeneratedStatblockCandidateV1,
     *,
     replayed: bool = False,
+    operation: str = "candidate_generate",
 ) -> None:
     receipt = candidate.generation_receipt
     bind_outcome(
         http_request,
         "success",
-        operation="candidate_generate",
+        operation=operation,
         candidate_id=candidate.candidate_id,
         caller_scope="dungeonbuddy",
         validation_errors=_issue_counts(candidate.validation_receipt)["errors"],
@@ -185,8 +197,13 @@ def _bind_candidate(
         output_tokens=receipt.output_tokens if receipt else None,
         idempotency_replay=replayed,
     )
+    replay_operation = (
+        "candidate_generate_replay"
+        if operation == "candidate_generate"
+        else "candidate_revise_replay"
+    )
     log_operation(
-        "candidate_generate_replay" if replayed else "candidate_persisted",
+        replay_operation if replayed else "candidate_persisted",
         candidate_id=candidate.candidate_id,
         definition_digest=candidate.validation_receipt.definition_digest,
         asset_count=len(candidate.assets),
@@ -256,7 +273,12 @@ async def revise_candidate(
     if isinstance(result, GenerationFailureV1):
         bind_outcome(http_request, result.kind, operation="candidate_revise")
         raise_for_generation_failure(result)
-    _bind_candidate(http_request, result)
+    if isinstance(result, GenerateOutcomeV1):
+        _bind_candidate(
+            http_request, result.candidate, replayed=result.replayed, operation="candidate_revise"
+        )
+        return result.candidate
+    _bind_candidate(http_request, result, replayed=False, operation="candidate_revise")
     return result
 
 

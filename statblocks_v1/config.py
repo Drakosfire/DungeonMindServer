@@ -64,6 +64,8 @@ class StatblocksV1Settings:
     idempotency_collection: str
     generate_ops_collection: str
     generate_lease_seconds: int
+    revise_ops_collection: str
+    revise_lease_seconds: int
     asset_gateway_enabled: bool
     asset_timeout_seconds: float
     feature_enabled: bool
@@ -107,6 +109,17 @@ class StatblocksV1Settings:
                 "retry budget plus asset generation timeout "
                 "(timeout × (retries+1) + asset_timeout + margin)"
             )
+        revise_lease_seconds = _positive_int(
+            "STATBLOCKS_V1_REVISE_LEASE_SECONDS",
+            default_lease,
+            minimum=1,
+        )
+        if revise_lease_seconds < provider_retry_budget_seconds:
+            raise ConfigurationError(
+                "STATBLOCKS_V1_REVISE_LEASE_SECONDS must cover the full provider "
+                "retry budget plus asset generation timeout "
+                "(timeout × (retries+1) + asset_timeout + margin)"
+            )
         return cls(
             internal_api_key=_required("DUNGEONBUDDY_INTERNAL_API_KEY"),
             openai_api_key=openai_api_key,
@@ -124,6 +137,11 @@ class StatblocksV1Settings:
                 "dungeonbuddy_statblock_candidate_generate_ops_v1",
             ),
             generate_lease_seconds=generate_lease_seconds,
+            revise_ops_collection=os.getenv(
+                "STATBLOCKS_V1_REVISE_OPS_COLLECTION",
+                "dungeonbuddy_statblock_candidate_revise_ops_v1",
+            ),
+            revise_lease_seconds=revise_lease_seconds,
             asset_gateway_enabled=_boolean("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", False),
             asset_timeout_seconds=asset_timeout_seconds,
             feature_enabled=feature_enabled,

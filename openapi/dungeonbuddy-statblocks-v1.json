@@ -5838,7 +5838,7 @@
                 }
               }
             },
-            "description": "Unexpected generation failure"
+            "description": "Unexpected generation failure, revise-operation integrity failure, or completed revision points to a candidate missing before its declared expiry"
           },
           "503": {
             "content": {
@@ -5859,6 +5859,26 @@
               }
             },
             "description": "Provider timeout"
+          },
+          "409": {
+            "description": "Idempotency conflict or revision already in progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Completed revision points to an expired or TTL-deleted candidate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeV1"
+                }
+              }
+            }
           }
         },
         "summary": "Revise Candidate",

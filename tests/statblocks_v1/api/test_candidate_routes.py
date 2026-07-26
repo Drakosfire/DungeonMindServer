@@ -25,6 +25,7 @@ from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
 from statblocks_v1.infrastructure.memory_repositories import (
     DeterministicIdFactory,
     InMemoryCandidateGenerationOperationRepository,
+    InMemoryCandidateRevisionOperationRepository,
     InMemoryCandidateRepository,
     InMemoryStatblockPersistenceRepository,
 )
@@ -58,7 +59,11 @@ def api_client(monkeypatch, load_fixture, auth_headers):
         generate_operations=InMemoryCandidateGenerationOperationRepository(
             candidates, clock=lambda: now
         ),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
         generate_lease_seconds=120,
+        revise_lease_seconds=120,
     )
     app = create_test_app()
     app.dependency_overrides[get_generation_service] = lambda: service
@@ -143,6 +148,118 @@ def test_generate_replay_lost_response_and_conflict(api_client, caplog) -> None:
     )
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "idempotency_conflict"
+    assert len(provider.calls) == 1
+
+
+def test_revise_replay_lost_response_and_conflict(api_client, load_fixture, caplog) -> None:
+    import logging
+
+    client, provider, headers, *_ = api_client
+    source = load_fixture("simple_bruiser")
+    payload = {
+        "request_id": "req_revise_replay_1",
+        "ruleset": {"system": "dnd5e", "edition": "2024"},
+        "revision_instructions": ["Make it scarier"],
+        "source_definition": source,
+    }
+
+    with caplog.at_level(logging.INFO):
+        first = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    assert first.json()["generation_receipt"]["request_digest"].startswith("sha256:")
+    assert len(provider.calls) == 1
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        replay = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert replay.status_code == 200
+    assert replay.json()["candidate_id"] == candidate_id
+    assert len(provider.calls) == 1
+    assert any("candidate_revise_replay" in message for message in caplog.messages)
+    assert any("idempotency_replay" in message for message in caplog.messages)
+
+    conflict = dict(payload)
+    conflict["revision_instructions"] = ["Totally different edit"]
+    conflict_response = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json=conflict,
+        headers=headers,
+    )
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["error"]["code"] == "idempotency_conflict"
+    assert len(provider.calls) == 1
+
+
+def test_revise_locator_replay_lost_response_and_conflict(
+    api_client, load_fixture, caplog
+) -> None:
+    import logging
+
+    client, provider, headers, persistence, *_ = api_client
+    definition = load_fixture("simple_bruiser")
+    created_statblock, created_revision = persistence.create_statblock(
+        CreateStatblockCommand(
+            caller_scope="tests",
+            idempotency_key="revise-locator-replay",
+            definition=StatblockDefinitionV1.model_validate(definition),
+            created_by="tests",
+        )
+    )
+    locator = {
+        "statblock_id": created_statblock.statblock_id,
+        "revision_id": created_revision.revision_id,
+    }
+    payload = {
+        "request_id": "req_revise_locator_replay_1",
+        "ruleset": {"system": "dnd5e", "edition": "2024"},
+        "revision_instructions": ["Make it scarier via locator"],
+        "source_locator": locator,
+    }
+
+    with caplog.at_level(logging.INFO):
+        first = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert first.status_code == 200
+    candidate_id = first.json()["candidate_id"]
+    assert first.json()["generation_receipt"]["request_digest"].startswith("sha256:")
+    assert first.json()["source_locator"] == locator
+    assert len(provider.calls) == 1
+
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        replay = client.post(
+            "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+            json=payload,
+            headers=headers,
+        )
+    assert replay.status_code == 200
+    assert replay.json()["candidate_id"] == candidate_id
+    assert replay.json() == first.json()
+    assert len(provider.calls) == 1
+    assert any("candidate_revise_replay" in message for message in caplog.messages)
+    assert any("idempotency_replay" in message for message in caplog.messages)
+
+    conflict = dict(payload)
+    conflict["revision_instructions"] = ["Totally different locator edit"]
+    conflict_response = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json=conflict,
+        headers=headers,
+    )
+    assert conflict_response.status_code == 409
+    assert conflict_response.json()["error"]["code"] == "idempotency_conflict"
     assert len(provider.calls) == 1
 
 
@@ -417,7 +534,7 @@ def test_revise_invalid_source_combinations_are_422(api_client, load_fixture) ->
 
 
 def test_revise_missing_revision_is_typed_404(api_client) -> None:
-    client, _, headers, *_ = api_client
+    client, _, headers, _, candidates, now = api_client
 
     class MissingResolver:
         def resolve(self, locator):
@@ -425,9 +542,13 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
 
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
         definition_resolver=MissingResolver(),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
     response = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
@@ -444,7 +565,7 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
 
 
 def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
-    client, _, headers, *_ = api_client
+    client, _, headers, _, candidates, now = api_client
 
     class UnavailableResolver:
         def resolve(self, locator):
@@ -452,9 +573,13 @@ def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
 
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
-        candidates=InMemoryCandidateRepository(),
+        candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
         definition_resolver=UnavailableResolver(),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(
+            candidates, clock=lambda: now
+        ),
     )
     response = client.post(
         "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
@@ -508,11 +633,10 @@ def test_validate_and_openapi_models(api_client, load_fixture) -> None:
     assert "422" in revise["responses"]
     assert "500" in revise["responses"]
     assert "503" in revise["responses"]
-    # Revise remains non-idempotent: do not advertise generate-only replay codes.
-    assert "409" not in revise["responses"]
-    assert "410" not in revise["responses"]
-    assert "idempotency" not in revise["responses"].get("500", {}).get("description", "").lower()
-    assert "generate-operation" not in revise["responses"].get("500", {}).get(
+    assert "409" in revise["responses"]
+    assert "410" in revise["responses"]
+    assert "idempotency" in revise["responses"].get("409", {}).get("description", "").lower()
+    assert "revise-operation" in revise["responses"].get("500", {}).get(
         "description", ""
     ).lower()
 
@@ -575,6 +699,7 @@ def test_production_generation_service_wires_persistence_resolver(monkeypatch) -
         candidates=candidates,
         persistence=persistence,
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
         provider=DummyProvider(),
     )
     assert isinstance(service._definition_resolver, PersistenceDefinitionResolver)

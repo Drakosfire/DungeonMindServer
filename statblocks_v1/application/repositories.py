@@ -14,18 +14,24 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
-from statblocks_v1.application.commands import GenerateStatblockCommandV1
+from statblocks_v1.application.commands import (
+    GenerateStatblockCommandV1,
+    ReviseStatblockCommandV1,
+)
 from statblocks_v1.domain.assets import AssetBindingV1
 from statblocks_v1.domain.candidate_operations import (
     GENERATE_CANDIDATE_OPERATION,
+    REVISE_CANDIDATE_OPERATION,
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
     CandidateGenerationStatusV1,
+    CandidateRevisionOperationV1,
 )
 from statblocks_v1.domain.canonicalization import canonicalize_definition
 from statblocks_v1.domain.errors import (
     AmbiguousRequestPayloadError,
     GenerateOperationIntegrityError,
+    ReviseOperationIntegrityError,
 )
 from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
@@ -112,6 +118,27 @@ def compute_generate_candidate_digest(command: GenerateStatblockCommandV1) -> st
     )
 
 
+def compute_revise_candidate_digest(command: ReviseStatblockCommandV1) -> str:
+    """Digest caller-controlled revise intent. ``request_id`` is the durable key, not digested."""
+
+    payload: dict[str, Any] = {
+        "ruleset": command.ruleset.model_dump(mode="json"),
+        "revision_instructions": command.revision_instructions,
+        "intent": command.intent.model_dump(mode="json"),
+        "context": command.context.model_dump(mode="json"),
+        "asset_options": command.asset_options.model_dump(mode="json"),
+        "preserve_element_keys": command.preserve_element_keys,
+        "actor": command.caller.actor,
+    }
+    if command.source_definition is not None:
+        payload["source_definition"] = command.source_definition.model_dump(mode="json")
+    else:
+        payload["source_locator"] = command.source_locator.model_dump(mode="json")  # type: ignore[union-attr]
+    if command.source is not None:
+        payload["source"] = command.source.model_dump(mode="json")
+    return compute_request_digest(REVISE_CANDIDATE_OPERATION, payload)
+
+
 def compute_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -> str:
     """Fingerprint the exact replayable candidate payload bound at completion.
 
@@ -123,6 +150,13 @@ def compute_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -
 
     return compute_request_digest(
         "generate_candidate_outcome",
+        candidate.model_dump(mode="json"),
+    )
+
+
+def compute_revise_candidate_outcome_digest(candidate: GeneratedStatblockCandidateV1) -> str:
+    return compute_request_digest(
+        "revise_candidate_outcome",
         candidate.model_dump(mode="json"),
     )
 
@@ -175,6 +209,49 @@ def require_candidate_owned_by_generate_operation(
 
     if not candidate_belongs_to_generate_operation(candidate, operation):
         raise GenerateOperationIntegrityError(
+            operation.request_id,
+            candidate_id=operation.candidate_id,
+            reason=reason,
+        )
+
+
+def candidate_belongs_to_revise_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateRevisionOperationV1,
+) -> bool:
+    if candidate.candidate_id != operation.candidate_id:
+        return False
+    receipt = candidate.generation_receipt
+    if receipt is None:
+        return False
+    if isinstance(receipt, Mapping):
+        try:
+            from statblocks_v1.domain.resources import GenerationReceiptV1
+
+            receipt = GenerationReceiptV1.model_validate(receipt)
+        except Exception:
+            return False
+    if receipt.request_digest is None:
+        return False
+    if not (
+        receipt.request_id == operation.request_id
+        and receipt.caller_scope == operation.caller_scope
+        and receipt.request_digest == operation.request_digest
+    ):
+        return False
+    if operation.outcome_digest is None:
+        return True
+    return compute_revise_candidate_outcome_digest(candidate) == operation.outcome_digest
+
+
+def require_candidate_owned_by_revise_operation(
+    candidate: GeneratedStatblockCandidateV1,
+    operation: CandidateRevisionOperationV1,
+    *,
+    reason: str,
+) -> None:
+    if not candidate_belongs_to_revise_operation(candidate, operation):
+        raise ReviseOperationIntegrityError(
             operation.request_id,
             candidate_id=operation.candidate_id,
             reason=reason,
@@ -264,6 +341,87 @@ def verify_generate_operation_lookup_identity(
     return record
 
 
+def verify_revise_operation_lookup_identity(
+    record: CandidateRevisionOperationV1,
+    *,
+    caller_scope: str,
+    request_id: str,
+) -> CandidateRevisionOperationV1:
+    if (
+        record.caller_scope != caller_scope
+        or record.request_id != request_id
+        or record.operation != REVISE_CANDIDATE_OPERATION
+    ):
+        raise ReviseOperationIntegrityError(
+            request_id,
+            candidate_id=record.candidate_id,
+            reason="Stored revise operation identity does not match lookup key",
+        )
+    if record.status is CandidateGenerationStatusV1.pending:
+        if (
+            record.failure is not None
+            or record.candidate_expires_at is not None
+            or record.completed_at is not None
+            or record.outcome_digest is not None
+        ):
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Pending revise operation carries terminal fields",
+            )
+    elif record.status is CandidateGenerationStatusV1.completed:
+        if record.candidate_expires_at is None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed revise operation is missing candidate_expires_at",
+            )
+        if record.outcome_digest is None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed revise operation is missing outcome_digest",
+            )
+        if record.failure is not None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed revise operation must not carry failure",
+            )
+        if record.completed_at is None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Completed revise operation is missing completed_at",
+            )
+    elif record.status is CandidateGenerationStatusV1.failed:
+        if record.failure is None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed revise operation is missing failure",
+            )
+        if record.candidate_expires_at is not None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed revise operation must not carry candidate_expires_at",
+            )
+        if record.outcome_digest is not None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed revise operation must not carry outcome_digest",
+            )
+        if record.completed_at is None:
+            raise ReviseOperationIntegrityError(
+                request_id,
+                candidate_id=record.candidate_id,
+                reason="Failed revise operation is missing completed_at",
+            )
+    return record
+
+
 @dataclass(frozen=True)
 class GenerateBeginClaimed:
     """Caller owns a pending lease and must run generation against ``candidate_id``."""
@@ -342,6 +500,86 @@ class CandidateGenerationOperationRepository(Protocol):
     ) -> GenerateCompleteResult: ...
 
     def fail_generate(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        failure: CandidateGenerationFailureSnapshotV1,
+    ) -> CandidateGenerationFailureSnapshotV1: ...
+
+
+@dataclass(frozen=True)
+class ReviseBeginClaimed:
+    operation: CandidateRevisionOperationV1
+
+
+@dataclass(frozen=True)
+class ReviseBeginCompleted:
+    operation: CandidateRevisionOperationV1
+
+    @property
+    def candidate_id(self) -> str:
+        return self.operation.candidate_id
+
+    @property
+    def candidate_expires_at(self) -> datetime | None:
+        return self.operation.candidate_expires_at
+
+
+@dataclass(frozen=True)
+class ReviseBeginFailed:
+    failure: CandidateGenerationFailureSnapshotV1
+
+
+@dataclass(frozen=True)
+class ReviseBeginInProgress:
+    candidate_id: str
+    lease_expires_at: datetime
+
+
+@dataclass(frozen=True)
+class ReviseCompleteResult:
+    candidate: GeneratedStatblockCandidateV1
+    already_completed: bool
+
+
+ReviseBeginResult = (
+    ReviseBeginClaimed
+    | ReviseBeginCompleted
+    | ReviseBeginFailed
+    | ReviseBeginInProgress
+)
+
+
+class CandidateRevisionOperationRepository(Protocol):
+    def get_revise_operation(
+        self, caller_scope: str, request_id: str
+    ) -> CandidateRevisionOperationV1 | None: ...
+
+    def begin_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        candidate_id_factory: Callable[[], str],
+        lease_owner: str,
+        lease_duration_seconds: int,
+    ) -> ReviseBeginResult: ...
+
+    def complete_revise(
+        self,
+        *,
+        caller_scope: str,
+        request_id: str,
+        request_digest: str,
+        lease_owner: str,
+        candidate: GeneratedStatblockCandidateV1,
+    ) -> ReviseCompleteResult: ...
+
+    def fail_revise(
         self,
         *,
         caller_scope: str,

@@ -8,6 +8,7 @@ dungeonbuddy_statblocks_v1/{sb_<base36>}
   revisions/{rev_<base36>}
 dungeonbuddy_statblock_idempotency_v1/{sha256(scope, operation, key)}
 dungeonbuddy_statblock_candidate_generate_ops_v1/{sha256(scope, generate_candidate, request_id)}
+dungeonbuddy_statblock_candidate_revise_ops_v1/{sha256(scope, revise_candidate, request_id)}
 ```
 
 Candidate documents contain `expires_at` stored as a native Firestore timestamp
@@ -37,6 +38,13 @@ candidate document; that impossible state fails closed as integrity rather than
 being promoted to completed. Completed replay verifies the candidate generation
 receipt binds `request_id`, `caller_scope`, and `request_digest`, and that the
 computed outcome fingerprint matches `outcome_digest`.
+
+Candidate revise-operation documents mirror generate (SBW06a §12.11). Do **not**
+configure TTL on `dungeonbuddy_statblock_candidate_revise_ops_v1`. Document IDs
+are `sha256(caller_scope || 0x1f || "revise_candidate" || 0x1f || request_id)`.
+Replay semantics match generate: `request_digest` covers caller-controlled revise
+intent (not `request_id`); completed replay verifies receipt binding and
+`outcome_digest` under operation string `revise_candidate_outcome`.
 
 The only expected query is revisions beneath a known statblock. If chronological
 listing is required, add a composite/index configuration for `created_at`

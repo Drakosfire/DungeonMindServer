@@ -32,6 +32,7 @@ from statblocks_v1.infrastructure.cloudflare_asset_gateway import (
 )
 from statblocks_v1.infrastructure.firestore_repositories import (
     FirestoreCandidateGenerationOperationRepository,
+    FirestoreCandidateRevisionOperationRepository,
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
@@ -141,12 +142,26 @@ def build_generate_operation_repository(client: Any) -> FirestoreCandidateGenera
     )
 
 
+def build_revise_operation_repository(client: Any) -> FirestoreCandidateRevisionOperationRepository:
+    settings = StatblocksV1Settings.from_environment()
+    apply_logging_settings(settings)
+    _require_firestore(settings)
+    if client is None:
+        raise InternalServiceMisconfiguredError("Firestore client is not configured")
+    return FirestoreCandidateRevisionOperationRepository(
+        client,
+        candidates_collection=settings.candidates_collection,
+        revise_ops_collection=settings.revise_ops_collection,
+    )
+
+
 def build_generation_service(
     *,
     client: Any | None = None,
     candidates: CandidateRepository | None = None,
     persistence: StatblockPersistenceRepository | None = None,
     generate_operations: Any | None = None,
+    revise_operations: Any | None = None,
     asset_pipeline: PipelineGenerate | None = None,
     provider: Any | None = None,
 ) -> GenerationServiceV1:
@@ -162,6 +177,13 @@ def build_generation_service(
     if generate_ops is None:
         raise InternalServiceMisconfiguredError(
             "Candidate generate-operation repository is not configured"
+        )
+    revise_ops = revise_operations
+    if revise_ops is None and client is not None:
+        revise_ops = build_revise_operation_repository(client)
+    if revise_ops is None:
+        raise InternalServiceMisconfiguredError(
+            "Candidate revise-operation repository is not configured"
         )
     try:
         asset_gateway = build_asset_gateway(settings, pipeline=asset_pipeline)
@@ -179,7 +201,9 @@ def build_generation_service(
         definition_resolver=PersistenceDefinitionResolver(persistence_repo),
         asset_gateway=asset_gateway,
         generate_operations=generate_ops,
+        revise_operations=revise_ops,
         generate_lease_seconds=settings.generate_lease_seconds,
+        revise_lease_seconds=settings.revise_lease_seconds,
     )
 
 
