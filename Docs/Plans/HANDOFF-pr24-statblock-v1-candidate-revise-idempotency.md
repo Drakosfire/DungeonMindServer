@@ -33,14 +33,17 @@ Outcome binding uses operation string `revise_candidate_outcome`.
 ## CI baseline waiver
 
 ```text
-Head SHA: 0d746164e5f4bd24d6cb2622dd63b40badaad576
-Current workflow run: https://github.com/Drakosfire/DungeonMindServer/actions/runs/30185843127
-Failure identity (same as main/PR23):
+Reviewed failing head: 6fc5f692d57fc7269702f8ed35073e4ebd0fe602
+Workflow run (that head): https://github.com/Drakosfire/DungeonMindServer/actions/runs/30185843127
+Job: https://github.com/Drakosfire/DungeonMindServer/actions/runs/30185843127/job/89750285125
+Failure identity (collected from that job log):
   ERROR collecting tests/test_redteam_hardening.py
   ERROR collecting tests/test_ruleslawyer_router.py
-  openai.OpenAIError: storegenerator/store_helper.py OpenAI() at import without OPENAI_API_KEY
-Comparison: identical collection failure mode to predecessor PR #23 and main redteam-hardening runs.
-Waiver: inherited baseline; not introduced by revise idempotency.
+  openai.OpenAIError: The api_key client option must be set ...
+  Root cause: storegenerator/store_helper.py:5 client = OpenAI() at import time
+Comparison: identical collection failure on main and predecessor PR #23 redteam-hardening runs.
+Waiver: inherited baseline; not introduced by revise idempotency. Subsequent heads that
+only change revise-ops/fixtures inherit this waiver while the failure identity is unchanged.
 ```
 
 ## Emulator evidence (Firestore revise durability)
@@ -60,15 +63,15 @@ Revise-focused tests in that module:
 - `test_firestore_revise_ops_concurrent_first_claims_reserve_one_candidate_id`
 - `test_firestore_revise_ops_expired_lease_takeover_retains_reserved_candidate_id`
 - `test_firestore_revise_ops_indeterminate_complete_reconciles`
+  (stale-worker complete convergence + post-commit transaction() boom → reconcile)
 - `test_firestore_revise_replay_through_fresh_generation_service`
 
-Paste pass counts from `revise-suite.txt` into PR review when updating this handoff.
-
-Latest local emulator run (2026-07-25):
+Latest executed emulator run (2026-07-25, recorded in review response):
 
 ```text
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8085
 GOOGLE_CLOUD_PROJECT=demo-revise-idempotency
-uv run pytest tests/statblocks_v1/integration/test_firestore_repositories.py -q --tb=short
-14 passed in 2.87s
+uv run pytest tests/statblocks_v1/integration/test_firestore_repositories.py \
+  tests/statblocks_v1/test_api_fixtures.py -q --tb=short
+17 passed
 ```

@@ -737,6 +737,22 @@ def test_firestore_revise_ops_indeterminate_complete_reconciles(firestore_client
     assert again.already_completed is True
     assert again.candidate.model_dump(mode="json") == stored.candidate.model_dump(mode="json")
 
+    # Simulated post-commit transport uncertainty: transaction() raises before the
+    # transactional body runs; reconcile must still return the completed candidate.
+    def _boom_transaction():
+        raise RuntimeError("simulated indeterminate commit")
+
+    ops._client.transaction = _boom_transaction  # type: ignore[method-assign]
+    reconciled = ops.complete_revise(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-stale",
+        candidate=stale_payload,
+    )
+    assert reconciled.candidate.candidate_id == candidate_id
+    assert reconciled.already_completed is True
+
 
 def test_firestore_revise_replay_through_fresh_generation_service(
     firestore_client, bruiser, load_fixture
