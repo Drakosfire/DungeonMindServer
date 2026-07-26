@@ -75,3 +75,10 @@ uv run pytest tests/statblocks_v1/integration/test_firestore_repositories.py \
   tests/statblocks_v1/test_api_fixtures.py -q --tb=short
 17 passed
 ```
+
+### Fixture pair coherence
+
+`revise-request.json` uses `actor: "fixture"` so the FastAPI route mapping
+`CallerProvenanceV1(..., actor=request.actor)` digests the same way as
+`revise-replay-response.json`. Cross-fixture + route round-trip coverage lives in
+`tests/statblocks_v1/test_api_fixtures.py` (`5 passed` on the latest review fix).
