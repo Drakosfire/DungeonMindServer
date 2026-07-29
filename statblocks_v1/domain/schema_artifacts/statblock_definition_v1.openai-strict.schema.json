@@ -200,9 +200,6 @@
         },
         "kind": {
           "const": "attack",
-          "enum": [
-            "attack"
-          ],
           "type": "string"
         },
         "miss_effects": {
@@ -423,9 +420,6 @@
         },
         "kind": {
           "const": "composite",
-          "enum": [
-            "composite"
-          ],
           "type": "string"
         },
         "target": {
@@ -465,9 +459,6 @@
         },
         "kind": {
           "const": "condition",
-          "enum": [
-            "condition"
-          ],
           "type": "string"
         }
       },
@@ -588,9 +579,6 @@
         },
         "kind": {
           "const": "damage",
-          "enum": [
-            "damage"
-          ],
           "type": "string"
         }
       },
@@ -713,9 +701,6 @@
         },
         "kind": {
           "const": "disable_elements",
-          "enum": [
-            "disable_elements"
-          ],
           "type": "string"
         }
       },
@@ -743,7 +728,6 @@
       "type": "object"
     },
     "DistanceUnit": {
-      "const": "feet",
       "enum": [
         "feet"
       ],
@@ -828,9 +812,6 @@
         },
         "kind": {
           "const": "enable_elements",
-          "enum": [
-            "enable_elements"
-          ],
           "type": "string"
         }
       },
@@ -845,9 +826,6 @@
       "properties": {
         "kind": {
           "const": "enter_phase",
-          "enum": [
-            "enter_phase"
-          ],
           "type": "string"
         },
         "phase_key": {
@@ -873,9 +851,6 @@
         },
         "kind": {
           "const": "forced_movement",
-          "enum": [
-            "forced_movement"
-          ],
           "type": "string"
         }
       },
@@ -894,9 +869,6 @@
         },
         "kind": {
           "const": "healing",
-          "enum": [
-            "healing"
-          ],
           "type": "string"
         }
       },
@@ -966,9 +938,6 @@
         },
         "kind": {
           "const": "human_adjudicated",
-          "enum": [
-            "human_adjudicated"
-          ],
           "type": "string"
         }
       },
@@ -989,9 +958,6 @@
         },
         "kind": {
           "const": "human_adjudicated",
-          "enum": [
-            "human_adjudicated"
-          ],
           "type": "string"
         }
       },
@@ -1081,9 +1047,6 @@
         },
         "kind": {
           "const": "movement",
-          "enum": [
-            "movement"
-          ],
           "type": "string"
         },
         "movement_mode_key": {
@@ -1166,9 +1129,6 @@
       "properties": {
         "kind": {
           "const": "multiattack",
-          "enum": [
-            "multiattack"
-          ],
           "type": "string"
         },
         "sequences": {
@@ -1233,9 +1193,6 @@
         },
         "kind": {
           "const": "passive",
-          "enum": [
-            "passive"
-          ],
           "type": "string"
         }
       },
@@ -1297,9 +1254,6 @@
         },
         "kind": {
           "const": "phase_transition",
-          "enum": [
-            "phase_transition"
-          ],
           "type": "string"
         }
       },
@@ -1391,9 +1345,6 @@
         },
         "kind": {
           "const": "resource_change",
-          "enum": [
-            "resource_change"
-          ],
           "type": "string"
         },
         "resource_key": {
@@ -1605,7 +1556,6 @@
       "type": "object"
     },
     "RulesetSystem": {
-      "const": "dnd5e",
       "enum": [
         "dnd5e"
       ],
@@ -1659,9 +1609,6 @@
         },
         "kind": {
           "const": "save_effect",
-          "enum": [
-            "save_effect"
-          ],
           "type": "string"
         },
         "save": {
@@ -1997,9 +1944,6 @@
         },
         "kind": {
           "const": "spellcasting",
-          "enum": [
-            "spellcasting"
-          ],
           "type": "string"
         },
         "save_dc": {
@@ -2040,9 +1984,6 @@
         },
         "kind": {
           "const": "stat_modifier",
-          "enum": [
-            "stat_modifier"
-          ],
           "type": "string"
         },
         "modifier": {
@@ -2110,9 +2051,6 @@
         },
         "kind": {
           "const": "summon",
-          "enum": [
-            "summon"
-          ],
           "type": "string"
         }
       },
