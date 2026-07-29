@@ -27,7 +27,7 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     prompt = build_generation_prompt(command)
     system = build_system_prompt(command.ruleset.edition.value)
 
-    assert PROMPT_VERSION == "statblock-generation-prompt-v2"
+    assert PROMPT_VERSION == "statblock-generation-prompt-v3"
     assert "Gate Warden" in prompt
     assert "Guards a narrow gate." in prompt
     assert "must avoid=flight" in prompt
@@ -38,6 +38,26 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     assert "recharge                       recharge_range REQUIRED" in system
     assert "defenses.armor_classes: exactly one profile has default=true" in system
     assert 'automation_support "manual"' in system
+    assert "SECTION AND ACTIVATION PAIRS" in system
+    assert "legendary_action -> legendary" in system
+    assert "SPELL GROUPS" in system
+    assert "WORKED EXAMPLES" in system
+    assert '"recharge_range":{"minimum":5,"maximum":6}' in system
+    assert 'never the multiattack\'s own key or another multiattack' in system
+    assert '"derivation":"standard"' in system
+    assert "explicit_override" in system
+
+
+def test_system_prompt_examples_toggle() -> None:
+    with_examples = build_system_prompt("2024")
+    without_examples = build_system_prompt("2024", include_examples=False)
+
+    assert "WORKED EXAMPLES" in with_examples
+    assert "WORKED EXAMPLES" not in without_examples
+    # Prose-gap fixes ship in both configurations; only the examples block toggles.
+    assert "SECTION AND ACTIVATION PAIRS" in without_examples
+    assert "SPELL GROUPS" in without_examples
+    assert "recharge usage sets recharge_range" in without_examples
 
 
 def test_revision_prompt_includes_intent_context_and_preservation(load_fixture) -> None:

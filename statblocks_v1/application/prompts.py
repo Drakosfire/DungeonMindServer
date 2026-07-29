@@ -4,16 +4,25 @@ from __future__ import annotations
 from statblocks_v1.application.commands import GenerateStatblockCommandV1, ReviseStatblockCommandV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
-PROMPT_VERSION = "statblock-generation-prompt-v2"
+PROMPT_VERSION = "statblock-generation-prompt-v3"
+
+WORKED_EXAMPLES = """WORKED EXAMPLES - field shapes are normative; values are illustrative, compute yours per creature:
+- recharge usage: {"kind":"recharge","recharge_range":{"minimum":5,"maximum":6},"uses":null,"resource_key":null,"refresh_text":null}
+- per_day usage: {"kind":"per_day","recharge_range":null,"uses":3,"resource_key":null,"refresh_text":null}
+- resource usage spending from a declared pool: {"kind":"resource","recharge_range":null,"uses":null,"resource_key":"legendary_actions","refresh_text":null}
+- multiattack: mechanic.kind "multiattack" with "sequences":[{"element_key":"bite","count":1,"choice_group":null},{"element_key":"claw","count":2,"choice_group":null}] where "bite" and "claw" are other rule_elements keys whose mechanics are attacks - never the multiattack's own key or another multiattack.
+- legendary action: NOT a multiattack. Use mechanic.kind "attack", section "legendary_action", activation.kind "legendary", usage.kind "resource", and costs against the declared legendary pool.
+- standard derivation: strength 16 gives modifier +3; with proficiency_bonus +2, {"skill":"athletics","ability":"strength","value":5,"derivation":"standard","note":null}. If the value you want does not equal ability modifier + proficiency bonus (or + twice proficiency for expertise), set derivation "explicit_override"; never force mismatched arithmetic into "standard".
+"""
 
 
-def build_system_prompt(edition: str) -> str:
+def build_system_prompt(edition: str, *, include_examples: bool = True) -> str:
     edition_guidance = (
         "Use 2014 D&D 5e terminology and conventions."
         if edition == "2014"
         else "Use 2024 D&D 5e terminology and conventions; do not mix 2014-only wording unless necessary."
     )
-    return f"""You are a D&D 5e {edition} creature designer. You emit exactly one
+    base = f"""You are a D&D 5e {edition} creature designer. You emit exactly one
 StatblockDefinitionV1 JSON object and nothing else.
 {edition_guidance}
 
@@ -55,16 +64,28 @@ ATTACKS
 - Melee attacks set mechanic.reach and must not set mechanic.range; ranged attacks set mechanic.range and must not set mechanic.reach. Long range uses the same unit and is >= normal range.
 - Attack targets never set range. A "creatures" target requires count; a single creature target omits count or sets 1; a self target omits count; an area target requires area.
 
+SECTION AND ACTIVATION PAIRS - the section names the activation:
+- action -> action, bonus_action -> bonus_action, reaction -> reaction, legendary_action -> legendary, lair_action -> lair_initiative.
+- trait and regional_effect take passive, triggered, or special.
+
+SPELL GROUPS
+- Innate casting: groups never set slots and never use spell_slots usage; encode limited casting on the group's usage (at_will, per_day, etc.).
+- Leveled prepared/known groups (level 1-9): slots required, usage spell_slots. Cantrip groups (level 0): usage at_will, no slots. Charges casting: resource usage, no slots.
+
 ESCAPE HATCH
 - When a mechanic cannot be represented by the typed contract, set mechanic.kind "human_adjudicated" AND automation_support "manual". Never invent fields.
-
-BEFORE RETURNING, verify:
+"""
+    parts = [base]
+    if include_examples:
+        parts.append(WORKED_EXAMPLES)
+    parts.append("""BEFORE RETURNING, verify:
 1. Exactly one armor class has default=true.
-2. Every usage object matches its kind's row above.
+2. Every usage object matches its kind's row above, and every recharge usage sets recharge_range.
 3. Every key you reference is declared somewhere in the definition.
 4. proficiency_bonus matches CR, and passive_perception matches Perception.
 5. Every human_adjudicated mechanic has automation_support "manual".
-"""
+""")
+    return "\n".join(parts)
 
 
 def build_generation_prompt(command: GenerateStatblockCommandV1) -> str:

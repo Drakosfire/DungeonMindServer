@@ -26,7 +26,7 @@ FIXTURE_DIR = ROOT / "Docs/Design/fixtures/prompt-eval"
 
 MINIMAL_SYSTEM = "Return only the requested JSON schema instance."
 
-ALL_ARMS = ("bare", "schema-only", "prompt-only", "both")
+ALL_ARMS = ("bare", "schema-only", "prompt-only", "both", "both+ex")
 
 # Import after ROOT is known; package is installed via uv workspace.
 from statblocks_v1.application.commands import (  # noqa: E402
@@ -148,20 +148,28 @@ def _compiled_schema_with_descriptions(*, keep_descriptions: bool) -> CompiledSc
     )
 
 
-def _system_message(*, use_real_prompt: bool) -> str:
-    return build_system_prompt("2024") if use_real_prompt else MINIMAL_SYSTEM
+def _system_message(*, use_real_prompt: bool, include_examples: bool) -> str:
+    if not use_real_prompt:
+        return MINIMAL_SYSTEM
+    return build_system_prompt("2024", include_examples=include_examples)
 
 
-def _arm_config(arm: str) -> tuple[bool, bool]:
-    """Return (keep_descriptions, use_real_system_prompt)."""
+def _arm_config(arm: str) -> tuple[bool, bool, bool]:
+    """Return (keep_descriptions, use_real_system_prompt, include_examples).
+
+    ``both`` is the v3 control (prose prompt, no worked examples); ``both+ex``
+    is the shipping candidate with the WORKED EXAMPLES block enabled.
+    """
     if arm == "bare":
-        return False, False
+        return False, False, False
     if arm == "schema-only":
-        return True, False
+        return True, False, False
     if arm == "prompt-only":
-        return False, True
+        return False, True, False
     if arm == "both":
-        return True, True
+        return True, True, False
+    if arm == "both+ex":
+        return True, True, True
     raise ValueError(f"unknown arm: {arm}")
 
 
@@ -236,9 +244,9 @@ def _run_trial(
     arm: str,
     trial: int,
 ) -> TrialResult:
-    keep_descriptions, use_real_prompt = _arm_config(arm)
+    keep_descriptions, use_real_prompt, include_examples = _arm_config(arm)
     schema = _compiled_schema_with_descriptions(keep_descriptions=keep_descriptions)
-    system = _system_message(use_real_prompt=use_real_prompt)
+    system = _system_message(use_real_prompt=use_real_prompt, include_examples=include_examples)
     prompt = build_generation_prompt(_build_command(fixture))
 
     outcome = provider.generate_definition(
@@ -327,8 +335,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--arm",
         choices=[*ALL_ARMS, "all"],
-        default="both",
-        help="Ablation arm to run (default: both = shipping config).",
+        default="both+ex",
+        help="Ablation arm to run (default: both+ex = shipping candidate; 'both' is the no-examples control).",
     )
     parser.add_argument(
         "--trials",
