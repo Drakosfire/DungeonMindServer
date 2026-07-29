@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 
 import pytest
@@ -14,7 +15,11 @@ from statblocks_v1.api.dependencies import (
 )
 from statblocks_v1.api.http_errors import register_error_handlers
 from statblocks_v1.api.router import router as v1_router
-from statblocks_v1.application.generation import GenerationServiceV1
+from statblocks_v1.application.generation import (
+    GenerationFailureV1,
+    GenerationServiceV1,
+    _DOMAIN_DIAGNOSTIC_MESSAGES,
+)
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
 from statblocks_v1.application.repositories import CreateStatblockCommand
 from statblocks_v1.application.resolvers import PersistenceDefinitionResolver
@@ -419,6 +424,215 @@ def test_generation_failures_use_typed_envelopes(api_client, outcome, status, co
 
     assert response.status_code == status
     assert response.json()["error"]["code"] == code
+    if code == "validation_failed":
+        details = response.json()["error"].get("details")
+        assert details is not None
+        assert details.get("phase") == "schema_validation"
+        assert details.get("issue_count", 0) >= 1
+        assert "issues" in details
+        assert "__DMS_VAL01_RAW_PAYLOAD_SENTINEL__" not in response.text
+        assert '"input":' not in response.text
+
+
+def test_definition_invalid_generate_and_revise_emit_matching_diagnostic_envelopes(
+    api_client, load_fixture
+) -> None:
+    client, _, headers, *_ = api_client
+    candidates = InMemoryCandidateRepository()
+    invalid_provider = FakeDefinitionProvider(load_fixture("dangling_multiattack_ref"))
+    client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
+        provider=invalid_provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        candidate_id_factory=lambda: "cand_diag",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
+    )
+
+    generate = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("diag-generate"),
+        headers=headers,
+    )
+    assert generate.status_code == 422
+    gen_body = generate.json()["error"]
+    assert gen_body["code"] == "validation_failed"
+    assert gen_body["message"] == "Generated definition failed validation"
+    assert gen_body["details"]["phase"] == "domain_validation"
+
+    revise_payload = {
+        "request_id": "diag-revise",
+        "ruleset": {"system": "dnd5e", "edition": "2024", "house_ruleset_id": None},
+        "revision_instructions": ["Tweak the latchling."],
+        "source_definition": load_fixture("dangling_multiattack_ref"),
+        "intent": {},
+        "context": {},
+        "preserve_element_keys": True,
+    }
+    revise = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json=revise_payload,
+        headers=headers,
+    )
+    assert revise.status_code == 422
+    rev_body = revise.json()["error"]
+    assert rev_body["code"] == "validation_failed"
+    assert rev_body["details"]["phase"] == "domain_validation"
+    assert len(invalid_provider.calls) == 2
+
+
+RAW_PROVIDER_KEY_SENTINEL = "__RAW_PROVIDER_KEY_SENTINEL__"
+
+
+def _payload_with_raw_extra_provider_keys(load_fixture) -> dict:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload[RAW_PROVIDER_KEY_SENTINEL] = "x"
+    payload["rule_elements"][0][RAW_PROVIDER_KEY_SENTINEL] = "y"
+    return payload
+
+
+def test_extra_forbidden_provider_key_sentinel_absent_from_generate_http_and_replay(
+    api_client, load_fixture
+) -> None:
+    client, provider, headers, *_ = api_client
+    provider._outcome = ProviderOutcomeV1.succeeded(
+        _payload_with_raw_extra_provider_keys(load_fixture)
+    )
+    payload = _generate_payload("raw-key-http")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert RAW_PROVIDER_KEY_SENTINEL not in first.text
+    assert RAW_PROVIDER_KEY_SENTINEL not in second.text
+    details = first.json()["error"]["details"]
+    extra_paths = {
+        issue["field_path"]
+        for issue in details["issues"]
+        if issue["code"] == "EXTRA_FORBIDDEN"
+    }
+    assert "<unexpected_key>" in extra_paths
+    assert "rule_elements[0].<unexpected_key>" in extra_paths
+    assert len(provider.calls) == 1
+
+
+RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
+RAW_DOMAIN_VALUE_SENTINEL = "__RAW_DOMAIN_VALUE_SENTINEL__"
+
+
+def test_domain_provider_value_sentinel_absent_from_generate_http_and_replay(
+    api_client, load_fixture
+) -> None:
+    client, provider, headers, *_ = api_client
+    outcome_payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    sentinel_skill = {
+        "skill": RAW_DOMAIN_VALUE_SENTINEL,
+        "ability": "strength",
+        "value": 6,
+        "derivation": "standard",
+    }
+    outcome_payload["proficiencies"]["skills"] = [
+        sentinel_skill,
+        copy.deepcopy(sentinel_skill),
+    ]
+    provider._outcome = ProviderOutcomeV1.succeeded(outcome_payload)
+    payload = _generate_payload("raw-domain-value-http")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert RAW_DOMAIN_VALUE_SENTINEL not in first.text
+    assert RAW_DOMAIN_VALUE_SENTINEL not in second.text
+    assert len(provider.calls) == 1
+    issues = first.json()["error"]["details"]["issues"]
+    dup_issues = [issue for issue in issues if issue["code"] == "DUPLICATE_SKILL_NAME"]
+    assert dup_issues
+    assert dup_issues[0]["message"] == _DOMAIN_DIAGNOSTIC_MESSAGES["DUPLICATE_SKILL_NAME"]
+
+
+def test_union_tag_invalid_provider_value_sentinel_absent_from_generate_http_and_replay(
+    api_client, load_fixture
+) -> None:
+    client, provider, headers, *_ = api_client
+    outcome_payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    outcome_payload["rule_elements"][0]["mechanic"]["kind"] = RAW_PROVIDER_VALUE_SENTINEL
+    provider._outcome = ProviderOutcomeV1.succeeded(outcome_payload)
+    payload = _generate_payload("raw-value-http")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert RAW_PROVIDER_VALUE_SENTINEL not in first.text
+    assert RAW_PROVIDER_VALUE_SENTINEL not in second.text
+    assert len(provider.calls) == 1
+    issues = first.json()["error"]["details"]["issues"]
+    union_issues = [issue for issue in issues if issue["code"] == "UNION_TAG_INVALID"]
+    assert union_issues
+    assert RAW_PROVIDER_VALUE_SENTINEL not in union_issues[0]["message"]
+
+
+def test_misbound_generation_failure_never_exposes_diagnostics_in_http(api_client) -> None:
+    from statblocks_v1.domain.candidate_operations import (
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    client, _, headers, *_ = api_client
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+
+    class MisboundFailureService:
+        def generate(self, command):
+            return GenerationFailureV1(
+                "unexpected_kind_for_test", "boom", diagnostics=packet
+            )
+
+    client.app.dependency_overrides[get_generation_service] = lambda: MisboundFailureService()
+    response = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("misbound-diagnostics"),
+        headers=headers,
+    )
+    assert response.status_code == 500
+    error = response.json()["error"]
+    assert error["code"] == "generation_failed"
+    assert "details" not in error
 
 
 def test_ruleset_and_source_digest_mismatches_are_not_provider_unavailable(

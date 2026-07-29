@@ -9,9 +9,65 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from statblocks_v1.domain.primitives import StrictModel
+from statblocks_v1.domain.receipts import ValidationSeverity
+
+GENERATION_VALIDATION_DIAGNOSTICS_VERSION: Literal[
+    "generation-validation-diagnostics-v1"
+] = "generation-validation-diagnostics-v1"
+
+MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES = 32
+MAX_GENERATION_VALIDATION_FIELD_PATH_LEN = 256
+MAX_GENERATION_VALIDATION_CODE_LEN = 64
+MAX_GENERATION_VALIDATION_MESSAGE_LEN = 512
+MAX_GENERATION_VALIDATION_SUGGESTED_RESOLUTION_LEN = 512
+
+
+class GenerationValidationPhaseV1(str, Enum):
+    schema_validation = "schema_validation"
+    domain_validation = "domain_validation"
+
+
+class GenerationValidationDiagnosticIssueV1(StrictModel):
+    """Bounded public issue for generation validation failures."""
+
+    code: str = Field(min_length=1, max_length=MAX_GENERATION_VALIDATION_CODE_LEN)
+    severity: ValidationSeverity
+    field_path: str = Field(
+        min_length=1, max_length=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN
+    )
+    message: str = Field(min_length=1, max_length=MAX_GENERATION_VALIDATION_MESSAGE_LEN)
+    suggested_resolution: str | None = Field(
+        default=None, max_length=MAX_GENERATION_VALIDATION_SUGGESTED_RESOLUTION_LEN
+    )
+
+
+class GenerationValidationDiagnosticPacketV1(StrictModel):
+    """Safe diagnostic packet persisted on terminal definition_invalid failures."""
+
+    schema_version: Literal["generation-validation-diagnostics-v1"] = (
+        GENERATION_VALIDATION_DIAGNOSTICS_VERSION
+    )
+    phase: GenerationValidationPhaseV1
+    issue_count: int = Field(ge=0)
+    issues: list[GenerationValidationDiagnosticIssueV1] = Field(default_factory=list)
+
+    @field_validator("issues")
+    @classmethod
+    def _bounded_issue_list(
+        cls, issues: list[GenerationValidationDiagnosticIssueV1]
+    ) -> list[GenerationValidationDiagnosticIssueV1]:
+        if len(issues) > MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES:
+            return issues[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
+        return issues
+
+    @model_validator(mode="after")
+    def issue_count_matches_issues(self) -> Self:
+        if self.issue_count != len(self.issues):
+            raise ValueError("issue_count must equal len(issues)")
+        return self
 
 GENERATE_CANDIDATE_OPERATION: Literal["generate_candidate"] = "generate_candidate"
 REVISE_CANDIDATE_OPERATION: Literal["revise_candidate"] = "revise_candidate"
@@ -28,6 +84,15 @@ class CandidateGenerationFailureSnapshotV1(StrictModel):
 
     kind: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    diagnostics: GenerationValidationDiagnosticPacketV1 | None = None
+
+    @model_validator(mode="after")
+    def diagnostics_only_for_definition_invalid(self) -> Self:
+        if self.diagnostics is not None and self.kind != "definition_invalid":
+            raise ValueError(
+                "diagnostics are only permitted for definition_invalid failures"
+            )
+        return self
 
 
 class CandidateGenerationOperationV1(StrictModel):

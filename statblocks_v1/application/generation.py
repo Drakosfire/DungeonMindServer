@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import re
 import secrets
 import time
 import unicodedata
@@ -53,6 +54,14 @@ from statblocks_v1.domain.candidate_operations import (
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
     CandidateRevisionOperationV1,
+    GenerationValidationDiagnosticIssueV1,
+    GenerationValidationDiagnosticPacketV1,
+    GenerationValidationPhaseV1,
+    MAX_GENERATION_VALIDATION_CODE_LEN,
+    MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES,
+    MAX_GENERATION_VALIDATION_FIELD_PATH_LEN,
+    MAX_GENERATION_VALIDATION_MESSAGE_LEN,
+    MAX_GENERATION_VALIDATION_SUGGESTED_RESOLUTION_LEN,
 )
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
@@ -102,6 +111,7 @@ class DefinitionResolver(Protocol):
 class GenerationFailureV1:
     kind: str
     message: str
+    diagnostics: GenerationValidationDiagnosticPacketV1 | None = None
 
 
 @dataclass(frozen=True)
@@ -257,7 +267,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if isinstance(began, GenerateBeginFailed):
-            return GenerationFailureV1(began.failure.kind, began.failure.message)
+            return _generation_failure_from_snapshot(began.failure)
         if isinstance(began, GenerateBeginInProgress):
             return GenerationFailureV1(
                 "generation_in_progress",
@@ -278,9 +288,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=result.kind, message=result.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(result),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race(
@@ -305,7 +313,7 @@ class GenerationServiceV1:
                 raise
             except GenerateOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
 
         try:
             completed = ops.complete_generate(
@@ -455,7 +463,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if existing.status.value == "failed" and existing.failure is not None:
-            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+            return _generation_failure_from_snapshot(existing.failure)
         if existing.status.value == "pending":
             if indeterminate:
                 return GenerationFailureV1(
@@ -565,7 +573,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if isinstance(began, ReviseBeginFailed):
-            return GenerationFailureV1(began.failure.kind, began.failure.message)
+            return _generation_failure_from_snapshot(began.failure)
         if isinstance(began, ReviseBeginInProgress):
             return GenerationFailureV1(
                 "generation_in_progress",
@@ -587,9 +595,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=pinned.kind, message=pinned.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(pinned),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race_revise(
@@ -614,7 +620,7 @@ class GenerationServiceV1:
                 raise
             except ReviseOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
         result = self._run(pinned, reserved_candidate_id=claim.candidate_id, persist=False)
         if isinstance(result, GenerationFailureV1):
             try:
@@ -623,9 +629,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=result.kind, message=result.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(result),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race_revise(
@@ -650,7 +654,7 @@ class GenerationServiceV1:
                 raise
             except ReviseOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
 
         try:
             completed = ops.complete_revise(
@@ -800,7 +804,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if existing.status.value == "failed" and existing.failure is not None:
-            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+            return _generation_failure_from_snapshot(existing.failure)
         if existing.status.value == "pending":
             if indeterminate:
                 return GenerationFailureV1(
@@ -910,9 +914,12 @@ class GenerationServiceV1:
             )
         try:
             definition = StatblockDefinitionV1.model_validate(outcome.payload)
-        except ValidationError:
+        except ValidationError as exc:
+            diagnostics = _diagnostics_from_pydantic_validation_error(exc)
             return GenerationFailureV1(
-                "definition_invalid", "Provider output does not match StatblockDefinitionV1"
+                "definition_invalid",
+                "Provider output does not match StatblockDefinitionV1",
+                diagnostics=diagnostics,
             )
         if not _ruleset_matches(definition.ruleset, intent.ruleset):
             return GenerationFailureV1(
@@ -925,8 +932,11 @@ class GenerationServiceV1:
             definition, ValidationMode.generation_candidate, validated_at=now
         )
         if receipt.status is ValidationStatus.invalid:
+            diagnostics = _diagnostics_from_domain_receipt(receipt)
             return GenerationFailureV1(
-                "definition_invalid", "Provider output has structural or reference errors"
+                "definition_invalid",
+                "Provider output has structural or reference errors",
+                diagnostics=diagnostics,
             )
         if intent.source_definition is not None and intent.preserve_element_keys:
             receipt = _with_key_preservation_warnings(
@@ -1287,6 +1297,316 @@ def _with_key_preservation_warnings(
             "status": status,
             "validator_version": f"{receipt.validator_version}+{KEY_PRESERVATION_PASS_VERSION}",
         }
+    )
+
+
+def _bound_public_text(value: str, *, max_len: int) -> str:
+    normalized = unicodedata.normalize("NFC", value).strip()
+    if not normalized:
+        return "Validation failed"
+    if len(normalized) <= max_len:
+        return normalized
+    return normalized[: max_len - 1] + "…"
+
+
+def _pydantic_error_code(error_type: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", error_type).strip("_").upper()
+    if not normalized:
+        normalized = "PYDANTIC_VALIDATION"
+    if not re.match(r"^[A-Z][A-Z0-9_]*$", normalized):
+        normalized = f"PYDANTIC_{normalized}"[:MAX_GENERATION_VALIDATION_CODE_LEN]
+    return normalized[:MAX_GENERATION_VALIDATION_CODE_LEN]
+
+
+_GENERIC_SCHEMA_DIAGNOSTIC_MESSAGE = "Validation failed for this field."
+
+_SCHEMA_DIAGNOSTIC_MESSAGES: dict[str, str] = {
+    "missing": "Required field is missing.",
+    "extra_forbidden": "Unexpected field is not permitted.",
+    "union_tag_invalid": (
+        "Unrecognized element kind; the value does not match any supported kind "
+        "for this field."
+    ),
+    "union_tag_not_found": (
+        "Missing the discriminator field required to determine the element type."
+    ),
+    "literal_error": "Value must equal the required constant for this field.",
+    "enum": "Value must be one of the allowed options.",
+    "string_type": "Value must be a string.",
+    "string_too_short": "String value is too short.",
+    "string_too_long": "String value is too long.",
+    "string_pattern_mismatch": "String value does not match the required pattern.",
+    "int_type": "Value must be an integer.",
+    "int_parsing": "Value must be a valid integer.",
+    "float_type": "Value must be a number.",
+    "float_parsing": "Value must be a valid number.",
+    "greater_than": "Value must be greater than the allowed minimum.",
+    "greater_than_equal": "Value must be greater than or equal to the allowed minimum.",
+    "less_than": "Value must be less than the allowed maximum.",
+    "less_than_equal": "Value must be less than or equal to the allowed maximum.",
+    "list_type": "Value must be a list.",
+    "too_short": "List has too few items.",
+    "too_long": "List has too many items.",
+    "dict_type": "Value must be an object.",
+    "model_type": "Value must be a structured object with the expected fields.",
+    "bool_type": "Value must be true or false.",
+    "value_error": "Value is not valid for this field.",
+}
+
+
+def _pydantic_error_message(error_type: str) -> str:
+    return _SCHEMA_DIAGNOSTIC_MESSAGES.get(error_type, _GENERIC_SCHEMA_DIAGNOSTIC_MESSAGE)
+
+
+_GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE = "Domain validation failed for this field."
+
+_DOMAIN_DIAGNOSTIC_MESSAGES: dict[str, str] = {
+    "DEFAULT_ARMOR_CLASS_CARDINALITY": (
+        "Exactly one armor-class profile must be marked default."
+    ),
+    "HP_METHOD_FIELDS_INCOHERENT": (
+        "Hit point method fields are incoherent for the selected method."
+    ),
+    "HP_DISPLAYED_AVERAGE_MISMATCH": (
+        "Displayed HP average does not match the typed dice formula."
+    ),
+    "RULESET_CR_INVALID": "Challenge rating is not a canonical D&D 5e CR value.",
+    "RULESET_CR_PROFICIENCY_MISMATCH": (
+        "Challenge proficiency bonus does not match the selected CR."
+    ),
+    "PASSIVE_PERCEPTION_MISMATCH": (
+        "Passive Perception must equal 10 + Perception skill value."
+    ),
+    "PASSIVE_PERCEPTION_UNVERIFIED": (
+        "Passive Perception differs from Wisdom without a typed Perception skill."
+    ),
+    "DUPLICATE_SAVING_THROW_ABILITY": (
+        "Saving throw for the same ability appears more than once."
+    ),
+    "SAVING_THROW_DERIVATION_MISMATCH": (
+        "Declared saving throw value does not match the expected derivation."
+    ),
+    "DUPLICATE_SKILL_NAME": (
+        "Skill name duplicates an earlier entry after normalization."
+    ),
+    "SKILL_DERIVATION_MISMATCH": (
+        "Declared skill value does not match the expected derivation for the "
+        "linked ability."
+    ),
+    "DUPLICATE_LOCAL_KEY": "Local key is duplicated within the indicated collection.",
+    "DEFAULT_PHASE_CARDINALITY": (
+        "A phased creature must have exactly one default phase."
+    ),
+    "UNKNOWN_ELEMENT_REFERENCE": "Referenced element key does not exist.",
+    "UNKNOWN_RESOURCE_REFERENCE": "Referenced resource key does not exist.",
+    "UNKNOWN_MULTIATTACK_ELEMENT": (
+        "Multiattack references an element key that does not exist."
+    ),
+    "FORBIDDEN_REFERENCE_CYCLE": (
+        "Multiattack reference would create a forbidden cycle."
+    ),
+    "UNKNOWN_PHASE_REFERENCE": "Referenced phase key does not exist.",
+    "UNKNOWN_MOVEMENT_REFERENCE": "Referenced movement mode key does not exist.",
+    "UNKNOWN_PHASE_ELEMENT": "Phase references an element key that does not exist.",
+    "PHASE_ELEMENT_SET_CONFLICT": (
+        "Element cannot be both enabled and disabled in the same phase."
+    ),
+    "SECTION_ACTIVATION_INCOHERENT": (
+        "Activation kind is not valid for the element section."
+    ),
+    "REACTION_TRIGGER_REQUIRED": (
+        "A reaction needs a trigger or timing expression."
+    ),
+    "LEGENDARY_RESOURCE_REQUIRED": (
+        "Legendary actions require valid resource usage and cost entries."
+    ),
+    "LEGENDARY_RESOURCE_MISMATCH": (
+        "Legendary usage resource key must match every cost resource key."
+    ),
+    "LAIR_CONTEXT_REQUIRED": "A lair action requires a lair profile.",
+    "LAIR_TIMING_REQUIRED": (
+        "A lair action requires an initiative timing expression."
+    ),
+    "RESOURCE_COST_DUPLICATE_POOL": (
+        "Resource pool appears more than once in costs; use a single cost entry."
+    ),
+    "RESOURCE_COST_EXCEEDS_POOL": "Cost exceeds the resource pool maximum.",
+    "HUMAN_ADJUDICATED_AUTOMATION_MISMATCH": (
+        "Human-adjudicated mechanics must declare manual automation support."
+    ),
+    "USAGE_FIELDS_INCOHERENT": (
+        "Usage fields are incoherent for the selected usage kind; check the "
+        "requirements for that kind at the indicated field."
+    ),
+    "ATTACK_REACH_REQUIRED": "A melee attack requires typed reach.",
+    "ATTACK_RANGE_UNEXPECTED": "A melee attack must not include typed range.",
+    "ATTACK_RANGE_REQUIRED": "A ranged attack requires typed range.",
+    "ATTACK_REACH_UNEXPECTED": "A ranged attack must not include typed reach.",
+    "ATTACK_RANGE_ORDER_INCOHERENT": (
+        "Attack long range must use the same unit and be >= normal range."
+    ),
+    "ATTACK_TARGET_RANGE_UNEXPECTED": (
+        "Attack target must not set range; use mechanic.reach or mechanic.range."
+    ),
+    "ATTACK_TARGET_COUNT_REQUIRED": "A creatures target requires count.",
+    "ATTACK_TARGET_COUNT_INCOHERENT": (
+        "Target count is incoherent for the selected target kind."
+    ),
+    "ATTACK_TARGET_AREA_REQUIRED": "An area target requires area.",
+    "ATTACK_TARGET_AREA_UNEXPECTED": "Only an area target may set area.",
+    "SPELLCASTING_MODE_INCOHERENT": (
+        "Required spellcasting fields are missing for the selected casting mode."
+    ),
+    "SPELL_GROUP_SLOTS_INCOHERENT": (
+        "Spell group slots are incoherent for the spellcasting mode and group level."
+    ),
+    "SPELL_GROUP_LEVEL_INCOHERENT": (
+        "Spell group level is missing or outside the allowed range."
+    ),
+    "SPELL_GROUP_USAGE_INCOHERENT": (
+        "Spell group usage kind is incoherent for the spellcasting mode and group "
+        "level."
+    ),
+    "RULES_TEXT_ATTACK_BONUS_MISMATCH": (
+        "Rules text attack bonus conflicts with typed attack_bonus."
+    ),
+    "RULES_TEXT_DAMAGE_MISMATCH": (
+        "Rules text damage conflicts with the first typed hit damage effect."
+    ),
+    "RULES_TEXT_SAVE_DC_MISMATCH": (
+        "Rules text save DC conflicts with typed save DC."
+    ),
+    "RULES_TEXT_SECTION_MISMATCH": (
+        "Reaction rules text unambiguously says it is used as an action."
+    ),
+}
+
+
+def _domain_diagnostic_message(code: str) -> str:
+    return _DOMAIN_DIAGNOSTIC_MESSAGES.get(code, _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE)
+
+
+_UNEXPECTED_PROVIDER_KEY_FIELD = "<unexpected_key>"
+
+
+def _field_path_from_pydantic_loc(
+    loc: tuple[object, ...], *, error_type: str = ""
+) -> str:
+    if error_type == "extra_forbidden" and loc:
+        parent_loc = loc[:-1]
+        if not parent_loc:
+            path = _UNEXPECTED_PROVIDER_KEY_FIELD
+        else:
+            path = (
+                f"{_field_path_segments_to_public_path(parent_loc)}"
+                f".{_UNEXPECTED_PROVIDER_KEY_FIELD}"
+            )
+        return _bound_public_text(
+            path, max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN
+        )
+    return _field_path_segments_to_public_path(loc)
+
+
+def _field_path_segments_to_public_path(loc: tuple[object, ...]) -> str:
+    if not loc:
+        return "$"
+    segments: list[str] = []
+    for part in loc:
+        if isinstance(part, int):
+            if not segments:
+                segments.append(f"[{part}]")
+            else:
+                segments[-1] = f"{segments[-1]}[{part}]"
+        else:
+            segments.append(str(part))
+    path = ".".join(segments)
+    return _bound_public_text(path, max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN)
+
+
+def _diagnostics_from_pydantic_validation_error(
+    exc: ValidationError,
+) -> GenerationValidationDiagnosticPacketV1 | None:
+    try:
+        raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
+        for item in exc.errors(include_url=False, include_input=False):
+            error_type = str(item.get("type", "validation_error"))
+            raw_issues.append(
+                GenerationValidationDiagnosticIssueV1(
+                    code=_pydantic_error_code(error_type),
+                    severity=ValidationSeverity.error,
+                    field_path=_field_path_from_pydantic_loc(
+                        tuple(item.get("loc", ())),
+                        error_type=error_type,
+                    ),
+                    message=_pydantic_error_message(error_type),
+                    suggested_resolution=None,
+                )
+            )
+        issues = sorted(
+            raw_issues,
+            key=lambda issue: (issue.field_path, issue.code, issue.message),
+        )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
+        return GenerationValidationDiagnosticPacketV1(
+            phase=GenerationValidationPhaseV1.schema_validation,
+            issue_count=len(issues),
+            issues=issues,
+        )
+    except Exception:
+        return None
+
+
+def _diagnostics_from_domain_receipt(
+    receipt: ValidationReceiptV1,
+) -> GenerationValidationDiagnosticPacketV1 | None:
+    try:
+        raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
+        for issue in receipt.issues:
+            if issue.severity is not ValidationSeverity.error:
+                continue
+            raw_issues.append(
+                GenerationValidationDiagnosticIssueV1(
+                    code=issue.code[:MAX_GENERATION_VALIDATION_CODE_LEN],
+                    severity=issue.severity,
+                    field_path=_bound_public_text(
+                        issue.field_path,
+                        max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN,
+                    ),
+                    message=_domain_diagnostic_message(issue.code),
+                    # Error-severity issues never carry resolutions (only warnings do,
+                    # filtered above); packets must not reflect receipt text.
+                    suggested_resolution=None,
+                )
+            )
+        issues = sorted(
+            raw_issues,
+            key=lambda item: (item.field_path, item.code, item.message),
+        )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
+        return GenerationValidationDiagnosticPacketV1(
+            phase=GenerationValidationPhaseV1.domain_validation,
+            issue_count=len(issues),
+            issues=issues,
+        )
+    except Exception:
+        return None
+
+
+def _failure_snapshot_from_generation_failure(
+    failure: GenerationFailureV1,
+) -> CandidateGenerationFailureSnapshotV1:
+    return CandidateGenerationFailureSnapshotV1(
+        kind=failure.kind,
+        message=failure.message,
+        diagnostics=failure.diagnostics,
+    )
+
+
+def _generation_failure_from_snapshot(
+    snapshot: CandidateGenerationFailureSnapshotV1,
+) -> GenerationFailureV1:
+    return GenerationFailureV1(
+        snapshot.kind,
+        snapshot.message,
+        diagnostics=snapshot.diagnostics,
     )
 
 

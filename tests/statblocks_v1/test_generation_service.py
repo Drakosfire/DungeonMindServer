@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,10 @@ from statblocks_v1.application.generation import (
     GenerateOutcomeV1,
     GenerationFailureV1,
     GenerationServiceV1,
+    _DOMAIN_DIAGNOSTIC_MESSAGES,
+    _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE,
+    _SCHEMA_DIAGNOSTIC_MESSAGES,
+    _diagnostics_from_domain_receipt,
     _digest_text,
 )
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
@@ -31,7 +37,7 @@ from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import InternalServiceMisconfiguredError, RevisionNotFoundError
 from statblocks_v1.domain.profiles import RulesetEdition, RulesetRef
-from statblocks_v1.domain.receipts import ValidationStatus
+from statblocks_v1.domain.receipts import ValidationSeverity, ValidationStatus
 from statblocks_v1.domain.resources import AssetWarningCode, ExactRevisionLocatorV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
@@ -2286,3 +2292,372 @@ def test_replay_missing_candidate_after_op_expiry_raises_410(load_fixture) -> No
             ) from missing
     assert exc.value.details["candidate_id"] == "cand_1"
     assert len(provider.calls) == 1
+
+
+def test_schema_invalid_definition_emits_bounded_schema_diagnostics() -> None:
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded({"not": "a definition"}))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_schema_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "schema_validation"
+    assert result.diagnostics.issue_count == len(result.diagnostics.issues)
+    assert result.diagnostics.issues
+    serialized = result.diagnostics.model_dump_json()
+    assert '"input":' not in serialized
+    assert '"ctx":' not in serialized
+
+
+def test_domain_invalid_definition_emits_validator_issues(load_fixture) -> None:
+    service = _service(load_fixture("dangling_multiattack_ref"))
+    result = service.generate(_command(request_id="req_domain_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "domain_validation"
+    codes = {issue.code for issue in result.diagnostics.issues}
+    assert "UNKNOWN_MULTIATTACK_ELEMENT" in codes
+    assert all(issue.severity.value == "error" for issue in result.diagnostics.issues)
+
+
+def test_definition_invalid_failure_replay_preserves_diagnostics_and_one_provider_call(
+    load_fixture,
+) -> None:
+    provider = FakeDefinitionProvider(load_fixture("dangling_multiattack_ref"))
+    service = _service(None, provider=provider)
+    command = _command(request_id="req_diag_replay")
+    first = service.generate(command)
+    second = service.generate(command)
+
+    assert isinstance(first, GenerationFailureV1)
+    assert isinstance(second, GenerationFailureV1)
+    assert first.diagnostics is not None
+    assert second.diagnostics is not None
+    assert first.diagnostics.model_dump(mode="json") == second.diagnostics.model_dump(
+        mode="json"
+    )
+    assert len(provider.calls) == 1
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_diag_replay")
+    assert operation is not None
+    assert operation.failure is not None
+    assert operation.failure.diagnostics is not None
+    assert (
+        operation.failure.diagnostics.model_dump(mode="json")
+        == first.diagnostics.model_dump(mode="json")
+    )
+    op_json = operation.model_dump_json()
+    assert '"input":' not in op_json
+
+
+def test_definition_invalid_does_not_persist_raw_provider_payload_sentinel() -> None:
+    sentinel = "__DMS_VAL01_RAW_PAYLOAD_SENTINEL__"
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1.succeeded({"not": "a definition", "sentinel_probe": sentinel})
+    )
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_sentinel_absence"))
+    assert isinstance(result, GenerationFailureV1)
+    blob = result.diagnostics.model_dump_json() if result.diagnostics else ""
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_sentinel_absence")
+    assert operation is not None
+    assert sentinel not in blob
+    assert sentinel not in operation.model_dump_json()
+
+
+RAW_PROVIDER_KEY_SENTINEL = "__RAW_PROVIDER_KEY_SENTINEL__"
+
+
+def _payload_with_raw_extra_provider_keys(load_fixture) -> dict:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload[RAW_PROVIDER_KEY_SENTINEL] = "x"
+    payload["rule_elements"][0][RAW_PROVIDER_KEY_SENTINEL] = "y"
+    return payload
+
+
+def test_extra_forbidden_provider_key_sentinel_sanitized_at_service_and_persistence(
+    load_fixture,
+) -> None:
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1.succeeded(_payload_with_raw_extra_provider_keys(load_fixture))
+    )
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_raw_key_sanitize"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_PROVIDER_KEY_SENTINEL not in diag_json
+    extra_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "EXTRA_FORBIDDEN"
+    ]
+    assert extra_issues
+    field_paths = {issue.field_path for issue in extra_issues}
+    assert "<unexpected_key>" in field_paths
+    assert "rule_elements[0].<unexpected_key>" in field_paths
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_raw_key_sanitize")
+    assert operation is not None
+    op_json = operation.model_dump_json()
+    assert RAW_PROVIDER_KEY_SENTINEL not in op_json
+
+
+RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
+
+
+def test_union_tag_invalid_provider_value_sentinel_absent_from_diagnostics_and_persistence(
+    load_fixture,
+) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload["rule_elements"][0]["mechanic"]["kind"] = RAW_PROVIDER_VALUE_SENTINEL
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_union_tag_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "schema_validation"
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_PROVIDER_VALUE_SENTINEL not in diag_json
+    union_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "UNION_TAG_INVALID"
+    ]
+    assert union_issues
+    assert union_issues[0].message == _SCHEMA_DIAGNOSTIC_MESSAGES["union_tag_invalid"]
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_union_tag_invalid")
+    assert operation is not None
+    assert RAW_PROVIDER_VALUE_SENTINEL not in operation.model_dump_json()
+
+
+def test_union_tag_not_found_uses_template_message(load_fixture) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload["rule_elements"][0]["mechanic"].pop("kind", None)
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_union_tag_not_found"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    not_found_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "UNION_TAG_NOT_FOUND"
+    ]
+    assert not_found_issues
+    assert not_found_issues[0].message == _SCHEMA_DIAGNOSTIC_MESSAGES["union_tag_not_found"]
+
+
+RAW_DOMAIN_VALUE_SENTINEL = "__RAW_DOMAIN_VALUE_SENTINEL__"
+
+
+def test_domain_duplicate_skill_provider_value_sentinel_absent_from_diagnostics_and_persistence(
+    load_fixture,
+) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    sentinel_skill = {
+        "skill": RAW_DOMAIN_VALUE_SENTINEL,
+        "ability": "strength",
+        "value": 6,
+        "derivation": "standard",
+    }
+    payload["proficiencies"]["skills"] = [sentinel_skill, copy.deepcopy(sentinel_skill)]
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_domain_duplicate_skill"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "domain_validation"
+    dup_issues = [
+        issue for issue in result.diagnostics.issues if issue.code == "DUPLICATE_SKILL_NAME"
+    ]
+    assert dup_issues
+    assert dup_issues[0].message == _DOMAIN_DIAGNOSTIC_MESSAGES["DUPLICATE_SKILL_NAME"]
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_DOMAIN_VALUE_SENTINEL not in diag_json
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_domain_duplicate_skill")
+    assert operation is not None
+    assert RAW_DOMAIN_VALUE_SENTINEL not in operation.model_dump_json()
+
+
+def test_unknown_domain_code_uses_generic_message() -> None:
+    from statblocks_v1.domain.canonicalization import CANONICALIZER_VERSION
+    from statblocks_v1.domain.receipts import (
+        VALIDATOR_VERSION,
+        ValidationIssueV1,
+        ValidationMode,
+        ValidationReceiptV1,
+    )
+
+    receipt = ValidationReceiptV1(
+        status=ValidationStatus.invalid,
+        mode=ValidationMode.generation_candidate,
+        validator_version=VALIDATOR_VERSION,
+        canonicalizer_version=CANONICALIZER_VERSION,
+        definition_digest="sha256:" + "0" * 64,
+        validated_at=datetime.now(timezone.utc),
+        issues=[
+            ValidationIssueV1(
+                code="FUTURE_CODE_NOT_YET_TEMPLATED",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Provider-authored receipt text must not leak.",
+                suggested_resolution="Also must not leak.",
+            )
+        ],
+    )
+    packet = _diagnostics_from_domain_receipt(receipt)
+    assert packet is not None
+    assert len(packet.issues) == 1
+    assert packet.issues[0].message == _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE
+    assert packet.issues[0].suggested_resolution is None
+
+
+def test_domain_diagnostic_templates_cover_all_validator_codes() -> None:
+    import statblocks_v1.domain.validation as validation_module
+
+    source = Path(validation_module.__file__).read_text()
+    codes = set(
+        re.findall(r'^\s+"([A-Z][A-Z0-9_]{3,})",?$', source, re.MULTILINE)
+    )
+    assert len(codes) == 49
+    assert codes == set(_DOMAIN_DIAGNOSTIC_MESSAGES.keys())
+
+
+def test_candidate_generation_failure_snapshot_diagnostics_invariant() -> None:
+    from pydantic import ValidationError
+
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid",
+        message="Generated definition failed validation",
+        diagnostics=None,
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid",
+        message="Generated definition failed validation",
+        diagnostics=packet,
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="provider_refusal", message="nope", diagnostics=None
+    )
+    with pytest.raises(ValidationError, match="definition_invalid"):
+        CandidateGenerationFailureSnapshotV1(
+            kind="provider_refusal", message="nope", diagnostics=packet
+        )
+
+
+def test_raise_for_generation_failure_omits_diagnostics_unless_definition_invalid() -> None:
+    from statblocks_v1.api.http_errors import StatblockV1HTTPError, raise_for_generation_failure
+    from statblocks_v1.domain.candidate_operations import (
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+    for kind in ("provider_refusal", "unexpected_kind_for_test"):
+        with pytest.raises(StatblockV1HTTPError) as exc:
+            raise_for_generation_failure(
+                GenerationFailureV1(kind, "failure message", diagnostics=packet)
+            )
+        assert exc.value.error.details is None
+
+
+def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fixture) -> None:
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_legacy",
+        generate_operations=ops,
+    )
+    command = _command(request_id="req_legacy_fail")
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_legacy_fail",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_legacy",
+        lease_owner="owner",
+        lease_duration_seconds=30,
+    )
+    legacy = CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid", message="Generated definition failed validation"
+    )
+    ops.fail_generate(
+        caller_scope="tests",
+        request_id="req_legacy_fail",
+        request_digest=digest,
+        lease_owner="owner",
+        failure=legacy,
+    )
+    result = service.generate(command)
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is None
+    assert len(provider.calls) == 0

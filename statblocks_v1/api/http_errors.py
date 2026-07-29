@@ -133,7 +133,13 @@ def raise_for_generation_failure(failure: GenerationFailureV1) -> None:
         failure.kind,
         (500, "generation_failed", "Generation failed with an unexpected outcome"),
     )
-    raise StatblockV1HTTPError(status, GenerationTransportError(code, message))
+    details: dict[str, object] | None = None
+    if failure.kind == "definition_invalid" and failure.diagnostics is not None:
+        details = failure.diagnostics.model_dump(mode="json", exclude_none=True)
+    raise StatblockV1HTTPError(
+        status,
+        GenerationTransportError(code, message, details=details),
+    )
 
 
 def register_error_handlers(app: FastAPI) -> None:
