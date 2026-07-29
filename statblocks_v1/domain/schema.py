@@ -125,6 +125,14 @@ def _transform_schema_node(node: Any) -> Any:
             continue
         transformed[key] = _transform_schema_node(value)
 
+    if "$ref" in transformed and len(transformed) > 1:
+        siblings = ", ".join(sorted(repr(k) for k in transformed if k != "$ref"))
+        raise OpenAIStrictSchemaCompilationError(
+            f"$ref node carries sibling keyword(s) {siblings}; OpenAI rejects the whole "
+            "request with 400 '$ref cannot have keywords'. Move the metadata onto the "
+            "$defs target (an enum docstring, for example) instead of the field."
+        )
+
     if transformed.get("type") == "object" or "properties" in transformed:
         transformed["additionalProperties"] = False
         if "properties" in transformed:

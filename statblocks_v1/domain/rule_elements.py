@@ -172,9 +172,7 @@ class RuleElement(StrictModel):
     costs: list[ResourceCost] = Field(default_factory=list)
     mechanic: Mechanic
     tags: list[str] = Field(default_factory=list)
-    automation_support: AutomationSupport = Field(
-        description="Must be 'manual' when mechanic.kind is 'human_adjudicated'."
-    )
+    automation_support: AutomationSupport
 
 
 class StatblockDefinitionV1(StrictModel):

@@ -115,6 +115,8 @@ class Activation(StrictModel):
 
 
 class UsageKind(str, Enum):
+    """Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional."""
+
     at_will = "at_will"
     recharge = "recharge"
     per_turn = "per_turn"
@@ -140,15 +142,7 @@ class RechargeRange(StrictModel):
 
 
 class Usage(StrictModel):
-    kind: UsageKind = Field(
-        description=(
-            "Determines which sibling fields are allowed. recharge: recharge_range required, "
-            "uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: "
-            "uses required, others null. once: uses null or 1, others null. resource: "
-            "resource_key required, uses null. spell_slots: leveled spell groups only, uses and "
-            "resource_key null. manual: recharge_range null, others optional."
-        )
-    )
+    kind: UsageKind
     recharge_range: RechargeRange | None = Field(
         default=None,
         description="Only for kind 'recharge'; must be null for every other kind.",
@@ -184,6 +178,8 @@ class ResourceCost(StrictModel):
 
 
 class AutomationSupport(str, Enum):
+    """Must be 'manual' when mechanic.kind is 'human_adjudicated'."""
+
     full = "full"
     partial = "partial"
     manual = "manual"

@@ -27,6 +27,23 @@ def _options() -> ProviderOptionsV1:
     )
 
 
+def test_openai_accepts_the_published_strict_artifact() -> None:
+    """Offline snapshot tests cannot see a schema the API rejects outright.
+
+    A `description` beside a `$ref` compiles and serializes cleanly, then 400s
+    every generation call. This is the only gate that catches that class.
+    """
+    provider = OpenAIDefinitionProvider()
+    outcome = provider.generate_definition(
+        prompt="Create one creature named 'Schema Probe'. Source description: a tiny test rodent.",
+        system=build_system_prompt("2024"),
+        schema=compile_openai_definition_schema(),
+        options=_options(),
+    )
+
+    assert outcome.kind is ProviderOutcomeKind.success, outcome.message
+
+
 def test_openai_simple_generation_validates_against_canonical_model() -> None:
     provider = OpenAIDefinitionProvider()
     schema = compile_openai_definition_schema()

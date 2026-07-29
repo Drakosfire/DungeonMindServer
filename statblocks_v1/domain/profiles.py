@@ -122,6 +122,8 @@ class AbilityScores(StrictModel):
 
 
 class ProficiencyDerivation(str, Enum):
+    """'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value."""
+
     standard = "standard"
     expertise = "expertise"
     explicit_override = "explicit_override"
@@ -130,12 +132,7 @@ class ProficiencyDerivation(str, Enum):
 class SavingThrowBonus(StrictModel):
     ability: AbilityName
     value: int
-    derivation: ProficiencyDerivation = Field(
-        description=(
-            "'standard' means value equals ability modifier plus proficiency bonus; "
-            "'expertise' adds proficiency twice; use 'explicit_override' for any other value."
-        )
-    )
+    derivation: ProficiencyDerivation
     note: str | None = None
 
 
@@ -145,12 +142,7 @@ class SkillBonus(StrictModel):
     skill: str = Field(min_length=1)
     ability: AbilityName
     value: int
-    derivation: ProficiencyDerivation = Field(
-        description=(
-            "'standard' means value equals ability modifier plus proficiency bonus; "
-            "'expertise' adds proficiency twice; use 'explicit_override' for any other value."
-        )
-    )
+    derivation: ProficiencyDerivation
     note: str | None = None
 
 

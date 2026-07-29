@@ -864,6 +864,7 @@
         "type": "string"
       },
       "AutomationSupport": {
+        "description": "Must be 'manual' when mechanic.kind is 'human_adjudicated'.",
         "enum": [
           "full",
           "partial",
@@ -3011,6 +3012,7 @@
         "type": "object"
       },
       "ProficiencyDerivation": {
+        "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value.",
         "enum": [
           "standard",
           "expertise",
@@ -3381,8 +3383,7 @@
             "$ref": "#/components/schemas/Activation"
           },
           "automation_support": {
-            "$ref": "#/components/schemas/AutomationSupport",
-            "description": "Must be 'manual' when mechanic.kind is 'human_adjudicated'."
+            "$ref": "#/components/schemas/AutomationSupport"
           },
           "costs": {
             "items": {
@@ -3493,8 +3494,7 @@
             "$ref": "#/components/schemas/Activation"
           },
           "automation_support": {
-            "$ref": "#/components/schemas/AutomationSupport",
-            "description": "Must be 'manual' when mechanic.kind is 'human_adjudicated'."
+            "$ref": "#/components/schemas/AutomationSupport"
           },
           "costs": {
             "items": {
@@ -3970,8 +3970,7 @@
             "$ref": "#/components/schemas/AbilityName"
           },
           "derivation": {
-            "$ref": "#/components/schemas/ProficiencyDerivation",
-            "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value."
+            "$ref": "#/components/schemas/ProficiencyDerivation"
           },
           "note": {
             "anyOf": [
@@ -4110,8 +4109,7 @@
             "$ref": "#/components/schemas/AbilityName"
           },
           "derivation": {
-            "$ref": "#/components/schemas/ProficiencyDerivation",
-            "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value."
+            "$ref": "#/components/schemas/ProficiencyDerivation"
           },
           "note": {
             "anyOf": [
@@ -5089,8 +5087,7 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "$ref": "#/components/schemas/UsageKind",
-            "description": "Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional."
+            "$ref": "#/components/schemas/UsageKind"
           },
           "recharge_range": {
             "anyOf": [
@@ -5148,6 +5145,7 @@
         "type": "object"
       },
       "UsageKind": {
+        "description": "Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional.",
         "enum": [
           "at_will",
           "recharge",
