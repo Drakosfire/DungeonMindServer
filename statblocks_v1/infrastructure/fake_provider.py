@@ -15,18 +15,26 @@ class FakeDefinitionProvider:
         self,
         outcome: ProviderOutcomeV1 | dict[str, Any],
         *,
-        callback: Callable[[str, CompiledSchemaV1, ProviderOptionsV1], ProviderOutcomeV1] | None = None,
+        callback: Callable[
+            [str, str, CompiledSchemaV1, ProviderOptionsV1], ProviderOutcomeV1
+        ]
+        | None = None,
     ) -> None:
         self._outcome = outcome
         self._callback = callback
-        self.calls: list[tuple[str, CompiledSchemaV1, ProviderOptionsV1]] = []
+        self.calls: list[tuple[str, str, CompiledSchemaV1, ProviderOptionsV1]] = []
 
     def generate_definition(
-        self, *, prompt: str, schema: CompiledSchemaV1, options: ProviderOptionsV1
+        self,
+        *,
+        prompt: str,
+        system: str,
+        schema: CompiledSchemaV1,
+        options: ProviderOptionsV1,
     ) -> ProviderOutcomeV1:
-        self.calls.append((prompt, schema, options))
+        self.calls.append((prompt, system, schema, options))
         if self._callback:
-            return self._callback(prompt, schema, options)
+            return self._callback(prompt, system, schema, options)
         if isinstance(self._outcome, dict):
             return ProviderOutcomeV1.succeeded(self._outcome)
         return self._outcome

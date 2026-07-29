@@ -5,6 +5,7 @@ import os
 
 import pytest
 
+from statblocks_v1.application.prompts import build_system_prompt
 from statblocks_v1.application.provider import ProviderOptionsV1, ProviderOutcomeKind
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
@@ -36,7 +37,12 @@ Strength 12 Dexterity 14 Constitution 12 Intelligence 10 Wisdom 12 Charisma 10,
 one simple melee attack, and no outer envelope or server metadata.
 definition.ruleset must be {"system":"dnd5e","edition":"2024","house_ruleset_id":null}.
 """
-    outcome = provider.generate_definition(prompt=prompt, schema=schema, options=_options())
+    outcome = provider.generate_definition(
+        prompt=prompt,
+        system=build_system_prompt("2024"),
+        schema=schema,
+        options=_options(),
+    )
 
     assert outcome.kind is ProviderOutcomeKind.success
     assert outcome.payload is not None
@@ -57,7 +63,12 @@ legendary_actions resource pool, flight, and at least one recharge breath weapon
 Do not emit candidate IDs, digests, timestamps, or provenance.
 definition.ruleset must be {"system":"dnd5e","edition":"2024","house_ruleset_id":null}.
 """
-    outcome = provider.generate_definition(prompt=prompt, schema=schema, options=_options())
+    outcome = provider.generate_definition(
+        prompt=prompt,
+        system=build_system_prompt("2024"),
+        schema=schema,
+        options=_options(),
+    )
 
     assert outcome.kind is ProviderOutcomeKind.success
     assert outcome.payload is not None

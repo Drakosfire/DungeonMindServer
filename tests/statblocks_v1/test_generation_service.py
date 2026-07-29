@@ -520,7 +520,7 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
     release = threading.Event()
     payload = source.model_dump(mode="json")
 
-    def blocking_callback(prompt, schema, options):
+    def blocking_callback(prompt, system, schema, options):
         entered.set()
         assert release.wait(timeout=2)
         return ProviderOutcomeV1.succeeded(payload)

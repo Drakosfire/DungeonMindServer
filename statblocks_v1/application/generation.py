@@ -24,7 +24,12 @@ from statblocks_v1.application.commands import (
     ReviseStatblockCommandV1,
     SourceSnapshotV1,
 )
-from statblocks_v1.application.prompts import PROMPT_VERSION, build_generation_prompt, build_revision_prompt
+from statblocks_v1.application.prompts import (
+    PROMPT_VERSION,
+    build_generation_prompt,
+    build_revision_prompt,
+    build_system_prompt,
+)
 from statblocks_v1.application.provider import (
     DefinitionProvider,
     ProviderOptionsV1,
@@ -892,6 +897,7 @@ class GenerationServiceV1:
         try:
             outcome = self._provider.generate_definition(
                 prompt=intent.prompt,
+                system=build_system_prompt(intent.ruleset.edition.value),
                 schema=compiled,
                 options=ProviderOptionsV1(
                     model=self._settings.model,

@@ -44,5 +44,10 @@ class DefinitionProvider(Protocol):
     provider_name: str
 
     def generate_definition(
-        self, *, prompt: str, schema: CompiledSchemaV1, options: ProviderOptionsV1
+        self,
+        *,
+        prompt: str,
+        system: str,
+        schema: CompiledSchemaV1,
+        options: ProviderOptionsV1,
     ) -> ProviderOutcomeV1: ...
