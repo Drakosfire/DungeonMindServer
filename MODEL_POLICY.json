@@ -9,7 +9,7 @@
   },
   "actions": {
     "default_text_generation": "fast_smart",
-    "structured_generation": "cheapest",
+    "structured_generation": "fast_smart_mini",
     "map_prompt_compilation": "fast_smart",
     "svg_mask_generation": "fast_smart",
     "player_character_generation": "fast_smart",
