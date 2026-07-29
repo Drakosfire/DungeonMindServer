@@ -820,6 +820,74 @@ def test_generate_ops_reserve_complete_conflict_and_takeover(load_fixture):
     assert failed.failure.kind == "provider_refusal"
 
 
+def test_fail_generate_persists_optional_diagnostics_round_trip(load_fixture):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.domain.receipts import ValidationSeverity
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    command = GenerateStatblockCommandV1(
+        request_id="req_diag_store",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="tests"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_diag_store",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_diagstr01",
+        lease_owner="owner",
+        lease_duration_seconds=30,
+    )
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+    snapshot = ops.fail_generate(
+        caller_scope="tests",
+        request_id="req_diag_store",
+        request_digest=digest,
+        lease_owner="owner",
+        failure=CandidateGenerationFailureSnapshotV1(
+            kind="definition_invalid",
+            message="Generated definition failed validation",
+            diagnostics=packet,
+        ),
+    )
+    assert snapshot.diagnostics == packet
+    loaded = ops.get_generate_operation("tests", "req_diag_store")
+    assert loaded is not None
+    assert loaded.failure is not None
+    assert loaded.failure.diagnostics == packet
+
+
 def test_generate_ops_concurrent_complete_converges(load_fixture):
     from datetime import datetime, timedelta, timezone
 

@@ -432,6 +432,87 @@ def test_firestore_generate_ops_atomic_complete_and_replay(firestore_client, bru
     assert all(item.already_completed for item in results)
 
 
+def test_firestore_generate_failure_diagnostics_round_trip(firestore_client):
+    from statblocks_v1.application.commands import (
+        CallerProvenanceV1,
+        GenerateStatblockCommandV1,
+        SourceSnapshotV1,
+    )
+    from statblocks_v1.application.repositories import (
+        GenerateBeginFailed,
+        compute_generate_candidate_digest,
+    )
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.profiles import RulesetRef
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    suffix = uuid.uuid4().hex[:8]
+    ops = FirestoreCandidateGenerationOperationRepository(
+        firestore_client,
+        clock=lambda: now,
+        generate_ops_collection=GENERATE_OPS_COLLECTION,
+    )
+    command = GenerateStatblockCommandV1(
+        request_id=f"fs-fail-{suffix}",
+        ruleset=RulesetRef(system="dnd5e", edition="2024"),
+        source=SourceSnapshotV1(name_hint="X", description="Y"),
+        caller=CallerProvenanceV1(caller_scope="dungeonbuddy"),
+    )
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: f"cand_fail{suffix}",
+        lease_owner="owner-a",
+        lease_duration_seconds=120,
+    )
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.domain_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="UNKNOWN_RESOURCE_REFERENCE",
+                severity=ValidationSeverity.error,
+                field_path="rule_elements[0].costs[0].resource_key",
+                message="Unknown local reference 'missing_pool'.",
+            )
+        ],
+    )
+    stored = ops.fail_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        lease_owner="owner-a",
+        failure=CandidateGenerationFailureSnapshotV1(
+            kind="definition_invalid",
+            message="Generated definition failed validation",
+            diagnostics=packet,
+        ),
+    )
+    assert stored.diagnostics is not None
+    assert stored.diagnostics.model_dump(mode="json") == packet.model_dump(mode="json")
+
+    ops2 = FirestoreCandidateGenerationOperationRepository(firestore_client, clock=lambda: now)
+    replay = ops2.begin_generate(
+        caller_scope="dungeonbuddy",
+        request_id=command.request_id,
+        request_digest=digest,
+        candidate_id_factory=lambda: f"cand_fail2{suffix}",
+        lease_owner="owner-b",
+        lease_duration_seconds=120,
+    )
+    assert isinstance(replay, GenerateBeginFailed)
+    assert replay.failure.diagnostics is not None
+    assert replay.failure.diagnostics.model_dump(mode="json") == packet.model_dump(mode="json")
+
+
 def test_firestore_revise_ops_atomic_complete_and_replay(firestore_client, bruiser):
     from statblocks_v1.application.commands import (
         CallerProvenanceV1,

@@ -419,6 +419,61 @@ def test_generation_failures_use_typed_envelopes(api_client, outcome, status, co
 
     assert response.status_code == status
     assert response.json()["error"]["code"] == code
+    if code == "validation_failed":
+        details = response.json()["error"].get("details")
+        assert details is not None
+        assert details.get("phase") == "schema_validation"
+        assert details.get("issue_count", 0) >= 1
+        assert "issues" in details
+        assert "__DMS_VAL01_RAW_PAYLOAD_SENTINEL__" not in response.text
+        assert '"input":' not in response.text
+
+
+def test_definition_invalid_generate_and_revise_emit_matching_diagnostic_envelopes(
+    api_client, load_fixture
+) -> None:
+    client, _, headers, *_ = api_client
+    candidates = InMemoryCandidateRepository()
+    invalid_provider = FakeDefinitionProvider(load_fixture("dangling_multiattack_ref"))
+    client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
+        provider=invalid_provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        candidate_id_factory=lambda: "cand_diag",
+        generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
+        revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
+    )
+
+    generate = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=_generate_payload("diag-generate"),
+        headers=headers,
+    )
+    assert generate.status_code == 422
+    gen_body = generate.json()["error"]
+    assert gen_body["code"] == "validation_failed"
+    assert gen_body["message"] == "Generated definition failed validation"
+    assert gen_body["details"]["phase"] == "domain_validation"
+
+    revise_payload = {
+        "request_id": "diag-revise",
+        "ruleset": {"system": "dnd5e", "edition": "2024", "house_ruleset_id": None},
+        "revision_instructions": ["Tweak the latchling."],
+        "source_definition": load_fixture("dangling_multiattack_ref"),
+        "intent": {},
+        "context": {},
+        "preserve_element_keys": True,
+    }
+    revise = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:revise",
+        json=revise_payload,
+        headers=headers,
+    )
+    assert revise.status_code == 422
+    rev_body = revise.json()["error"]
+    assert rev_body["code"] == "validation_failed"
+    assert rev_body["details"]["phase"] == "domain_validation"
+    assert len(invalid_provider.calls) == 2
 
 
 def test_ruleset_and_source_digest_mismatches_are_not_provider_unavailable(

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import math
 import os
+import re
 import secrets
 import time
 import unicodedata
@@ -53,6 +54,14 @@ from statblocks_v1.domain.candidate_operations import (
     CandidateGenerationFailureSnapshotV1,
     CandidateGenerationOperationV1,
     CandidateRevisionOperationV1,
+    GenerationValidationDiagnosticIssueV1,
+    GenerationValidationDiagnosticPacketV1,
+    GenerationValidationPhaseV1,
+    MAX_GENERATION_VALIDATION_CODE_LEN,
+    MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES,
+    MAX_GENERATION_VALIDATION_FIELD_PATH_LEN,
+    MAX_GENERATION_VALIDATION_MESSAGE_LEN,
+    MAX_GENERATION_VALIDATION_SUGGESTED_RESOLUTION_LEN,
 )
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import (
@@ -102,6 +111,7 @@ class DefinitionResolver(Protocol):
 class GenerationFailureV1:
     kind: str
     message: str
+    diagnostics: GenerationValidationDiagnosticPacketV1 | None = None
 
 
 @dataclass(frozen=True)
@@ -257,7 +267,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if isinstance(began, GenerateBeginFailed):
-            return GenerationFailureV1(began.failure.kind, began.failure.message)
+            return _generation_failure_from_snapshot(began.failure)
         if isinstance(began, GenerateBeginInProgress):
             return GenerationFailureV1(
                 "generation_in_progress",
@@ -278,9 +288,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=result.kind, message=result.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(result),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race(
@@ -305,7 +313,7 @@ class GenerationServiceV1:
                 raise
             except GenerateOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
 
         try:
             completed = ops.complete_generate(
@@ -455,7 +463,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if existing.status.value == "failed" and existing.failure is not None:
-            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+            return _generation_failure_from_snapshot(existing.failure)
         if existing.status.value == "pending":
             if indeterminate:
                 return GenerationFailureV1(
@@ -565,7 +573,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if isinstance(began, ReviseBeginFailed):
-            return GenerationFailureV1(began.failure.kind, began.failure.message)
+            return _generation_failure_from_snapshot(began.failure)
         if isinstance(began, ReviseBeginInProgress):
             return GenerationFailureV1(
                 "generation_in_progress",
@@ -587,9 +595,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=pinned.kind, message=pinned.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(pinned),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race_revise(
@@ -614,7 +620,7 @@ class GenerationServiceV1:
                 raise
             except ReviseOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
         result = self._run(pinned, reserved_candidate_id=claim.candidate_id, persist=False)
         if isinstance(result, GenerationFailureV1):
             try:
@@ -623,9 +629,7 @@ class GenerationServiceV1:
                     request_id=request_id,
                     request_digest=request_digest,
                     lease_owner=lease_owner,
-                    failure=CandidateGenerationFailureSnapshotV1(
-                        kind=result.kind, message=result.message
-                    ),
+                    failure=_failure_snapshot_from_generation_failure(result),
                 )
             except ImmutableResourceConflictError:
                 return self._resolve_after_terminal_race_revise(
@@ -650,7 +654,7 @@ class GenerationServiceV1:
                 raise
             except ReviseOperationIntegrityError:
                 raise
-            return GenerationFailureV1(snapshot.kind, snapshot.message)
+            return _generation_failure_from_snapshot(snapshot)
 
         try:
             completed = ops.complete_revise(
@@ -800,7 +804,7 @@ class GenerationServiceV1:
                 return loaded
             return GenerateOutcomeV1(candidate=loaded, replayed=True)
         if existing.status.value == "failed" and existing.failure is not None:
-            return GenerationFailureV1(existing.failure.kind, existing.failure.message)
+            return _generation_failure_from_snapshot(existing.failure)
         if existing.status.value == "pending":
             if indeterminate:
                 return GenerationFailureV1(
@@ -910,9 +914,12 @@ class GenerationServiceV1:
             )
         try:
             definition = StatblockDefinitionV1.model_validate(outcome.payload)
-        except ValidationError:
+        except ValidationError as exc:
+            diagnostics = _diagnostics_from_pydantic_validation_error(exc)
             return GenerationFailureV1(
-                "definition_invalid", "Provider output does not match StatblockDefinitionV1"
+                "definition_invalid",
+                "Provider output does not match StatblockDefinitionV1",
+                diagnostics=diagnostics,
             )
         if not _ruleset_matches(definition.ruleset, intent.ruleset):
             return GenerationFailureV1(
@@ -925,8 +932,11 @@ class GenerationServiceV1:
             definition, ValidationMode.generation_candidate, validated_at=now
         )
         if receipt.status is ValidationStatus.invalid:
+            diagnostics = _diagnostics_from_domain_receipt(receipt)
             return GenerationFailureV1(
-                "definition_invalid", "Provider output has structural or reference errors"
+                "definition_invalid",
+                "Provider output has structural or reference errors",
+                diagnostics=diagnostics,
             )
         if intent.source_definition is not None and intent.preserve_element_keys:
             receipt = _with_key_preservation_warnings(
@@ -1287,6 +1297,133 @@ def _with_key_preservation_warnings(
             "status": status,
             "validator_version": f"{receipt.validator_version}+{KEY_PRESERVATION_PASS_VERSION}",
         }
+    )
+
+
+def _bound_public_text(value: str, *, max_len: int) -> str:
+    normalized = unicodedata.normalize("NFC", value).strip()
+    if not normalized:
+        return "Validation failed"
+    if len(normalized) <= max_len:
+        return normalized
+    return normalized[: max_len - 1] + "…"
+
+
+def _pydantic_error_code(error_type: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", error_type).strip("_").upper()
+    if not normalized:
+        normalized = "PYDANTIC_VALIDATION"
+    if not re.match(r"^[A-Z][A-Z0-9_]*$", normalized):
+        normalized = f"PYDANTIC_{normalized}"[:MAX_GENERATION_VALIDATION_CODE_LEN]
+    return normalized[:MAX_GENERATION_VALIDATION_CODE_LEN]
+
+
+def _field_path_from_pydantic_loc(loc: tuple[object, ...]) -> str:
+    if not loc:
+        return "$"
+    segments: list[str] = []
+    for part in loc:
+        if isinstance(part, int):
+            if not segments:
+                segments.append(f"[{part}]")
+            else:
+                segments[-1] = f"{segments[-1]}[{part}]"
+        else:
+            segments.append(str(part))
+    path = ".".join(segments)
+    return _bound_public_text(path, max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN)
+
+
+def _diagnostics_from_pydantic_validation_error(
+    exc: ValidationError,
+) -> GenerationValidationDiagnosticPacketV1 | None:
+    try:
+        raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
+        for item in exc.errors(include_url=False, include_input=False):
+            raw_issues.append(
+                GenerationValidationDiagnosticIssueV1(
+                    code=_pydantic_error_code(str(item.get("type", "validation_error"))),
+                    severity=ValidationSeverity.error,
+                    field_path=_field_path_from_pydantic_loc(tuple(item.get("loc", ()))),
+                    message=_bound_public_text(
+                        str(item.get("msg", "Validation failed")),
+                        max_len=MAX_GENERATION_VALIDATION_MESSAGE_LEN,
+                    ),
+                    suggested_resolution=None,
+                )
+            )
+        issues = sorted(
+            raw_issues,
+            key=lambda issue: (issue.field_path, issue.code, issue.message),
+        )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
+        return GenerationValidationDiagnosticPacketV1(
+            phase=GenerationValidationPhaseV1.schema_validation,
+            issue_count=len(issues),
+            issues=issues,
+        )
+    except Exception:
+        return None
+
+
+def _diagnostics_from_domain_receipt(
+    receipt: ValidationReceiptV1,
+) -> GenerationValidationDiagnosticPacketV1 | None:
+    try:
+        raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
+        for issue in receipt.issues:
+            if issue.severity is not ValidationSeverity.error:
+                continue
+            raw_issues.append(
+                GenerationValidationDiagnosticIssueV1(
+                    code=issue.code[:MAX_GENERATION_VALIDATION_CODE_LEN],
+                    severity=issue.severity,
+                    field_path=_bound_public_text(
+                        issue.field_path,
+                        max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN,
+                    ),
+                    message=_bound_public_text(
+                        issue.message, max_len=MAX_GENERATION_VALIDATION_MESSAGE_LEN
+                    ),
+                    suggested_resolution=(
+                        _bound_public_text(
+                            issue.suggested_resolution,
+                            max_len=MAX_GENERATION_VALIDATION_SUGGESTED_RESOLUTION_LEN,
+                        )
+                        if issue.suggested_resolution is not None
+                        else None
+                    ),
+                )
+            )
+        issues = sorted(
+            raw_issues,
+            key=lambda item: (item.field_path, item.code, item.message),
+        )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
+        return GenerationValidationDiagnosticPacketV1(
+            phase=GenerationValidationPhaseV1.domain_validation,
+            issue_count=len(issues),
+            issues=issues,
+        )
+    except Exception:
+        return None
+
+
+def _failure_snapshot_from_generation_failure(
+    failure: GenerationFailureV1,
+) -> CandidateGenerationFailureSnapshotV1:
+    return CandidateGenerationFailureSnapshotV1(
+        kind=failure.kind,
+        message=failure.message,
+        diagnostics=failure.diagnostics,
+    )
+
+
+def _generation_failure_from_snapshot(
+    snapshot: CandidateGenerationFailureSnapshotV1,
+) -> GenerationFailureV1:
+    return GenerationFailureV1(
+        snapshot.kind,
+        snapshot.message,
+        diagnostics=snapshot.diagnostics,
     )
 
 

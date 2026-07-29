@@ -2286,3 +2286,129 @@ def test_replay_missing_candidate_after_op_expiry_raises_410(load_fixture) -> No
             ) from missing
     assert exc.value.details["candidate_id"] == "cand_1"
     assert len(provider.calls) == 1
+
+
+def test_schema_invalid_definition_emits_bounded_schema_diagnostics() -> None:
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded({"not": "a definition"}))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_schema_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "schema_validation"
+    assert result.diagnostics.issue_count == len(result.diagnostics.issues)
+    assert result.diagnostics.issues
+    serialized = result.diagnostics.model_dump_json()
+    assert '"input":' not in serialized
+    assert '"ctx":' not in serialized
+
+
+def test_domain_invalid_definition_emits_validator_issues(load_fixture) -> None:
+    service = _service(load_fixture("dangling_multiattack_ref"))
+    result = service.generate(_command(request_id="req_domain_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "domain_validation"
+    codes = {issue.code for issue in result.diagnostics.issues}
+    assert "UNKNOWN_MULTIATTACK_ELEMENT" in codes
+    assert all(issue.severity.value == "error" for issue in result.diagnostics.issues)
+
+
+def test_definition_invalid_failure_replay_preserves_diagnostics_and_one_provider_call(
+    load_fixture,
+) -> None:
+    provider = FakeDefinitionProvider(load_fixture("dangling_multiattack_ref"))
+    service = _service(None, provider=provider)
+    command = _command(request_id="req_diag_replay")
+    first = service.generate(command)
+    second = service.generate(command)
+
+    assert isinstance(first, GenerationFailureV1)
+    assert isinstance(second, GenerationFailureV1)
+    assert first.diagnostics is not None
+    assert second.diagnostics is not None
+    assert first.diagnostics.model_dump(mode="json") == second.diagnostics.model_dump(
+        mode="json"
+    )
+    assert len(provider.calls) == 1
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_diag_replay")
+    assert operation is not None
+    assert operation.failure is not None
+    assert operation.failure.diagnostics is not None
+    assert (
+        operation.failure.diagnostics.model_dump(mode="json")
+        == first.diagnostics.model_dump(mode="json")
+    )
+    op_json = operation.model_dump_json()
+    assert '"input":' not in op_json
+
+
+def test_definition_invalid_does_not_persist_raw_provider_payload_sentinel() -> None:
+    sentinel = "__DMS_VAL01_RAW_PAYLOAD_SENTINEL__"
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1.succeeded({"not": "a definition", "sentinel_probe": sentinel})
+    )
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_sentinel_absence"))
+    assert isinstance(result, GenerationFailureV1)
+    blob = result.diagnostics.model_dump_json() if result.diagnostics else ""
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_sentinel_absence")
+    assert operation is not None
+    assert sentinel not in blob
+    assert sentinel not in operation.model_dump_json()
+
+
+def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fixture) -> None:
+    from statblocks_v1.application.repositories import compute_generate_candidate_digest
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+    )
+    from statblocks_v1.infrastructure.memory_repositories import (
+        InMemoryCandidateGenerationOperationRepository,
+        InMemoryCandidateRepository,
+    )
+
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    candidates = InMemoryCandidateRepository(clock=lambda: now)
+    ops = InMemoryCandidateGenerationOperationRepository(candidates, clock=lambda: now)
+    provider = FakeDefinitionProvider(load_fixture("simple_bruiser"))
+    service = GenerationServiceV1(
+        provider=provider,
+        candidates=candidates,
+        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        clock=lambda: now,
+        candidate_id_factory=lambda: "cand_legacy",
+        generate_operations=ops,
+    )
+    command = _command(request_id="req_legacy_fail")
+    digest = compute_generate_candidate_digest(command)
+    ops.begin_generate(
+        caller_scope="tests",
+        request_id="req_legacy_fail",
+        request_digest=digest,
+        candidate_id_factory=lambda: "cand_legacy",
+        lease_owner="owner",
+        lease_duration_seconds=30,
+    )
+    legacy = CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid", message="Generated definition failed validation"
+    )
+    ops.fail_generate(
+        caller_scope="tests",
+        request_id="req_legacy_fail",
+        request_digest=digest,
+        lease_owner="owner",
+        failure=legacy,
+    )
+    result = service.generate(command)
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is None
+    assert len(provider.calls) == 0
