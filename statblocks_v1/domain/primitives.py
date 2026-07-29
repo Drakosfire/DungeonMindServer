@@ -145,7 +145,7 @@ class Usage(StrictModel):
     kind: UsageKind
     recharge_range: RechargeRange | None = Field(
         default=None,
-        description="Only for kind 'recharge'; must be null for every other kind.",
+        description="Required for kind 'recharge' (ordered d6 window); must be null for every other kind.",
     )
     uses: int | None = Field(
         default=None,

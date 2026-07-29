@@ -243,6 +243,7 @@ def _run_trial(
     fixture: Fixture,
     arm: str,
     trial: int,
+    dump_dir: Path | None = None,
 ) -> TrialResult:
     keep_descriptions, use_real_prompt, include_examples = _arm_config(arm)
     schema = _compiled_schema_with_descriptions(keep_descriptions=keep_descriptions)
@@ -268,6 +269,10 @@ def _run_trial(
 
     if outcome.kind is not ProviderOutcomeKind.success or outcome.payload is None:
         return result
+
+    if dump_dir is not None:
+        dump_path = dump_dir / f"{fixture.name}-{arm}-t{trial}.json"
+        dump_path.write_text(json.dumps(outcome.payload, indent=2) + "\n", encoding="utf-8")
 
     try:
         definition = StatblockDefinitionV1.model_validate(outcome.payload)
@@ -359,6 +364,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Write raw per-trial results to this JSON file.",
     )
     parser.add_argument(
+        "--dump-definitions",
+        type=Path,
+        help="Write each raw provider payload to this directory for post-mortem inspection.",
+    )
+    parser.add_argument(
         "--yes",
         action="store_true",
         help="Confirm live OpenAI calls when the plan exceeds 20 API calls.",
@@ -396,6 +406,10 @@ def main(argv: list[str] | None = None) -> None:
 
     _require_live_env()
 
+    dump_dir = args.dump_definitions
+    if dump_dir is not None:
+        dump_dir.mkdir(parents=True, exist_ok=True)
+
     provider = OpenAIDefinitionProvider()
     options = _provider_options()
     all_results: list[TrialResult] = []
@@ -413,6 +427,7 @@ def main(argv: list[str] | None = None) -> None:
                     fixture=fixture,
                     arm=arm,
                     trial=trial,
+                    dump_dir=dump_dir,
                 )
                 all_results.append(result)
                 if result.outcome_kind == ProviderOutcomeKind.success.value:
