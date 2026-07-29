@@ -15,7 +15,11 @@ from statblocks_v1.api.dependencies import (
 )
 from statblocks_v1.api.http_errors import register_error_handlers
 from statblocks_v1.api.router import router as v1_router
-from statblocks_v1.application.generation import GenerationFailureV1, GenerationServiceV1
+from statblocks_v1.application.generation import (
+    GenerationFailureV1,
+    GenerationServiceV1,
+    _DOMAIN_DIAGNOSTIC_MESSAGES,
+)
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
 from statblocks_v1.application.repositories import CreateStatblockCommand
 from statblocks_v1.application.resolvers import PersistenceDefinitionResolver
@@ -521,6 +525,45 @@ def test_extra_forbidden_provider_key_sentinel_absent_from_generate_http_and_rep
 
 
 RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
+RAW_DOMAIN_VALUE_SENTINEL = "__RAW_DOMAIN_VALUE_SENTINEL__"
+
+
+def test_domain_provider_value_sentinel_absent_from_generate_http_and_replay(
+    api_client, load_fixture
+) -> None:
+    client, provider, headers, *_ = api_client
+    outcome_payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    sentinel_skill = {
+        "skill": RAW_DOMAIN_VALUE_SENTINEL,
+        "ability": "strength",
+        "value": 6,
+        "derivation": "standard",
+    }
+    outcome_payload["proficiencies"]["skills"] = [
+        sentinel_skill,
+        copy.deepcopy(sentinel_skill),
+    ]
+    provider._outcome = ProviderOutcomeV1.succeeded(outcome_payload)
+    payload = _generate_payload("raw-domain-value-http")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert RAW_DOMAIN_VALUE_SENTINEL not in first.text
+    assert RAW_DOMAIN_VALUE_SENTINEL not in second.text
+    assert len(provider.calls) == 1
+    issues = first.json()["error"]["details"]["issues"]
+    dup_issues = [issue for issue in issues if issue["code"] == "DUPLICATE_SKILL_NAME"]
+    assert dup_issues
+    assert dup_issues[0]["message"] == _DOMAIN_DIAGNOSTIC_MESSAGES["DUPLICATE_SKILL_NAME"]
 
 
 def test_union_tag_invalid_provider_value_sentinel_absent_from_generate_http_and_replay(

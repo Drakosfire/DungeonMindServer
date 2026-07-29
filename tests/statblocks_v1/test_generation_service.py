@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -22,7 +24,10 @@ from statblocks_v1.application.generation import (
     GenerateOutcomeV1,
     GenerationFailureV1,
     GenerationServiceV1,
+    _DOMAIN_DIAGNOSTIC_MESSAGES,
+    _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE,
     _SCHEMA_DIAGNOSTIC_MESSAGES,
+    _diagnostics_from_domain_receipt,
     _digest_text,
 )
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
@@ -32,7 +37,7 @@ from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.errors import InternalServiceMisconfiguredError, RevisionNotFoundError
 from statblocks_v1.domain.profiles import RulesetEdition, RulesetRef
-from statblocks_v1.domain.receipts import ValidationStatus
+from statblocks_v1.domain.receipts import ValidationSeverity, ValidationStatus
 from statblocks_v1.domain.resources import AssetWarningCode, ExactRevisionLocatorV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.infrastructure.fake_provider import FakeDefinitionProvider
@@ -2455,6 +2460,87 @@ def test_union_tag_not_found_uses_template_message(load_fixture) -> None:
     ]
     assert not_found_issues
     assert not_found_issues[0].message == _SCHEMA_DIAGNOSTIC_MESSAGES["union_tag_not_found"]
+
+
+RAW_DOMAIN_VALUE_SENTINEL = "__RAW_DOMAIN_VALUE_SENTINEL__"
+
+
+def test_domain_duplicate_skill_provider_value_sentinel_absent_from_diagnostics_and_persistence(
+    load_fixture,
+) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    sentinel_skill = {
+        "skill": RAW_DOMAIN_VALUE_SENTINEL,
+        "ability": "strength",
+        "value": 6,
+        "derivation": "standard",
+    }
+    payload["proficiencies"]["skills"] = [sentinel_skill, copy.deepcopy(sentinel_skill)]
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_domain_duplicate_skill"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.kind == "definition_invalid"
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "domain_validation"
+    dup_issues = [
+        issue for issue in result.diagnostics.issues if issue.code == "DUPLICATE_SKILL_NAME"
+    ]
+    assert dup_issues
+    assert dup_issues[0].message == _DOMAIN_DIAGNOSTIC_MESSAGES["DUPLICATE_SKILL_NAME"]
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_DOMAIN_VALUE_SENTINEL not in diag_json
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_domain_duplicate_skill")
+    assert operation is not None
+    assert RAW_DOMAIN_VALUE_SENTINEL not in operation.model_dump_json()
+
+
+def test_unknown_domain_code_uses_generic_message() -> None:
+    from statblocks_v1.domain.canonicalization import CANONICALIZER_VERSION
+    from statblocks_v1.domain.receipts import (
+        VALIDATOR_VERSION,
+        ValidationIssueV1,
+        ValidationMode,
+        ValidationReceiptV1,
+    )
+
+    receipt = ValidationReceiptV1(
+        status=ValidationStatus.invalid,
+        mode=ValidationMode.generation_candidate,
+        validator_version=VALIDATOR_VERSION,
+        canonicalizer_version=CANONICALIZER_VERSION,
+        definition_digest="sha256:" + "0" * 64,
+        validated_at=datetime.now(timezone.utc),
+        issues=[
+            ValidationIssueV1(
+                code="FUTURE_CODE_NOT_YET_TEMPLATED",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Provider-authored receipt text must not leak.",
+                suggested_resolution="Also must not leak.",
+            )
+        ],
+    )
+    packet = _diagnostics_from_domain_receipt(receipt)
+    assert packet is not None
+    assert len(packet.issues) == 1
+    assert packet.issues[0].message == _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE
+    assert packet.issues[0].suggested_resolution is None
+
+
+def test_domain_diagnostic_templates_cover_all_validator_codes() -> None:
+    import statblocks_v1.domain.validation as validation_module
+
+    source = Path(validation_module.__file__).read_text()
+    codes = set(
+        re.findall(r'^\s+"([A-Z][A-Z0-9_]{3,})",?$', source, re.MULTILINE)
+    )
+    assert len(codes) == 49
+    assert codes == set(_DOMAIN_DIAGNOSTIC_MESSAGES.keys())
 
 
 def test_candidate_generation_failure_snapshot_diagnostics_invariant() -> None:
