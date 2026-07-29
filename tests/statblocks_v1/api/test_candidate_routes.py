@@ -520,6 +520,38 @@ def test_extra_forbidden_provider_key_sentinel_absent_from_generate_http_and_rep
     assert len(provider.calls) == 1
 
 
+RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
+
+
+def test_union_tag_invalid_provider_value_sentinel_absent_from_generate_http_and_replay(
+    api_client, load_fixture
+) -> None:
+    client, provider, headers, *_ = api_client
+    outcome_payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    outcome_payload["rule_elements"][0]["mechanic"]["kind"] = RAW_PROVIDER_VALUE_SENTINEL
+    provider._outcome = ProviderOutcomeV1.succeeded(outcome_payload)
+    payload = _generate_payload("raw-value-http")
+    first = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    second = client.post(
+        "/api/internal/dungeonbuddy/v1/statblock-candidates:generate",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 422
+    assert second.status_code == 422
+    assert RAW_PROVIDER_VALUE_SENTINEL not in first.text
+    assert RAW_PROVIDER_VALUE_SENTINEL not in second.text
+    assert len(provider.calls) == 1
+    issues = first.json()["error"]["details"]["issues"]
+    union_issues = [issue for issue in issues if issue["code"] == "UNION_TAG_INVALID"]
+    assert union_issues
+    assert RAW_PROVIDER_VALUE_SENTINEL not in union_issues[0]["message"]
+
+
 def test_misbound_generation_failure_never_exposes_diagnostics_in_http(api_client) -> None:
     from statblocks_v1.domain.candidate_operations import (
         GenerationValidationDiagnosticIssueV1,

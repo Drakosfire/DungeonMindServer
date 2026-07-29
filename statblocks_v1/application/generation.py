@@ -1318,6 +1318,46 @@ def _pydantic_error_code(error_type: str) -> str:
     return normalized[:MAX_GENERATION_VALIDATION_CODE_LEN]
 
 
+_GENERIC_SCHEMA_DIAGNOSTIC_MESSAGE = "Validation failed for this field."
+
+_SCHEMA_DIAGNOSTIC_MESSAGES: dict[str, str] = {
+    "missing": "Required field is missing.",
+    "extra_forbidden": "Unexpected field is not permitted.",
+    "union_tag_invalid": (
+        "Unrecognized element kind; the value does not match any supported kind "
+        "for this field."
+    ),
+    "union_tag_not_found": (
+        "Missing the discriminator field required to determine the element type."
+    ),
+    "literal_error": "Value must equal the required constant for this field.",
+    "enum": "Value must be one of the allowed options.",
+    "string_type": "Value must be a string.",
+    "string_too_short": "String value is too short.",
+    "string_too_long": "String value is too long.",
+    "string_pattern_mismatch": "String value does not match the required pattern.",
+    "int_type": "Value must be an integer.",
+    "int_parsing": "Value must be a valid integer.",
+    "float_type": "Value must be a number.",
+    "float_parsing": "Value must be a valid number.",
+    "greater_than": "Value must be greater than the allowed minimum.",
+    "greater_than_equal": "Value must be greater than or equal to the allowed minimum.",
+    "less_than": "Value must be less than the allowed maximum.",
+    "less_than_equal": "Value must be less than or equal to the allowed maximum.",
+    "list_type": "Value must be a list.",
+    "too_short": "List has too few items.",
+    "too_long": "List has too many items.",
+    "dict_type": "Value must be an object.",
+    "model_type": "Value must be a structured object with the expected fields.",
+    "bool_type": "Value must be true or false.",
+    "value_error": "Value is not valid for this field.",
+}
+
+
+def _pydantic_error_message(error_type: str) -> str:
+    return _SCHEMA_DIAGNOSTIC_MESSAGES.get(error_type, _GENERIC_SCHEMA_DIAGNOSTIC_MESSAGE)
+
+
 _UNEXPECTED_PROVIDER_KEY_FIELD = "<unexpected_key>"
 
 
@@ -1370,10 +1410,7 @@ def _diagnostics_from_pydantic_validation_error(
                         tuple(item.get("loc", ())),
                         error_type=error_type,
                     ),
-                    message=_bound_public_text(
-                        str(item.get("msg", "Validation failed")),
-                        max_len=MAX_GENERATION_VALIDATION_MESSAGE_LEN,
-                    ),
+                    message=_pydantic_error_message(error_type),
                     suggested_resolution=None,
                 )
             )

@@ -22,6 +22,7 @@ from statblocks_v1.application.generation import (
     GenerateOutcomeV1,
     GenerationFailureV1,
     GenerationServiceV1,
+    _SCHEMA_DIAGNOSTIC_MESSAGES,
     _digest_text,
 )
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
@@ -2404,6 +2405,56 @@ def test_extra_forbidden_provider_key_sentinel_sanitized_at_service_and_persiste
     assert operation is not None
     op_json = operation.model_dump_json()
     assert RAW_PROVIDER_KEY_SENTINEL not in op_json
+
+
+RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
+
+
+def test_union_tag_invalid_provider_value_sentinel_absent_from_diagnostics_and_persistence(
+    load_fixture,
+) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload["rule_elements"][0]["mechanic"]["kind"] = RAW_PROVIDER_VALUE_SENTINEL
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_union_tag_invalid"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    assert result.diagnostics.phase.value == "schema_validation"
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_PROVIDER_VALUE_SENTINEL not in diag_json
+    union_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "UNION_TAG_INVALID"
+    ]
+    assert union_issues
+    assert union_issues[0].message == _SCHEMA_DIAGNOSTIC_MESSAGES["union_tag_invalid"]
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_union_tag_invalid")
+    assert operation is not None
+    assert RAW_PROVIDER_VALUE_SENTINEL not in operation.model_dump_json()
+
+
+def test_union_tag_not_found_uses_template_message(load_fixture) -> None:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload["rule_elements"][0]["mechanic"].pop("kind", None)
+    provider = FakeDefinitionProvider(ProviderOutcomeV1.succeeded(payload))
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_union_tag_not_found"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    not_found_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "UNION_TAG_NOT_FOUND"
+    ]
+    assert not_found_issues
+    assert not_found_issues[0].message == _SCHEMA_DIAGNOSTIC_MESSAGES["union_tag_not_found"]
 
 
 def test_candidate_generation_failure_snapshot_diagnostics_invariant() -> None:
