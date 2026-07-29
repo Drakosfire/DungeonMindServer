@@ -931,13 +931,9 @@ class GenerationServiceV1:
         receipt = validate_definition(
             definition, ValidationMode.generation_candidate, validated_at=now
         )
-        if receipt.status is ValidationStatus.invalid:
-            diagnostics = _diagnostics_from_domain_receipt(receipt)
-            return GenerationFailureV1(
-                "definition_invalid",
-                "Provider output has structural or reference errors",
-                diagnostics=diagnostics,
-            )
+        # Domain-invalid output still becomes a candidate: the parsed definition is
+        # complete and editable, so the operator fixes flagged issues in place.
+        # Durability stays gated by persistence-mode validation at accept time.
         if intent.source_definition is not None and intent.preserve_element_keys:
             receipt = _with_key_preservation_warnings(
                 receipt, intent.source_definition, definition
@@ -1358,134 +1354,6 @@ def _pydantic_error_message(error_type: str) -> str:
     return _SCHEMA_DIAGNOSTIC_MESSAGES.get(error_type, _GENERIC_SCHEMA_DIAGNOSTIC_MESSAGE)
 
 
-_GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE = "Domain validation failed for this field."
-
-_DOMAIN_DIAGNOSTIC_MESSAGES: dict[str, str] = {
-    "DEFAULT_ARMOR_CLASS_CARDINALITY": (
-        "Exactly one armor-class profile must be marked default."
-    ),
-    "HP_METHOD_FIELDS_INCOHERENT": (
-        "Hit point method fields are incoherent for the selected method."
-    ),
-    "HP_DISPLAYED_AVERAGE_MISMATCH": (
-        "Displayed HP average does not match the typed dice formula."
-    ),
-    "RULESET_CR_INVALID": "Challenge rating is not a canonical D&D 5e CR value.",
-    "RULESET_CR_PROFICIENCY_MISMATCH": (
-        "Challenge proficiency bonus does not match the selected CR."
-    ),
-    "PASSIVE_PERCEPTION_MISMATCH": (
-        "Passive Perception must equal 10 + Perception skill value."
-    ),
-    "PASSIVE_PERCEPTION_UNVERIFIED": (
-        "Passive Perception differs from Wisdom without a typed Perception skill."
-    ),
-    "DUPLICATE_SAVING_THROW_ABILITY": (
-        "Saving throw for the same ability appears more than once."
-    ),
-    "SAVING_THROW_DERIVATION_MISMATCH": (
-        "Declared saving throw value does not match the expected derivation."
-    ),
-    "DUPLICATE_SKILL_NAME": (
-        "Skill name duplicates an earlier entry after normalization."
-    ),
-    "SKILL_DERIVATION_MISMATCH": (
-        "Declared skill value does not match the expected derivation for the "
-        "linked ability."
-    ),
-    "DUPLICATE_LOCAL_KEY": "Local key is duplicated within the indicated collection.",
-    "DEFAULT_PHASE_CARDINALITY": (
-        "A phased creature must have exactly one default phase."
-    ),
-    "UNKNOWN_ELEMENT_REFERENCE": "Referenced element key does not exist.",
-    "UNKNOWN_RESOURCE_REFERENCE": "Referenced resource key does not exist.",
-    "UNKNOWN_MULTIATTACK_ELEMENT": (
-        "Multiattack references an element key that does not exist."
-    ),
-    "FORBIDDEN_REFERENCE_CYCLE": (
-        "Multiattack reference would create a forbidden cycle."
-    ),
-    "UNKNOWN_PHASE_REFERENCE": "Referenced phase key does not exist.",
-    "UNKNOWN_MOVEMENT_REFERENCE": "Referenced movement mode key does not exist.",
-    "UNKNOWN_PHASE_ELEMENT": "Phase references an element key that does not exist.",
-    "PHASE_ELEMENT_SET_CONFLICT": (
-        "Element cannot be both enabled and disabled in the same phase."
-    ),
-    "SECTION_ACTIVATION_INCOHERENT": (
-        "Activation kind is not valid for the element section."
-    ),
-    "REACTION_TRIGGER_REQUIRED": (
-        "A reaction needs a trigger or timing expression."
-    ),
-    "LEGENDARY_RESOURCE_REQUIRED": (
-        "Legendary actions require valid resource usage and cost entries."
-    ),
-    "LEGENDARY_RESOURCE_MISMATCH": (
-        "Legendary usage resource key must match every cost resource key."
-    ),
-    "LAIR_CONTEXT_REQUIRED": "A lair action requires a lair profile.",
-    "LAIR_TIMING_REQUIRED": (
-        "A lair action requires an initiative timing expression."
-    ),
-    "RESOURCE_COST_DUPLICATE_POOL": (
-        "Resource pool appears more than once in costs; use a single cost entry."
-    ),
-    "RESOURCE_COST_EXCEEDS_POOL": "Cost exceeds the resource pool maximum.",
-    "HUMAN_ADJUDICATED_AUTOMATION_MISMATCH": (
-        "Human-adjudicated mechanics must declare manual automation support."
-    ),
-    "USAGE_FIELDS_INCOHERENT": (
-        "Usage fields are incoherent for the selected usage kind; check the "
-        "requirements for that kind at the indicated field."
-    ),
-    "ATTACK_REACH_REQUIRED": "A melee attack requires typed reach.",
-    "ATTACK_RANGE_UNEXPECTED": "A melee attack must not include typed range.",
-    "ATTACK_RANGE_REQUIRED": "A ranged attack requires typed range.",
-    "ATTACK_REACH_UNEXPECTED": "A ranged attack must not include typed reach.",
-    "ATTACK_RANGE_ORDER_INCOHERENT": (
-        "Attack long range must use the same unit and be >= normal range."
-    ),
-    "ATTACK_TARGET_RANGE_UNEXPECTED": (
-        "Attack target must not set range; use mechanic.reach or mechanic.range."
-    ),
-    "ATTACK_TARGET_COUNT_REQUIRED": "A creatures target requires count.",
-    "ATTACK_TARGET_COUNT_INCOHERENT": (
-        "Target count is incoherent for the selected target kind."
-    ),
-    "ATTACK_TARGET_AREA_REQUIRED": "An area target requires area.",
-    "ATTACK_TARGET_AREA_UNEXPECTED": "Only an area target may set area.",
-    "SPELLCASTING_MODE_INCOHERENT": (
-        "Required spellcasting fields are missing for the selected casting mode."
-    ),
-    "SPELL_GROUP_SLOTS_INCOHERENT": (
-        "Spell group slots are incoherent for the spellcasting mode and group level."
-    ),
-    "SPELL_GROUP_LEVEL_INCOHERENT": (
-        "Spell group level is missing or outside the allowed range."
-    ),
-    "SPELL_GROUP_USAGE_INCOHERENT": (
-        "Spell group usage kind is incoherent for the spellcasting mode and group "
-        "level."
-    ),
-    "RULES_TEXT_ATTACK_BONUS_MISMATCH": (
-        "Rules text attack bonus conflicts with typed attack_bonus."
-    ),
-    "RULES_TEXT_DAMAGE_MISMATCH": (
-        "Rules text damage conflicts with the first typed hit damage effect."
-    ),
-    "RULES_TEXT_SAVE_DC_MISMATCH": (
-        "Rules text save DC conflicts with typed save DC."
-    ),
-    "RULES_TEXT_SECTION_MISMATCH": (
-        "Reaction rules text unambiguously says it is used as an action."
-    ),
-}
-
-
-def _domain_diagnostic_message(code: str) -> str:
-    return _DOMAIN_DIAGNOSTIC_MESSAGES.get(code, _GENERIC_DOMAIN_DIAGNOSTIC_MESSAGE)
-
-
 _UNEXPECTED_PROVIDER_KEY_FIELD = "<unexpected_key>"
 
 
@@ -1548,41 +1416,6 @@ def _diagnostics_from_pydantic_validation_error(
         )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
         return GenerationValidationDiagnosticPacketV1(
             phase=GenerationValidationPhaseV1.schema_validation,
-            issue_count=len(issues),
-            issues=issues,
-        )
-    except Exception:
-        return None
-
-
-def _diagnostics_from_domain_receipt(
-    receipt: ValidationReceiptV1,
-) -> GenerationValidationDiagnosticPacketV1 | None:
-    try:
-        raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
-        for issue in receipt.issues:
-            if issue.severity is not ValidationSeverity.error:
-                continue
-            raw_issues.append(
-                GenerationValidationDiagnosticIssueV1(
-                    code=issue.code[:MAX_GENERATION_VALIDATION_CODE_LEN],
-                    severity=issue.severity,
-                    field_path=_bound_public_text(
-                        issue.field_path,
-                        max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN,
-                    ),
-                    message=_domain_diagnostic_message(issue.code),
-                    # Error-severity issues never carry resolutions (only warnings do,
-                    # filtered above); packets must not reflect receipt text.
-                    suggested_resolution=None,
-                )
-            )
-        issues = sorted(
-            raw_issues,
-            key=lambda item: (item.field_path, item.code, item.message),
-        )[:MAX_GENERATION_VALIDATION_DIAGNOSTIC_ISSUES]
-        return GenerationValidationDiagnosticPacketV1(
-            phase=GenerationValidationPhaseV1.domain_validation,
             issue_count=len(issues),
             issues=issues,
         )

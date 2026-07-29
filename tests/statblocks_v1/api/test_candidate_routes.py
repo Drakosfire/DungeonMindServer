@@ -18,7 +18,6 @@ from statblocks_v1.api.router import router as v1_router
 from statblocks_v1.application.generation import (
     GenerationFailureV1,
     GenerationServiceV1,
-    _DOMAIN_DIAGNOSTIC_MESSAGES,
 )
 from statblocks_v1.application.provider import ProviderOutcomeKind, ProviderOutcomeV1
 from statblocks_v1.application.repositories import CreateStatblockCommand
@@ -434,17 +433,23 @@ def test_generation_failures_use_typed_envelopes(api_client, outcome, status, co
         assert '"input":' not in response.text
 
 
-def test_definition_invalid_generate_and_revise_emit_matching_diagnostic_envelopes(
+def test_domain_invalid_generate_and_revise_return_candidates_with_invalid_receipts(
     api_client, load_fixture
 ) -> None:
     client, _, headers, *_ = api_client
     candidates = InMemoryCandidateRepository()
     invalid_provider = FakeDefinitionProvider(load_fixture("dangling_multiattack_ref"))
+    counter = {"n": 0}
+
+    def next_candidate_id() -> str:
+        counter["n"] += 1
+        return f"cand_{counter['n']}"
+
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=invalid_provider,
         candidates=candidates,
         settings=GenerationSettingsV1("test-model", 1, 0, 60),
-        candidate_id_factory=lambda: "cand_diag",
+        candidate_id_factory=next_candidate_id,
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
         revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
     )
@@ -454,11 +459,11 @@ def test_definition_invalid_generate_and_revise_emit_matching_diagnostic_envelop
         json=_generate_payload("diag-generate"),
         headers=headers,
     )
-    assert generate.status_code == 422
-    gen_body = generate.json()["error"]
-    assert gen_body["code"] == "validation_failed"
-    assert gen_body["message"] == "Generated definition failed validation"
-    assert gen_body["details"]["phase"] == "domain_validation"
+    assert generate.status_code == 200
+    gen_receipt = generate.json()["validation_receipt"]
+    assert gen_receipt["status"] == "invalid"
+    gen_codes = {issue["code"] for issue in gen_receipt["issues"]}
+    assert "UNKNOWN_MULTIATTACK_ELEMENT" in gen_codes
 
     revise_payload = {
         "request_id": "diag-revise",
@@ -474,10 +479,9 @@ def test_definition_invalid_generate_and_revise_emit_matching_diagnostic_envelop
         json=revise_payload,
         headers=headers,
     )
-    assert revise.status_code == 422
-    rev_body = revise.json()["error"]
-    assert rev_body["code"] == "validation_failed"
-    assert rev_body["details"]["phase"] == "domain_validation"
+    assert revise.status_code == 200
+    rev_receipt = revise.json()["validation_receipt"]
+    assert rev_receipt["status"] == "invalid"
     assert len(invalid_provider.calls) == 2
 
 
@@ -528,7 +532,7 @@ RAW_PROVIDER_VALUE_SENTINEL = "__RAW_PROVIDER_VALUE_SENTINEL__"
 RAW_DOMAIN_VALUE_SENTINEL = "__RAW_DOMAIN_VALUE_SENTINEL__"
 
 
-def test_domain_provider_value_sentinel_absent_from_generate_http_and_replay(
+def test_domain_invalid_generate_returns_candidate_and_replays_without_provider(
     api_client, load_fixture
 ) -> None:
     client, provider, headers, *_ = api_client
@@ -555,15 +559,18 @@ def test_domain_provider_value_sentinel_absent_from_generate_http_and_replay(
         json=payload,
         headers=headers,
     )
-    assert first.status_code == 422
-    assert second.status_code == 422
-    assert RAW_DOMAIN_VALUE_SENTINEL not in first.text
-    assert RAW_DOMAIN_VALUE_SENTINEL not in second.text
-    assert len(provider.calls) == 1
-    issues = first.json()["error"]["details"]["issues"]
-    dup_issues = [issue for issue in issues if issue["code"] == "DUPLICATE_SKILL_NAME"]
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_receipt = first.json()["validation_receipt"]
+    assert first_receipt["status"] == "invalid"
+    dup_issues = [
+        issue for issue in first_receipt["issues"] if issue["code"] == "DUPLICATE_SKILL_NAME"
+    ]
     assert dup_issues
-    assert dup_issues[0]["message"] == _DOMAIN_DIAGNOSTIC_MESSAGES["DUPLICATE_SKILL_NAME"]
+    # Provider-authored value is editable candidate content, not an error leak.
+    assert RAW_DOMAIN_VALUE_SENTINEL in first.text
+    assert first.json()["candidate_id"] == second.json()["candidate_id"]
+    assert len(provider.calls) == 1
 
 
 def test_union_tag_invalid_provider_value_sentinel_absent_from_generate_http_and_replay(
