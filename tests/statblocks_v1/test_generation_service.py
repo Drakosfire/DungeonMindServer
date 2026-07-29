@@ -827,7 +827,7 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
 def test_settings_resolve_in_repo_model_policy(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
-    assert settings.model == "gpt-5.4-nano"
+    assert settings.model == "gpt-5.4-mini"
 
 
 def test_settings_fail_closed_without_policy(monkeypatch, tmp_path) -> None:

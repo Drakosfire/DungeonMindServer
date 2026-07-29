@@ -7,8 +7,8 @@ import pytest
 from statblocks_v1.domain.schema import (
     SCHEMA_ARTIFACT_DIRECTORY,
     OpenAIStrictSchemaCompilationError,
+    _STRIPPED_OPENAI_METADATA,
     _UNSUPPORTED_OPENAI_KEYWORDS,
-    _UNSUPPORTED_OPENAI_METADATA,
     _transform_schema_node,
     canonical_json_schema,
     collect_property_paths,
@@ -43,7 +43,7 @@ def test_openai_strict_schema_closes_objects_and_strips_node_metadata() -> None:
     def visit(node: object, *, under_properties: bool = False) -> None:
         if isinstance(node, dict):
             if not under_properties:
-                assert not (_UNSUPPORTED_OPENAI_METADATA & set(node.keys()))
+                assert not (_STRIPPED_OPENAI_METADATA & set(node.keys()))
             assert not (_UNSUPPORTED_OPENAI_KEYWORDS & set(node.keys()))
             if node.get("type") == "object" or "properties" in node:
                 assert node["additionalProperties"] is False
@@ -60,6 +60,17 @@ def test_openai_strict_schema_closes_objects_and_strips_node_metadata() -> None:
                 visit(value, under_properties=under_properties)
 
     visit(schema)
+
+
+def test_openai_strict_schema_carries_guidance_descriptions() -> None:
+    schema = openai_strict_json_schema()
+    defs = schema["$defs"]
+
+    assert "description" in defs["Usage"]["properties"]["kind"]
+    assert "description" in defs["Usage"]["properties"]["uses"]
+    assert "description" in defs["Usage"]["properties"]["resource_key"]
+    assert "description" in defs["ArmorClassProfile"]["properties"]["default"]
+    assert "description" in defs["RuleElement"]["properties"]["automation_support"]
 
 
 def test_openai_strict_schema_uses_anyof_not_oneof_or_prefix_items() -> None:

@@ -166,7 +166,7 @@
     "provider_response_id": null,
     "request_digest": "sha256:fea4f726bd98ed730447b994642eafd0f88cb3c06050ca7c6742103676da0de2",
     "request_id": "fixture-generate-1",
-    "schema_fingerprint": "sha256:3714727d9c1966d77ed39a95ede9789e180305689be72bc7f63a5114d6bab37b",
+    "schema_fingerprint": "sha256:456893ba4e5513781528e98f1fdf26d8be587b075cfa2300e9893a32fba0a8d0",
     "schema_version": "statblock-openai-strict-compiler-v1",
     "source_definition_digest": null,
     "source_description_digest": "sha256:37c5cfbbd55eda7d3df9c946f7d1a2165b73b9cd9443fd314bd50c0e77ace1c4",

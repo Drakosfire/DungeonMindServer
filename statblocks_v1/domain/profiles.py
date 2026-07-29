@@ -38,7 +38,9 @@ class ArmorClassProfile(StrictModel):
     value: int = Field(ge=0)
     label: str | None = None
     condition: str | None = None
-    default: bool
+    default: bool = Field(
+        description="Exactly one profile in defenses.armor_classes must set true; all others false."
+    )
 
 
 class DamageInteractionKind(str, Enum):
@@ -62,10 +64,19 @@ class DefenseProfile(StrictModel):
 
 
 class HitPointProfile(StrictModel):
-    method: Literal["formula", "fixed"]
+    method: Literal["formula", "fixed"] = Field(
+        description=(
+            "'formula' sets formula and leaves fixed_value null; "
+            "'fixed' sets fixed_value and leaves formula null."
+        )
+    )
     formula: DiceExpression | None = None
     fixed_value: int | None = Field(default=None, ge=1)
-    displayed_average: int | None = Field(default=None, ge=1)
+    displayed_average: int | None = Field(
+        default=None,
+        ge=1,
+        description="When set, must equal the average of the typed formula.",
+    )
 
     @model_validator(mode="after")
     def method_has_matching_value(self) -> "HitPointProfile":
@@ -119,7 +130,12 @@ class ProficiencyDerivation(str, Enum):
 class SavingThrowBonus(StrictModel):
     ability: AbilityName
     value: int
-    derivation: ProficiencyDerivation
+    derivation: ProficiencyDerivation = Field(
+        description=(
+            "'standard' means value equals ability modifier plus proficiency bonus; "
+            "'expertise' adds proficiency twice; use 'explicit_override' for any other value."
+        )
+    )
     note: str | None = None
 
 
@@ -129,7 +145,12 @@ class SkillBonus(StrictModel):
     skill: str = Field(min_length=1)
     ability: AbilityName
     value: int
-    derivation: ProficiencyDerivation
+    derivation: ProficiencyDerivation = Field(
+        description=(
+            "'standard' means value equals ability modifier plus proficiency bonus; "
+            "'expertise' adds proficiency twice; use 'explicit_override' for any other value."
+        )
+    )
     note: str | None = None
 
 
@@ -156,7 +177,13 @@ class Sense(StrictModel):
 
 class SenseProfile(StrictModel):
     senses: list[Sense] = Field(default_factory=list)
-    passive_perception: int = Field(ge=1)
+    passive_perception: int = Field(
+        ge=1,
+        description=(
+            "Must equal 10 + the Perception skill value when proficiencies.skills "
+            "contains a Perception entry."
+        ),
+    )
 
 
 class CommunicationProfile(StrictModel):
@@ -167,7 +194,10 @@ class CommunicationProfile(StrictModel):
 
 class ChallengeProfile(StrictModel):
     rating: str = Field(min_length=1)
-    proficiency_bonus: int = Field(ge=0)
+    proficiency_bonus: int = Field(
+        ge=0,
+        description="Must match rating on the standard 5e challenge-rating table.",
+    )
     xp_override: int | None = Field(default=None, ge=0)
 
 
@@ -182,7 +212,9 @@ class ResourcePool(StrictModel):
 class CreaturePhase(StrictModel):
     key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     name: str = Field(min_length=1)
-    default: bool
+    default: bool = Field(
+        description="Exactly one phase must set true whenever phases are present."
+    )
     enabled_element_keys: list[str] = Field(default_factory=list)
     disabled_element_keys: list[str] = Field(default_factory=list)
     entry_rules_text: str | None = None

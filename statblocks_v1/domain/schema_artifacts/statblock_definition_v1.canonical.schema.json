@@ -129,6 +129,7 @@
           "title": "Condition"
         },
         "default": {
+          "description": "Exactly one profile in defenses.armor_classes must set true; all others false.",
           "title": "Default",
           "type": "boolean"
         },
@@ -370,6 +371,7 @@
       "additionalProperties": false,
       "properties": {
         "proficiency_bonus": {
+          "description": "Must match rating on the standard 5e challenge-rating table.",
           "minimum": 0,
           "title": "Proficiency Bonus",
           "type": "integer"
@@ -599,6 +601,7 @@
       "additionalProperties": false,
       "properties": {
         "default": {
+          "description": "Exactly one phase must set true whenever phases are present.",
           "title": "Default",
           "type": "boolean"
         },
@@ -1019,6 +1022,7 @@
             }
           ],
           "default": null,
+          "description": "When set, must equal the average of the typed formula.",
           "title": "Displayed Average"
         },
         "fixed_value": {
@@ -1046,6 +1050,7 @@
           "default": null
         },
         "method": {
+          "description": "'formula' sets formula and leaves fixed_value null; 'fixed' sets fixed_value and leaves formula null.",
           "enum": [
             "formula",
             "fixed"
@@ -1562,6 +1567,7 @@
           "type": "integer"
         },
         "resource_key": {
+          "description": "Must name a declared resources[].key. A pool may appear at most once per element, and combined costs must not exceed that pool's maximum.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "title": "Resource Key",
           "type": "string"
@@ -1626,7 +1632,8 @@
           "$ref": "#/$defs/Activation"
         },
         "automation_support": {
-          "$ref": "#/$defs/AutomationSupport"
+          "$ref": "#/$defs/AutomationSupport",
+          "description": "Must be 'manual' when mechanic.kind is 'human_adjudicated'."
         },
         "costs": {
           "items": {
@@ -1959,7 +1966,8 @@
           "$ref": "#/$defs/AbilityName"
         },
         "derivation": {
-          "$ref": "#/$defs/ProficiencyDerivation"
+          "$ref": "#/$defs/ProficiencyDerivation",
+          "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value."
         },
         "note": {
           "anyOf": [
@@ -2025,6 +2033,7 @@
       "additionalProperties": false,
       "properties": {
         "passive_perception": {
+          "description": "Must equal 10 + the Perception skill value when proficiencies.skills contains a Perception entry.",
           "minimum": 1,
           "title": "Passive Perception",
           "type": "integer"
@@ -2051,7 +2060,8 @@
           "$ref": "#/$defs/AbilityName"
         },
         "derivation": {
-          "$ref": "#/$defs/ProficiencyDerivation"
+          "$ref": "#/$defs/ProficiencyDerivation",
+          "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value."
         },
         "note": {
           "anyOf": [
@@ -2476,7 +2486,8 @@
       "additionalProperties": false,
       "properties": {
         "kind": {
-          "$ref": "#/$defs/UsageKind"
+          "$ref": "#/$defs/UsageKind",
+          "description": "Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional."
         },
         "recharge_range": {
           "anyOf": [
@@ -2487,7 +2498,8 @@
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "description": "Only for kind 'recharge'; must be null for every other kind."
         },
         "refresh_text": {
           "anyOf": [
@@ -2512,6 +2524,7 @@
             }
           ],
           "default": null,
+          "description": "Required for kind 'resource' and must name a declared resources[].key. Must be null for every other kind.",
           "title": "Resource Key"
         },
         "uses": {
@@ -2525,6 +2538,7 @@
             }
           ],
           "default": null,
+          "description": "Required for per_turn, per_round, and per_day. For 'once' it is null or exactly 1. Must be null for at_will, recharge, resource, and spell_slots.",
           "title": "Uses"
         }
       },

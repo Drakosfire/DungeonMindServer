@@ -156,7 +156,7 @@
     "model": "test-model",
     "prompt_version": "statblock-generation-prompt-v1",
     "schema_version": "statblock-openai-strict-compiler-v1",
-    "schema_fingerprint": "sha256:3714727d9c1966d77ed39a95ede9789e180305689be72bc7f63a5114d6bab37b",
+    "schema_fingerprint": "sha256:456893ba4e5513781528e98f1fdf26d8be587b075cfa2300e9893a32fba0a8d0",
     "generated_at": "2026-01-01T12:00:00Z",
     "caller_scope": "dungeonbuddy",
     "request_digest": "sha256:5092b1efd0a13aece7711bb470eefa36b2e1b8bebb06c8d583e0f30b8823128e",
