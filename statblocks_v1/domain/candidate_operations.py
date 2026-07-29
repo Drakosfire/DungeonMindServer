@@ -86,6 +86,14 @@ class CandidateGenerationFailureSnapshotV1(StrictModel):
     message: str = Field(min_length=1)
     diagnostics: GenerationValidationDiagnosticPacketV1 | None = None
 
+    @model_validator(mode="after")
+    def diagnostics_only_for_definition_invalid(self) -> Self:
+        if self.diagnostics is not None and self.kind != "definition_invalid":
+            raise ValueError(
+                "diagnostics are only permitted for definition_invalid failures"
+            )
+        return self
+
 
 class CandidateGenerationOperationV1(StrictModel):
     """Lease-bearing generate operation bound to one reserved candidate_id."""

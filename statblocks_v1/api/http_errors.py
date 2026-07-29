@@ -134,7 +134,7 @@ def raise_for_generation_failure(failure: GenerationFailureV1) -> None:
         (500, "generation_failed", "Generation failed with an unexpected outcome"),
     )
     details: dict[str, object] | None = None
-    if failure.diagnostics is not None:
+    if failure.kind == "definition_invalid" and failure.diagnostics is not None:
         details = failure.diagnostics.model_dump(mode="json", exclude_none=True)
     raise StatblockV1HTTPError(
         status,

@@ -2365,6 +2365,118 @@ def test_definition_invalid_does_not_persist_raw_provider_payload_sentinel() -> 
     assert sentinel not in operation.model_dump_json()
 
 
+RAW_PROVIDER_KEY_SENTINEL = "__RAW_PROVIDER_KEY_SENTINEL__"
+
+
+def _payload_with_raw_extra_provider_keys(load_fixture) -> dict:
+    payload = copy.deepcopy(load_fixture("simple_bruiser"))
+    payload[RAW_PROVIDER_KEY_SENTINEL] = "x"
+    payload["rule_elements"][0][RAW_PROVIDER_KEY_SENTINEL] = "y"
+    return payload
+
+
+def test_extra_forbidden_provider_key_sentinel_sanitized_at_service_and_persistence(
+    load_fixture,
+) -> None:
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1.succeeded(_payload_with_raw_extra_provider_keys(load_fixture))
+    )
+    service = _service(None, provider=provider)
+    result = service.generate(_command(request_id="req_raw_key_sanitize"))
+
+    assert isinstance(result, GenerationFailureV1)
+    assert result.diagnostics is not None
+    diag_json = result.diagnostics.model_dump_json()
+    assert RAW_PROVIDER_KEY_SENTINEL not in diag_json
+    extra_issues = [
+        issue
+        for issue in result.diagnostics.issues
+        if issue.code == "EXTRA_FORBIDDEN"
+    ]
+    assert extra_issues
+    field_paths = {issue.field_path for issue in extra_issues}
+    assert "<unexpected_key>" in field_paths
+    assert "rule_elements[0].<unexpected_key>" in field_paths
+
+    ops = service._generate_operations
+    assert ops is not None
+    operation = ops.get_generate_operation("tests", "req_raw_key_sanitize")
+    assert operation is not None
+    op_json = operation.model_dump_json()
+    assert RAW_PROVIDER_KEY_SENTINEL not in op_json
+
+
+def test_candidate_generation_failure_snapshot_diagnostics_invariant() -> None:
+    from pydantic import ValidationError
+
+    from statblocks_v1.domain.candidate_operations import (
+        CandidateGenerationFailureSnapshotV1,
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid",
+        message="Generated definition failed validation",
+        diagnostics=None,
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="definition_invalid",
+        message="Generated definition failed validation",
+        diagnostics=packet,
+    )
+    CandidateGenerationFailureSnapshotV1(
+        kind="provider_refusal", message="nope", diagnostics=None
+    )
+    with pytest.raises(ValidationError, match="definition_invalid"):
+        CandidateGenerationFailureSnapshotV1(
+            kind="provider_refusal", message="nope", diagnostics=packet
+        )
+
+
+def test_raise_for_generation_failure_omits_diagnostics_unless_definition_invalid() -> None:
+    from statblocks_v1.api.http_errors import StatblockV1HTTPError, raise_for_generation_failure
+    from statblocks_v1.domain.candidate_operations import (
+        GenerationValidationDiagnosticIssueV1,
+        GenerationValidationDiagnosticPacketV1,
+        GenerationValidationPhaseV1,
+    )
+    from statblocks_v1.domain.receipts import ValidationSeverity
+
+    packet = GenerationValidationDiagnosticPacketV1(
+        phase=GenerationValidationPhaseV1.schema_validation,
+        issue_count=1,
+        issues=[
+            GenerationValidationDiagnosticIssueV1(
+                code="MISSING",
+                severity=ValidationSeverity.error,
+                field_path="identity.name",
+                message="Field required",
+            )
+        ],
+    )
+    for kind in ("provider_refusal", "unexpected_kind_for_test"):
+        with pytest.raises(StatblockV1HTTPError) as exc:
+            raise_for_generation_failure(
+                GenerationFailureV1(kind, "failure message", diagnostics=packet)
+            )
+        assert exc.value.error.details is None
+
+
 def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fixture) -> None:
     from statblocks_v1.application.repositories import compute_generate_candidate_digest
     from statblocks_v1.domain.candidate_operations import (

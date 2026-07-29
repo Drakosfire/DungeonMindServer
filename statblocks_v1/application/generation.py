@@ -1318,7 +1318,28 @@ def _pydantic_error_code(error_type: str) -> str:
     return normalized[:MAX_GENERATION_VALIDATION_CODE_LEN]
 
 
-def _field_path_from_pydantic_loc(loc: tuple[object, ...]) -> str:
+_UNEXPECTED_PROVIDER_KEY_FIELD = "<unexpected_key>"
+
+
+def _field_path_from_pydantic_loc(
+    loc: tuple[object, ...], *, error_type: str = ""
+) -> str:
+    if error_type == "extra_forbidden" and loc:
+        parent_loc = loc[:-1]
+        if not parent_loc:
+            path = _UNEXPECTED_PROVIDER_KEY_FIELD
+        else:
+            path = (
+                f"{_field_path_segments_to_public_path(parent_loc)}"
+                f".{_UNEXPECTED_PROVIDER_KEY_FIELD}"
+            )
+        return _bound_public_text(
+            path, max_len=MAX_GENERATION_VALIDATION_FIELD_PATH_LEN
+        )
+    return _field_path_segments_to_public_path(loc)
+
+
+def _field_path_segments_to_public_path(loc: tuple[object, ...]) -> str:
     if not loc:
         return "$"
     segments: list[str] = []
@@ -1340,11 +1361,15 @@ def _diagnostics_from_pydantic_validation_error(
     try:
         raw_issues: list[GenerationValidationDiagnosticIssueV1] = []
         for item in exc.errors(include_url=False, include_input=False):
+            error_type = str(item.get("type", "validation_error"))
             raw_issues.append(
                 GenerationValidationDiagnosticIssueV1(
-                    code=_pydantic_error_code(str(item.get("type", "validation_error"))),
+                    code=_pydantic_error_code(error_type),
                     severity=ValidationSeverity.error,
-                    field_path=_field_path_from_pydantic_loc(tuple(item.get("loc", ()))),
+                    field_path=_field_path_from_pydantic_loc(
+                        tuple(item.get("loc", ())),
+                        error_type=error_type,
+                    ),
                     message=_bound_public_text(
                         str(item.get("msg", "Validation failed")),
                         max_len=MAX_GENERATION_VALIDATION_MESSAGE_LEN,
