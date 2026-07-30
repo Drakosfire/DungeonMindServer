@@ -176,7 +176,7 @@
       "mode": "persistence",
       "status": "valid",
       "validated_at": "2026-01-01T00:00:00Z",
-      "validator_version": "statblock-validator-v1.1"
+      "validator_version": "statblock-validator-v1.2"
     }
   },
   "statblock": {

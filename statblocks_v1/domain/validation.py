@@ -12,6 +12,7 @@ from statblocks_v1.domain.derived import (
     CR_PROFICIENCY_BONUS as _CR_PROFICIENCY_BONUS,
     ability_modifier as _ability_modifier,
     expected_proficiency_bonus as _expected_proficiency_bonus,
+    hit_point_average as _hit_point_average,
 )
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.primitives import (
@@ -170,9 +171,16 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
             "vitality.hit_points",
             "Fixed HP requires fixed_value and must not include formula.",
         )
-    if hp.formula and hp.displayed_average is not None:
-        average = hp.formula.count * (hp.formula.die + 1) // 2 + hp.formula.modifier
-        if hp.displayed_average != average:
+    if hp.formula is not None:
+        average = _hit_point_average(hp.formula)
+        if average < 1:
+            issue(
+                "HP_FORMULA_AVERAGE_INVALID",
+                ValidationSeverity.error,
+                "vitality.hit_points.formula",
+                "Dice formula averages below 1; it cannot yield a positive HP value.",
+            )
+        elif hp.displayed_average is not None and hp.displayed_average != average:
             issue(
                 "HP_DISPLAYED_AVERAGE_MISMATCH",
                 ValidationSeverity.error,

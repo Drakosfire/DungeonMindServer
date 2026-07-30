@@ -223,6 +223,7 @@ def test_impossible_formula_average_is_not_written(load_fixture) -> None:
         derived, adjustments = compute_derived_values(definition)
 
         # 1d2-2 averages -1, below displayed_average's floor: the write is
-        # skipped and the authored value stands for the validator to flag.
+        # skipped and the authored value stands; domain validation flags the
+        # pathological formula itself via HP_FORMULA_AVERAGE_INVALID.
         assert derived.vitality.hit_points.displayed_average == emitted
         assert adjustments == []
