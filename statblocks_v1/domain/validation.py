@@ -357,6 +357,14 @@ def _validate_references(definition: StatblockDefinitionV1, issue: IssueEmitter)
                 "UNKNOWN_RESOURCE_REFERENCE",
                 f"{path}.usage.resource_key",
             )
+        for explains_index, edge in enumerate(element.explains):
+            _require_reference(
+                edge.element_key,
+                element_keys,
+                issue,
+                "UNKNOWN_EXPLAINS_ELEMENT",
+                f"{path}.explains[{explains_index}].element_key",
+            )
         for cost_index, cost in enumerate(element.costs):
             _require_reference(
                 cost.resource_key,

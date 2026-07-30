@@ -1866,6 +1866,34 @@
         "title": "ExactRevisionLocatorV1",
         "type": "object"
       },
+      "ExplainsEdge": {
+        "additionalProperties": false,
+        "description": "Descriptive-only edge: this element gives narrative context for another.",
+        "properties": {
+          "element_key": {
+            "description": "Key of the rule element being explained. Descriptive only; the engine ignores it.",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Element Key",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "element_key"
+        ],
+        "title": "ExplainsEdge",
+        "type": "object"
+      },
       "ForcedMovementEffect-Input": {
         "additionalProperties": false,
         "properties": {
@@ -3392,6 +3420,14 @@
             "title": "Costs",
             "type": "array"
           },
+          "explains": {
+            "description": "Descriptive-only edges naming elements this one gives narrative context for. Not executable: the combat engine ignores them. Most elements need none; use only for a genuine cross-reference that rules_text alone cannot lift.",
+            "items": {
+              "$ref": "#/components/schemas/ExplainsEdge"
+            },
+            "title": "Explains",
+            "type": "array"
+          },
           "key": {
             "pattern": "^[a-z][a-z0-9_]*$",
             "title": "Key",
@@ -3501,6 +3537,14 @@
               "$ref": "#/components/schemas/ResourceCost"
             },
             "title": "Costs",
+            "type": "array"
+          },
+          "explains": {
+            "description": "Descriptive-only edges naming elements this one gives narrative context for. Not executable: the combat engine ignores them. Most elements need none; use only for a genuine cross-reference that rules_text alone cannot lift.",
+            "items": {
+              "$ref": "#/components/schemas/ExplainsEdge"
+            },
+            "title": "Explains",
             "type": "array"
           },
           "key": {

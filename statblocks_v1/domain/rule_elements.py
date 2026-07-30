@@ -161,6 +161,16 @@ Mechanic = Annotated[
 ]
 
 
+class ExplainsEdge(StrictModel):
+    """Descriptive-only edge: this element gives narrative context for another."""
+
+    element_key: str = Field(
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description="Key of the rule element being explained. Descriptive only; the engine ignores it.",
+    )
+    note: str | None = None
+
+
 class RuleElement(StrictModel):
     key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     name: str = Field(min_length=1)
@@ -173,6 +183,14 @@ class RuleElement(StrictModel):
     mechanic: Mechanic
     tags: list[str] = Field(default_factory=list)
     automation_support: AutomationSupport
+    explains: list[ExplainsEdge] = Field(
+        default_factory=list,
+        description=(
+            "Descriptive-only edges naming elements this one gives narrative context for. "
+            "Not executable: the combat engine ignores them. Most elements need none; use "
+            "only for a genuine cross-reference that rules_text alone cannot lift."
+        ),
+    )
 
 
 class StatblockDefinitionV1(StrictModel):

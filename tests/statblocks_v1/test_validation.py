@@ -20,7 +20,7 @@ from statblocks_v1.domain.primitives import (
     TargetKind,
     TargetProfile,
 )
-from statblocks_v1.domain.rule_elements import AttackMechanic, AttackType
+from statblocks_v1.domain.rule_elements import AttackMechanic, AttackType, ExplainsEdge
 
 
 VALID_FIXTURES = (
@@ -611,3 +611,33 @@ def test_sane_formula_keeps_displayed_average_mismatch_semantics(load_fixture) -
     codes = {issue.code for issue in receipt.issues}
     assert "HP_DISPLAYED_AVERAGE_MISMATCH" in codes
     assert "HP_FORMULA_AVERAGE_INVALID" not in codes
+
+
+def test_explains_edges_require_declared_targets_only(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    element = definition.rule_elements[0]
+
+    valid = definition.model_copy(
+        update={
+            "rule_elements": [
+                element.model_copy(
+                    update={"explains": [ExplainsEdge(element_key="greatclub")]}
+                )
+            ]
+        }
+    )
+    receipt = validate_definition(valid, ValidationMode.persistence)
+    assert "UNKNOWN_EXPLAINS_ELEMENT" not in {issue.code for issue in receipt.issues}
+
+    dangling = definition.model_copy(
+        update={
+            "rule_elements": [
+                element.model_copy(
+                    update={"explains": [ExplainsEdge(element_key="phantom_edge")]}
+                )
+            ]
+        }
+    )
+    receipt = validate_definition(dangling, ValidationMode.persistence)
+    codes = {issue.code for issue in receipt.issues}
+    assert "UNKNOWN_EXPLAINS_ELEMENT" in codes

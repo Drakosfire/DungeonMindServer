@@ -14,9 +14,9 @@ from statblocks_v1.domain import (
 @pytest.mark.parametrize(
     ("fixture", "expected_digest"),
     (
-        ("simple_bruiser", "sha256:265da39c72a5275bfb81315034b972ddae4aca261a683fa9ecc70a4839e91c44"),
-        ("spellcaster", "sha256:057b8666f4e970a59b708d44c267933245aef4cc51930924acb1f028fa68122a"),
-        ("human_adjudicated", "sha256:974de07596c008ebc3a480c50c81ad693346a1ce1dad896da69b0a7da4783229"),
+        ("simple_bruiser", "sha256:935dc0dff1ac7cc8405836764469761a1d26e9e38dd74cd856b8a8a31f0fae51"),
+        ("spellcaster", "sha256:a4dcbf3ad017f5fbc893603718b8728541bc554a0b3aed7815dc6be2658b7b0a"),
+        ("human_adjudicated", "sha256:1e98449313c00ee129f7a4d207b51dcb9df368f151147cb2dacbe99462e09982"),
     ),
 )
 def test_definition_digest_snapshots(load_fixture, fixture: str, expected_digest: str) -> None:

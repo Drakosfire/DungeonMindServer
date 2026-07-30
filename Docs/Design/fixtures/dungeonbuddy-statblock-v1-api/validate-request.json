@@ -71,6 +71,7 @@
         },
         "automation_support": "full",
         "costs": [],
+        "explains": [],
         "key": "greatclub",
         "mechanic": {
           "attack_bonus": 6,
