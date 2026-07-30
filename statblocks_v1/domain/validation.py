@@ -8,6 +8,11 @@ from collections.abc import Callable, Iterable
 from datetime import datetime
 
 from statblocks_v1.domain.canonicalization import CANONICALIZER_VERSION
+from statblocks_v1.domain.derived import (
+    CR_PROFICIENCY_BONUS as _CR_PROFICIENCY_BONUS,
+    ability_modifier as _ability_modifier,
+    expected_proficiency_bonus as _expected_proficiency_bonus,
+)
 from statblocks_v1.domain.digests import compute_definition_digest
 from statblocks_v1.domain.primitives import (
     AbilityName,
@@ -52,20 +57,6 @@ from statblocks_v1.domain.rule_elements import (
 
 IssueEmitter = Callable[[str, ValidationSeverity, str, str, str | None], None]
 
-_CR_PROFICIENCY_BONUS = {
-    "0": 2,
-    "1/8": 2,
-    "1/4": 2,
-    "1/2": 2,
-    **{str(cr): 2 for cr in range(1, 5)},
-    **{str(cr): 3 for cr in range(5, 9)},
-    **{str(cr): 4 for cr in range(9, 13)},
-    **{str(cr): 5 for cr in range(13, 17)},
-    **{str(cr): 6 for cr in range(17, 21)},
-    **{str(cr): 7 for cr in range(21, 25)},
-    **{str(cr): 8 for cr in range(25, 29)},
-    **{str(cr): 9 for cr in range(29, 31)},
-}
 _SECTION_ACTIVATIONS = {
     RuleSection.action: {ActivationKind.action},
     RuleSection.bonus_action: {ActivationKind.bonus_action},
@@ -240,24 +231,6 @@ def _normalize_skill_name(skill: str) -> str:
     """Match canonicalization: Unicode NFC, then casefold for identity."""
 
     return unicodedata.normalize("NFC", skill).casefold()
-
-
-def _ability_modifier(abilities: AbilityScores, ability: AbilityName) -> int:
-    return (getattr(abilities, ability.value) - 10) // 2
-
-
-def _expected_proficiency_bonus(
-    abilities: AbilityScores,
-    ability: AbilityName,
-    derivation: ProficiencyDerivation,
-    proficiency_bonus: int,
-) -> int | None:
-    modifier = _ability_modifier(abilities, ability)
-    if derivation is ProficiencyDerivation.standard:
-        return modifier + proficiency_bonus
-    if derivation is ProficiencyDerivation.expertise:
-        return modifier + (2 * proficiency_bonus)
-    return None
 
 
 def _validate_proficiency_derivations(

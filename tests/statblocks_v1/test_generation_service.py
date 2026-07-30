@@ -2619,3 +2619,41 @@ def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fi
     assert result.kind == "definition_invalid"
     assert result.diagnostics is None
     assert len(provider.calls) == 0
+
+
+def test_generate_server_computes_derived_values(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["challenge"]["proficiency_bonus"] = 9
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Athletics",
+            "ability": "strength",
+            "value": 7,
+            "derivation": "standard",
+            "note": None,
+        },
+        {
+            "skill": "Intimidation",
+            "ability": "charisma",
+            "value": 1,
+            "derivation": "explicit_override",
+            "note": None,
+        },
+    ]
+    payload["vitality"]["hit_points"]["displayed_average"] = 999
+    provider = FakeDefinitionProvider(payload)
+    service = _service(payload, provider=provider)
+
+    result = service.generate(_command())
+
+    assert isinstance(result, GenerateOutcomeV1)
+    definition = result.candidate.definition
+    assert definition.challenge.proficiency_bonus == 2
+    skills = {entry.skill: entry for entry in definition.proficiencies.skills}
+    assert skills["Athletics"].value == 6
+    assert skills["Intimidation"].value == 1
+    assert definition.vitality.hit_points.displayed_average == 68
+    codes = {issue.code for issue in result.candidate.validation_receipt.issues}
+    assert "SKILL_DERIVATION_MISMATCH" not in codes
+    assert "HP_DISPLAYED_AVERAGE_MISMATCH" not in codes
+    assert "RULESET_CR_PROFICIENCY_MISMATCH" not in codes

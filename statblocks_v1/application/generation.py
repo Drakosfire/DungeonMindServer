@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import re
@@ -98,6 +99,7 @@ from statblocks_v1.domain.resources import (
     GeneratedStatblockCandidateV1,
     GenerationReceiptV1,
 )
+from statblocks_v1.domain.derived import compute_derived_values
 from statblocks_v1.domain.rule_elements import RuleElement, StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
 
@@ -106,6 +108,8 @@ CandidateIdFactory = Callable[[], str]
 LeaseOwnerFactory = Callable[[], str]
 
 KEY_PRESERVATION_PASS_VERSION = "statblock-key-preservation-v1"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class DefinitionResolver(Protocol):
@@ -931,6 +935,24 @@ class GenerationServiceV1:
             return GenerationFailureV1(
                 "ruleset_mismatch",
                 "Generated definition ruleset does not match the requested ruleset",
+            )
+
+        # Server owns derived math: provider-emitted proficiency/derived values
+        # are advisory and overwritten before validation and storage.
+        definition, derived_adjustments = compute_derived_values(definition)
+        if derived_adjustments:
+            _LOGGER.info(
+                "statblocks_v1_derived_values_adjusted",
+                extra={
+                    "adjustments": [
+                        {
+                            "field_path": adjustment.field_path,
+                            "provider_value": adjustment.provider_value,
+                            "computed_value": adjustment.computed_value,
+                        }
+                        for adjustment in derived_adjustments
+                    ]
+                },
             )
 
         now = self._clock()

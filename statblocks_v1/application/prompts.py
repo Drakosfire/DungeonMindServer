@@ -4,7 +4,7 @@ from __future__ import annotations
 from statblocks_v1.application.commands import GenerateStatblockCommandV1, ReviseStatblockCommandV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
-PROMPT_VERSION = "statblock-generation-prompt-v4"
+PROMPT_VERSION = "statblock-generation-prompt-v5"
 
 WORKED_EXAMPLES = """WORKED EXAMPLES - field shapes are normative; values are illustrative, compute yours per creature:
 - recharge usage: {"kind":"recharge","recharge_range":{"minimum":5,"maximum":6},"uses":null,"resource_key":null,"refresh_text":null}
@@ -12,7 +12,6 @@ WORKED_EXAMPLES = """WORKED EXAMPLES - field shapes are normative; values are il
 - resource usage spending from a declared pool: {"kind":"resource","recharge_range":null,"uses":null,"resource_key":"legendary_actions","refresh_text":null}
 - multiattack: mechanic.kind "multiattack" with "sequences":[{"element_key":"bite","count":1,"choice_group":null},{"element_key":"claw","count":2,"choice_group":null}] where "bite" and "claw" are other rule_elements keys whose mechanics are attacks - never the multiattack's own key or another multiattack.
 - legendary action: NOT a multiattack. Use mechanic.kind "attack", section "legendary_action", activation.kind "legendary", usage.kind "resource", and costs against the declared legendary pool.
-- standard derivation: strength 16 gives modifier +3; with proficiency_bonus +2, {"skill":"athletics","ability":"strength","value":5,"derivation":"standard","note":null}. If the value you want does not equal ability modifier + proficiency bonus (or + twice proficiency for expertise), set derivation "explicit_override"; never force mismatched arithmetic into "standard".
 """
 
 
@@ -47,11 +46,11 @@ USAGE FIELDS - usage.kind decides which sibling fields may appear:
   manual                         recharge_range null; uses and resource_key optional
 Never set recharge_range on any kind other than recharge.
 
-DERIVED MATH - these are checked arithmetically:
-- challenge.proficiency_bonus must match challenge.rating on the standard 5e table.
-- senses.passive_perception must equal 10 + the Perception skill value when a Perception skill entry exists.
-- Skills and saves with derivation "standard" equal ability modifier + proficiency bonus; "expertise" adds proficiency twice; use "explicit_override" for anything else.
-- vitality.hit_points: method "formula" sets formula and leaves fixed_value null; method "fixed" sets fixed_value and leaves formula null. displayed_average, when set, equals the formula average.
+DERIVED MATH - the server computes; you declare intent:
+- Skills and saves with derivation "standard" or "expertise" are computed from the ability scores and challenge rating you set; the value you emit is advisory and will be overwritten. "explicit_override" is the only derivation whose value is trusted - use it for intentional exceptions.
+- challenge.proficiency_bonus (from rating) and vitality.hit_points.displayed_average (from the dice formula) are likewise server-computed.
+- senses.passive_perception is NOT server-computed: it must equal 10 + the Perception skill value when a Perception skill entry exists.
+- vitality.hit_points: method "formula" sets formula and leaves fixed_value null; method "fixed" sets fixed_value and leaves formula null.
 
 REFERENCES - declare before you reference:
 - Multiattack sequences reference other rule_elements keys; a multiattack may not reference itself or another multiattack.
@@ -83,7 +82,7 @@ ESCAPE HATCH
 1. Exactly one armor class has default=true.
 2. Every usage object matches its kind's row above, and every recharge usage sets recharge_range.
 3. Every key you reference is declared somewhere in the definition.
-4. proficiency_bonus matches CR, and passive_perception matches Perception.
+4. passive_perception equals 10 + the Perception skill value when a Perception entry exists.
 5. Every human_adjudicated mechanic has automation_support "manual".
 """)
     return "\n".join(parts)
