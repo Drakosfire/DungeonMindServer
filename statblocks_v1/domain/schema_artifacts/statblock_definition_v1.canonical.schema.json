@@ -2522,7 +2522,7 @@
             }
           ],
           "default": null,
-          "description": "Required for kind 'resource' and must name a declared resources[].key. Must be null for every other kind.",
+          "description": "Required for kind 'resource' and must name a declared resources[].key. Optional for kind 'manual'; must be null for every other kind.",
           "title": "Resource Key"
         },
         "uses": {

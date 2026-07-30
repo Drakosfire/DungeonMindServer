@@ -160,7 +160,7 @@ class Usage(StrictModel):
         pattern=r"^[a-z][a-z0-9_]*$",
         description=(
             "Required for kind 'resource' and must name a declared resources[].key. "
-            "Must be null for every other kind."
+            "Optional for kind 'manual'; must be null for every other kind."
         ),
     )
     refresh_text: str | None = None
