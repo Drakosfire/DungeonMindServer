@@ -843,6 +843,32 @@
       ],
       "type": "object"
     },
+    "ExplainsEdge": {
+      "additionalProperties": false,
+      "description": "Descriptive-only edge: this element gives narrative context for another.",
+      "properties": {
+        "element_key": {
+          "description": "Key of the rule element being explained. Descriptive only; the engine ignores it.",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "element_key",
+        "note"
+      ],
+      "type": "object"
+    },
     "ForcedMovementEffect": {
       "additionalProperties": false,
       "properties": {
@@ -1441,6 +1467,13 @@
           },
           "type": "array"
         },
+        "explains": {
+          "description": "Descriptive-only edges naming elements this one gives narrative context for. Not executable: the combat engine ignores them. Most elements need none; use only for a genuine cross-reference that rules_text alone cannot lift.",
+          "items": {
+            "$ref": "#/$defs/ExplainsEdge"
+          },
+          "type": "array"
+        },
         "key": {
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"
@@ -1515,7 +1548,8 @@
         "costs",
         "mechanic",
         "tags",
-        "automation_support"
+        "automation_support",
+        "explains"
       ],
       "type": "object"
     },

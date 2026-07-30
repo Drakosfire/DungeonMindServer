@@ -4,7 +4,7 @@ from __future__ import annotations
 from statblocks_v1.application.commands import GenerateStatblockCommandV1, ReviseStatblockCommandV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
-PROMPT_VERSION = "statblock-generation-prompt-v5"
+PROMPT_VERSION = "statblock-generation-prompt-v6"
 
 WORKED_EXAMPLES = """WORKED EXAMPLES - field shapes are normative; values are illustrative, compute yours per creature:
 - recharge usage: {"kind":"recharge","recharge_range":{"minimum":5,"maximum":6},"uses":null,"resource_key":null,"refresh_text":null}
@@ -74,6 +74,11 @@ SPELL GROUPS
 
 ESCAPE HATCH
 - When a mechanic cannot be represented by the typed contract, set mechanic.kind "human_adjudicated" AND automation_support "manual". Never invent fields.
+
+DESCRIPTIVE REFERENCES - a narrow outlet, used rarely:
+- When one element exists to give narrative context for another (a trait explaining why the creature fights the way it does), record it with explains on the context-giving element: explains:[{{"element_key":"<target key>"}}]. These edges are descriptive only; the engine ignores them.
+- Never borrow an executable mechanic (especially multiattack) to point at another element - that is what explains is for.
+- Most creatures need zero explains edges. If you are adding more than one or two, the context belongs in rules_text instead.
 """
     parts = [base]
     if include_examples:

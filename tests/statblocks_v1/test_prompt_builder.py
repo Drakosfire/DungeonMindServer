@@ -27,7 +27,7 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     prompt = build_generation_prompt(command)
     system = build_system_prompt(command.ruleset.edition.value)
 
-    assert PROMPT_VERSION == "statblock-generation-prompt-v5"
+    assert PROMPT_VERSION == "statblock-generation-prompt-v6"
     assert "Gate Warden" in prompt
     assert "Guards a narrow gate." in prompt
     assert "must avoid=flight" in prompt
@@ -50,6 +50,10 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     assert "explicit_override" in system
     # Server-owned derivation replaced arithmetic teaching in the prompt.
     assert '"derivation":"standard"' not in system
+    # The explains outlet is taught with overuse discouraged.
+    assert "DESCRIPTIVE REFERENCES" in system
+    assert "Never borrow an executable mechanic" in system
+    assert "Most creatures need zero explains edges" in system
 
 
 def test_system_prompt_examples_toggle() -> None:
