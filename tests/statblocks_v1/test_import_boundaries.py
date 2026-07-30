@@ -49,6 +49,7 @@ STDLIB_AND_TYPING_ROOTS = {
     "pathlib",
     "copy",
     "time",
+    "logging",
 }
 
 FORBIDDEN_LEGACY = (

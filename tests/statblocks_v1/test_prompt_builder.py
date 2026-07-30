@@ -27,7 +27,7 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     prompt = build_generation_prompt(command)
     system = build_system_prompt(command.ruleset.edition.value)
 
-    assert PROMPT_VERSION == "statblock-generation-prompt-v4"
+    assert PROMPT_VERSION == "statblock-generation-prompt-v5"
     assert "Gate Warden" in prompt
     assert "Guards a narrow gate." in prompt
     assert "must avoid=flight" in prompt
@@ -45,8 +45,11 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     assert "WORKED EXAMPLES" in system
     assert '"recharge_range":{"minimum":5,"maximum":6}' in system
     assert 'never the multiattack\'s own key or another multiattack' in system
-    assert '"derivation":"standard"' in system
+    assert "the server computes" in system
+    assert "the value you emit is advisory" in system
     assert "explicit_override" in system
+    # Server-owned derivation replaced arithmetic teaching in the prompt.
+    assert '"derivation":"standard"' not in system
 
 
 def test_system_prompt_examples_toggle() -> None:

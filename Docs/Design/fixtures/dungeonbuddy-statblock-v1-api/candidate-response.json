@@ -160,7 +160,7 @@
     "latency_ms": 0,
     "model": "fixture-model",
     "output_tokens": null,
-    "prompt_version": "statblock-generation-prompt-v4",
+    "prompt_version": "statblock-generation-prompt-v5",
     "provider": "fake",
     "provider_request_id": null,
     "provider_response_id": null,
@@ -180,6 +180,6 @@
     "mode": "generation_candidate",
     "status": "valid",
     "validated_at": "2026-01-01T00:00:00Z",
-    "validator_version": "statblock-validator-v1.1"
+    "validator_version": "statblock-validator-v1.2"
   }
 }

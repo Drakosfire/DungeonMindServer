@@ -45,6 +45,7 @@ from statblocks_v1.application.schema_compiler import (  # noqa: E402
     compile_openai_definition_schema,
 )
 from statblocks_v1.application.settings import GenerationSettingsV1  # noqa: E402
+from statblocks_v1.domain.derived import compute_derived_values  # noqa: E402
 from statblocks_v1.domain.profiles import RulesetEdition, RulesetRef, RulesetSystem  # noqa: E402
 from statblocks_v1.domain.receipts import ValidationMode, ValidationSeverity  # noqa: E402
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1  # noqa: E402
@@ -244,6 +245,7 @@ def _run_trial(
     arm: str,
     trial: int,
     dump_dir: Path | None = None,
+    server_derived: bool = False,
 ) -> TrialResult:
     keep_descriptions, use_real_prompt, include_examples = _arm_config(arm)
     schema = _compiled_schema_with_descriptions(keep_descriptions=keep_descriptions)
@@ -280,6 +282,11 @@ def _run_trial(
         result.outcome_kind = "parse_failure"
         result.message = str(exc.errors()[0].get("msg", "model validation failed"))
         return result
+
+    if server_derived:
+        # Simulate production: GenerationServiceV1 computes derived values before
+        # validation, so advisory provider arithmetic never reaches the receipt.
+        definition, _derived_adjustments = compute_derived_values(definition)
 
     result.error_codes = _error_codes_from_definition(definition)
     return result
@@ -369,6 +376,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Write each raw provider payload to this directory for post-mortem inspection.",
     )
     parser.add_argument(
+        "--server-derived",
+        action="store_true",
+        help="Apply production server-owned derivation before validating (what GenerationServiceV1 stores).",
+    )
+    parser.add_argument(
         "--yes",
         action="store_true",
         help="Confirm live OpenAI calls when the plan exceeds 20 API calls.",
@@ -428,6 +440,7 @@ def main(argv: list[str] | None = None) -> None:
                     arm=arm,
                     trial=trial,
                     dump_dir=dump_dir,
+                    server_derived=args.server_derived,
                 )
                 all_results.append(result)
                 if result.outcome_kind == ProviderOutcomeKind.success.value:

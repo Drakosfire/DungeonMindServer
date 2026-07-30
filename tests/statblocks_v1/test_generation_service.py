@@ -2619,3 +2619,78 @@ def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fi
     assert result.kind == "definition_invalid"
     assert result.diagnostics is None
     assert len(provider.calls) == 0
+
+
+def test_generate_server_computes_derived_values(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["challenge"]["proficiency_bonus"] = 9
+    payload["proficiencies"]["skills"] = [
+        {
+            "skill": "Athletics",
+            "ability": "strength",
+            "value": 7,
+            "derivation": "standard",
+            "note": None,
+        },
+        {
+            "skill": "Intimidation",
+            "ability": "charisma",
+            "value": 1,
+            "derivation": "explicit_override",
+            "note": None,
+        },
+    ]
+    payload["vitality"]["hit_points"]["displayed_average"] = 999
+    provider = FakeDefinitionProvider(payload)
+    service = _service(payload, provider=provider)
+
+    result = service.generate(_command())
+
+    assert isinstance(result, GenerateOutcomeV1)
+    definition = result.candidate.definition
+    assert definition.challenge.proficiency_bonus == 2
+    skills = {entry.skill: entry for entry in definition.proficiencies.skills}
+    assert skills["Athletics"].value == 6
+    assert skills["Intimidation"].value == 1
+    assert definition.vitality.hit_points.displayed_average == 68
+    codes = {issue.code for issue in result.candidate.validation_receipt.issues}
+    assert "SKILL_DERIVATION_MISMATCH" not in codes
+    assert "HP_DISPLAYED_AVERAGE_MISMATCH" not in codes
+    assert "RULESET_CR_PROFICIENCY_MISMATCH" not in codes
+
+
+def test_generate_pathological_formula_does_not_store_invalid_average(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["vitality"]["hit_points"]["formula"] = {"count": 1, "die": 2, "modifier": -2}
+    payload["vitality"]["hit_points"]["displayed_average"] = 1
+    provider = FakeDefinitionProvider(payload)
+    service = _service(payload, provider=provider)
+
+    result = service.generate(_command())
+
+    assert isinstance(result, GenerateOutcomeV1)
+    # 1d2-2 averages -1, below displayed_average's floor: the server skips the
+    # write, the candidate stays contract-valid, and the receipt flags the
+    # pathological formula itself instead of storing -1.
+    hit_points = result.candidate.definition.vitality.hit_points
+    assert hit_points.displayed_average == 1
+    codes = {issue.code for issue in result.candidate.validation_receipt.issues}
+    assert "HP_FORMULA_AVERAGE_INVALID" in codes
+
+
+def test_generate_pathological_formula_with_null_average_still_flags(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload["vitality"]["hit_points"]["formula"] = {"count": 1, "die": 2, "modifier": -2}
+    payload["vitality"]["hit_points"]["displayed_average"] = None
+    provider = FakeDefinitionProvider(payload)
+    service = _service(payload, provider=provider)
+
+    result = service.generate(_command())
+
+    assert isinstance(result, GenerateOutcomeV1)
+    # With no authored average there is nothing to mismatch against, so the
+    # formula-level error is the only signal the Workbench operator gets.
+    hit_points = result.candidate.definition.vitality.hit_points
+    assert hit_points.displayed_average is None
+    codes = {issue.code for issue in result.candidate.validation_receipt.issues}
+    assert "HP_FORMULA_AVERAGE_INVALID" in codes

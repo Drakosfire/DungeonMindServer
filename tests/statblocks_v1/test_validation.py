@@ -13,6 +13,7 @@ from statblocks_v1.domain import (
     validate_definition,
 )
 from statblocks_v1.domain.primitives import (
+    DiceExpression,
     Distance,
     DistanceUnit,
     RangeProfile,
@@ -548,3 +549,65 @@ def test_attack_validation_detects_inverted_range_window(load_fixture) -> None:
 
     receipt = validate_definition(mutated, ValidationMode.persistence)
     assert "ATTACK_RANGE_ORDER_INCOHERENT" in {issue.code for issue in receipt.issues}
+
+
+def _with_hit_points(definition, *, formula, displayed_average):
+    return definition.model_copy(
+        update={
+            "vitality": definition.vitality.model_copy(
+                update={
+                    "hit_points": definition.vitality.hit_points.model_copy(
+                        update={"formula": formula, "displayed_average": displayed_average}
+                    )
+                }
+            )
+        }
+    )
+
+
+def test_pathological_hp_formula_is_flagged_even_without_displayed_average(
+    load_fixture,
+) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    mutated = _with_hit_points(
+        definition,
+        formula=DiceExpression(count=1, die=2, modifier=-2),
+        displayed_average=None,
+    )
+
+    receipt = validate_definition(mutated, ValidationMode.persistence)
+
+    codes = {issue.code for issue in receipt.issues}
+    assert "HP_FORMULA_AVERAGE_INVALID" in codes
+    assert not receipt.is_persistence_ready
+
+
+def test_pathological_hp_formula_subsumes_displayed_average_mismatch(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    mutated = _with_hit_points(
+        definition,
+        formula=DiceExpression(count=1, die=2, modifier=-2),
+        displayed_average=1,
+    )
+
+    receipt = validate_definition(mutated, ValidationMode.persistence)
+
+    # The formula defect is the root cause; exactly one HP issue fires.
+    codes = {issue.code for issue in receipt.issues}
+    assert "HP_FORMULA_AVERAGE_INVALID" in codes
+    assert "HP_DISPLAYED_AVERAGE_MISMATCH" not in codes
+
+
+def test_sane_formula_keeps_displayed_average_mismatch_semantics(load_fixture) -> None:
+    definition = StatblockDefinitionV1.model_validate(load_fixture("simple_bruiser"))
+    mutated = _with_hit_points(
+        definition,
+        formula=DiceExpression(count=8, die=10, modifier=24),
+        displayed_average=50,
+    )
+
+    receipt = validate_definition(mutated, ValidationMode.persistence)
+
+    codes = {issue.code for issue in receipt.issues}
+    assert "HP_DISPLAYED_AVERAGE_MISMATCH" in codes
+    assert "HP_FORMULA_AVERAGE_INVALID" not in codes
