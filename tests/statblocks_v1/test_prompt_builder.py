@@ -27,7 +27,7 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     prompt = build_generation_prompt(command)
     system = build_system_prompt(command.ruleset.edition.value)
 
-    assert PROMPT_VERSION == "statblock-generation-prompt-v3"
+    assert PROMPT_VERSION == "statblock-generation-prompt-v4"
     assert "Gate Warden" in prompt
     assert "Guards a narrow gate." in prompt
     assert "must avoid=flight" in prompt
@@ -41,6 +41,7 @@ def test_generation_prompt_is_versioned_definition_only() -> None:
     assert "SECTION AND ACTIVATION PAIRS" in system
     assert "legendary_action -> legendary" in system
     assert "SPELL GROUPS" in system
+    assert "usage is never spell_slots" in system
     assert "WORKED EXAMPLES" in system
     assert '"recharge_range":{"minimum":5,"maximum":6}' in system
     assert 'never the multiattack\'s own key or another multiattack' in system

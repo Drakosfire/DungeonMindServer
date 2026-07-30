@@ -4,7 +4,7 @@ from __future__ import annotations
 from statblocks_v1.application.commands import GenerateStatblockCommandV1, ReviseStatblockCommandV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
-PROMPT_VERSION = "statblock-generation-prompt-v3"
+PROMPT_VERSION = "statblock-generation-prompt-v4"
 
 WORKED_EXAMPLES = """WORKED EXAMPLES - field shapes are normative; values are illustrative, compute yours per creature:
 - recharge usage: {"kind":"recharge","recharge_range":{"minimum":5,"maximum":6},"uses":null,"resource_key":null,"refresh_text":null}
@@ -69,6 +69,7 @@ SECTION AND ACTIVATION PAIRS - the section names the activation:
 - trait and regional_effect take passive, triggered, or special.
 
 SPELL GROUPS
+- A spellcasting rule element's own usage is never spell_slots; use manual (or at_will). spell_slots appears only on a group, and only when casting_mode is prepared or known.
 - Innate casting: groups never set slots and never use spell_slots usage; encode limited casting on the group's usage (at_will, per_day, etc.).
 - Leveled prepared/known groups (level 1-9): slots required, usage spell_slots. Cantrip groups (level 0): usage at_will, no slots. Charges casting: resource usage, no slots.
 
