@@ -154,7 +154,7 @@
     "request_id": "fixture-revise-source-def-1",
     "provider": "fake",
     "model": "test-model",
-    "prompt_version": "statblock-generation-prompt-v4",
+    "prompt_version": "statblock-generation-prompt-v5",
     "schema_version": "statblock-openai-strict-compiler-v1",
     "schema_fingerprint": "sha256:aa2b662d85d6652719ed213cee4190c84366c2d72affbbdccdaa0d5ea5c139f0",
     "generated_at": "2026-01-01T12:00:00Z",

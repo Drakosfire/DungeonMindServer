@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import ValidationError
+
 from statblocks_v1.domain.primitives import AbilityName, DiceExpression
 from statblocks_v1.domain.profiles import AbilityScores, ProficiencyDerivation
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
@@ -111,7 +113,12 @@ def compute_derived_values(
     hit_points = definition.vitality.hit_points
     if hit_points.formula is not None:
         average = hit_point_average(hit_points.formula)
-        if hit_points.displayed_average != average:
+        # displayed_average is bounded (>= 1) while DiceExpression.modifier is
+        # not: a pathological formula (1d2-2) can average below the field's
+        # floor. Skip the write; the authored value stays and the validator's
+        # mismatch error keeps the weird formula visible instead of storing a
+        # contract-violating number.
+        if average >= 1 and hit_points.displayed_average != average:
             adjustments.append(
                 DerivedValueAdjustmentV1(
                     "vitality.hit_points.displayed_average",
@@ -133,4 +140,12 @@ def compute_derived_values(
             "vitality": definition.vitality.model_copy(update={"hit_points": hit_points}),
         }
     )
+    try:
+        # model_copy skips validation; revalidate so a computed value can never
+        # smuggle a contract violation into the stored candidate.
+        derived = StatblockDefinitionV1.model_validate(derived.model_dump(mode="json"))
+    except ValidationError:
+        # Fail safe: keep the provider's original (which already parsed) and let
+        # domain validation report the raw state on the receipt instead.
+        return definition, []
     return derived, adjustments

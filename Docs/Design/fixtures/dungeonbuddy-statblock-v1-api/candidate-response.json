@@ -160,7 +160,7 @@
     "latency_ms": 0,
     "model": "fixture-model",
     "output_tokens": null,
-    "prompt_version": "statblock-generation-prompt-v4",
+    "prompt_version": "statblock-generation-prompt-v5",
     "provider": "fake",
     "provider_request_id": null,
     "provider_response_id": null,

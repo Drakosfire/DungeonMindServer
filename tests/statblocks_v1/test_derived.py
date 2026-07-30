@@ -6,7 +6,7 @@ from statblocks_v1.domain.profiles import (
     SavingThrowBonus,
     SkillBonus,
 )
-from statblocks_v1.domain.primitives import AbilityName
+from statblocks_v1.domain.primitives import AbilityName, DiceExpression
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 
 
@@ -200,3 +200,29 @@ def test_consistent_definition_is_returned_unchanged(load_fixture) -> None:
 
     assert derived is definition
     assert adjustments == []
+
+
+def test_impossible_formula_average_is_not_written(load_fixture) -> None:
+    base = _definition(load_fixture)
+    for emitted in (1, None):
+        definition = base.model_copy(
+            update={
+                "vitality": base.vitality.model_copy(
+                    update={
+                        "hit_points": base.vitality.hit_points.model_copy(
+                            update={
+                                "formula": DiceExpression(count=1, die=2, modifier=-2),
+                                "displayed_average": emitted,
+                            }
+                        )
+                    }
+                )
+            }
+        )
+
+        derived, adjustments = compute_derived_values(definition)
+
+        # 1d2-2 averages -1, below displayed_average's floor: the write is
+        # skipped and the authored value stands for the validator to flag.
+        assert derived.vitality.hit_points.displayed_average == emitted
+        assert adjustments == []
