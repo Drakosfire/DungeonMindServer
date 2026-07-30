@@ -4,12 +4,13 @@
     "highest_intelligence": "gpt-5.4",
     "fast_smart": "gpt-5.3-codex",
     "fast_smart_mini": "gpt-5.4-mini",
+    "statblock_frontier": "gpt-5.6-luna",
     "cheapest": "gpt-5.4-nano",
     "retrieval_synthesis": "gpt-5.3-chat-latest"
   },
   "actions": {
     "default_text_generation": "fast_smart",
-    "structured_generation": "cheapest",
+    "structured_generation": "statblock_frontier",
     "map_prompt_compilation": "fast_smart",
     "svg_mask_generation": "fast_smart",
     "player_character_generation": "fast_smart",

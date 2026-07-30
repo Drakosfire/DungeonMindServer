@@ -14,6 +14,7 @@ from statblocks_v1.api.dependencies import (
 from statblocks_v1.api.models import ErrorEnvelopeV1, ReviseCandidateRequestV1
 from statblocks_v1.application.commands import CallerProvenanceV1, ReviseStatblockCommandV1
 from statblocks_v1.application.generation import GenerationServiceV1
+from statblocks_v1.application.prompts import PROMPT_VERSION
 from statblocks_v1.application.repositories import compute_revise_candidate_digest
 from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.digests import compute_definition_digest
@@ -82,6 +83,7 @@ def test_revise_replay_response_fixture_is_strict_model_valid() -> None:
     assert candidate.generation_receipt.request_id == "fixture-revise-source-def-1"
     assert candidate.generation_receipt.actor == "fixture"
     assert candidate.generation_receipt.request_digest.startswith("sha256:")
+    assert candidate.generation_receipt.prompt_version == PROMPT_VERSION
     assert candidate.model_dump(mode="json") == raw
 
 

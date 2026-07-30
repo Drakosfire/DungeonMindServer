@@ -24,7 +24,12 @@ class OpenAIDefinitionProvider:
         self._client = client
 
     def generate_definition(
-        self, *, prompt: str, schema: CompiledSchemaV1, options: ProviderOptionsV1
+        self,
+        *,
+        prompt: str,
+        system: str,
+        schema: CompiledSchemaV1,
+        options: ProviderOptionsV1,
     ) -> ProviderOutcomeV1:
         started = time.monotonic()
         try:
@@ -36,7 +41,7 @@ class OpenAIDefinitionProvider:
             response = client.chat.completions.create(
                 model=options.model,
                 messages=[
-                    {"role": "system", "content": "Return only the requested JSON schema instance."},
+                    {"role": "system", "content": system},
                     {"role": "user", "content": prompt},
                 ],
                 response_format={

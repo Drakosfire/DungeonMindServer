@@ -8,6 +8,7 @@ from pathlib import Path
 
 from statblocks_v1 import CONTRACT_NAME, CONTRACT_VERSION
 from statblocks_v1.api.models import (
+
     AppendRevisionRequestV1,
     CreateStatblockRequestV1,
     CreateStatblockResponseV1,
@@ -16,6 +17,7 @@ from statblocks_v1.api.models import (
     ValidateDefinitionRequestV1,
     ValidationResponseV1,
 )
+from statblocks_v1.application.prompts import PROMPT_VERSION
 from statblocks_v1.domain.resources import GeneratedStatblockCandidateV1, StatblockRevisionResourceV1
 
 ROOT = Path(__file__).parents[2]
@@ -186,6 +188,7 @@ def test_published_api_fixtures_match_live_route_semantics() -> None:
     assert candidate.contract_version == CONTRACT_VERSION
     assert candidate.validation_receipt.mode.value == "generation_candidate"
     assert candidate.generation_receipt is not None
+    assert candidate.generation_receipt.prompt_version == PROMPT_VERSION
     assert candidate.generation_receipt.request_id == generate_request["request_id"]
     assert candidate.generation_receipt.caller_scope == "dungeonbuddy"
     assert candidate.generation_receipt.actor is None

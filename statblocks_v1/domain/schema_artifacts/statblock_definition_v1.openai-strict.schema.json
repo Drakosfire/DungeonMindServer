@@ -116,6 +116,7 @@
           ]
         },
         "default": {
+          "description": "Exactly one profile in defenses.armor_classes must set true; all others false.",
           "type": "boolean"
         },
         "key": {
@@ -292,6 +293,7 @@
       "type": "string"
     },
     "AutomationSupport": {
+      "description": "Must be 'manual' when mechanic.kind is 'human_adjudicated'.",
       "enum": [
         "full",
         "partial",
@@ -313,6 +315,7 @@
       "additionalProperties": false,
       "properties": {
         "proficiency_bonus": {
+          "description": "Must match rating on the standard 5e challenge-rating table.",
           "minimum": 0,
           "type": "integer"
         },
@@ -514,6 +517,7 @@
       "additionalProperties": false,
       "properties": {
         "default": {
+          "description": "Exactly one phase must set true whenever phases are present.",
           "type": "boolean"
         },
         "disabled_element_keys": {
@@ -890,7 +894,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "When set, must equal the average of the typed formula."
         },
         "fixed_value": {
           "anyOf": [
@@ -914,6 +919,7 @@
           ]
         },
         "method": {
+          "description": "'formula' sets formula and leaves fixed_value null; 'fixed' sets fixed_value and leaves formula null.",
           "enum": [
             "formula",
             "fixed"
@@ -1265,6 +1271,7 @@
       "type": "object"
     },
     "ProficiencyDerivation": {
+      "description": "'standard' means value equals ability modifier plus proficiency bonus; 'expertise' adds proficiency twice; use 'explicit_override' for any other value.",
       "enum": [
         "standard",
         "expertise",
@@ -1274,6 +1281,7 @@
     },
     "ProficiencyProfile": {
       "additionalProperties": false,
+      "description": "Authored save/skill bonuses. Proficiency bonus is authored only on challenge.",
       "properties": {
         "saving_throws": {
           "items": {
@@ -1319,6 +1327,7 @@
     },
     "RechargeRange": {
       "additionalProperties": false,
+      "description": "Inclusive d6 recharge window (provider-safe object; not a tuple/array).",
       "properties": {
         "maximum": {
           "maximum": 6,
@@ -1367,6 +1376,7 @@
           "type": "integer"
         },
         "resource_key": {
+          "description": "Must name a declared resources[].key. A pool may appear at most once per element, and combined costs must not exceed that pool's maximum.",
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"
         }
@@ -1755,6 +1765,7 @@
       "additionalProperties": false,
       "properties": {
         "passive_perception": {
+          "description": "Must equal 10 + the Perception skill value when proficiencies.skills contains a Perception entry.",
           "minimum": 1,
           "type": "integer"
         },
@@ -1773,6 +1784,7 @@
     },
     "SkillBonus": {
       "additionalProperties": false,
+      "description": "Authored skill bonus with explicit ability authority for derivation checks.",
       "properties": {
         "ability": {
           "$ref": "#/$defs/AbilityName"
@@ -1854,6 +1866,7 @@
     },
     "SpellRef": {
       "additionalProperties": false,
+      "description": "Spell identity within a group; level lives only on ``SpellGroup.level``.",
       "properties": {
         "name": {
           "minLength": 1,
@@ -2177,7 +2190,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Required for kind 'recharge' (ordered d6 window); must be null for every other kind."
         },
         "refresh_text": {
           "anyOf": [
@@ -2198,7 +2212,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Required for kind 'resource' and must name a declared resources[].key. Optional for kind 'manual'; must be null for every other kind."
         },
         "uses": {
           "anyOf": [
@@ -2209,7 +2224,8 @@
             {
               "type": "null"
             }
-          ]
+          ],
+          "description": "Required for per_turn, per_round, and per_day. For 'once' it is null or exactly 1. Must be null for at_will, recharge, resource, and spell_slots."
         }
       },
       "required": [
@@ -2222,6 +2238,7 @@
       "type": "object"
     },
     "UsageKind": {
+      "description": "Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional.",
       "enum": [
         "at_will",
         "recharge",

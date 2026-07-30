@@ -520,7 +520,7 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
     release = threading.Event()
     payload = source.model_dump(mode="json")
 
-    def blocking_callback(prompt, schema, options):
+    def blocking_callback(prompt, system, schema, options):
         entered.set()
         assert release.wait(timeout=2)
         return ProviderOutcomeV1.succeeded(payload)
@@ -827,7 +827,7 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
 def test_settings_resolve_in_repo_model_policy(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
-    assert settings.model == "gpt-5.4-nano"
+    assert settings.model == "gpt-5.6-luna"
 
 
 def test_settings_fail_closed_without_policy(monkeypatch, tmp_path) -> None:

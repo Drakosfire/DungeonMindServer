@@ -16,14 +16,16 @@ class OpenAIStrictSchemaCompilationError(ValueError):
     """Raised when a canonical schema cannot be compiled losslessly for OpenAI."""
 
 
-# Schema-node metadata keys that OpenAI Structured Outputs does not accept.
+# Schema-node metadata keys stripped for OpenAI Structured Outputs strict mode.
+# ``description`` is retained (empirically accepted; verified 2026-07-29).
+# ``title`` is stripped: Pydantic auto-generates it from class names, duplicating
+# the ``$defs`` key at pure token cost.
 # These must NOT be stripped when they appear as *property names* under
 # ``properties`` (e.g. ArmorClassProfile.default, StatblockFlavorText.description).
-_UNSUPPORTED_OPENAI_METADATA = frozenset(
+_STRIPPED_OPENAI_METADATA = frozenset(
     {
         "$schema",
         "default",
-        "description",
         "examples",
         "title",
         "discriminator",
@@ -102,7 +104,7 @@ def _transform_schema_node(node: Any) -> Any:
 
     transformed: dict[str, Any] = {}
     for key, value in node.items():
-        if key in _UNSUPPORTED_OPENAI_METADATA:
+        if key in _STRIPPED_OPENAI_METADATA:
             continue
         if key == "oneOf":
             # Lossless rewrite: OpenAI supports anyOf, not oneOf.
@@ -122,6 +124,14 @@ def _transform_schema_node(node: Any) -> Any:
             }
             continue
         transformed[key] = _transform_schema_node(value)
+
+    if "$ref" in transformed and len(transformed) > 1:
+        siblings = ", ".join(sorted(repr(k) for k in transformed if k != "$ref"))
+        raise OpenAIStrictSchemaCompilationError(
+            f"$ref node carries sibling keyword(s) {siblings}; OpenAI rejects the whole "
+            "request with 400 '$ref cannot have keywords'. Move the metadata onto the "
+            "$defs target (an enum docstring, for example) instead of the field."
+        )
 
     if transformed.get("type") == "object" or "properties" in transformed:
         transformed["additionalProperties"] = False
@@ -151,7 +161,7 @@ def _unwrap_single_all_of(node: dict[str, Any]) -> dict[str, Any]:
     for key, value in node.items():
         if key == "allOf":
             continue
-        if key in merged and key not in _UNSUPPORTED_OPENAI_METADATA:
+        if key in merged and key not in _STRIPPED_OPENAI_METADATA:
             raise OpenAIStrictSchemaCompilationError(
                 f"Cannot unwrap allOf: conflicting sibling key {key!r} (fail closed)"
             )

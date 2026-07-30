@@ -115,6 +115,8 @@ class Activation(StrictModel):
 
 
 class UsageKind(str, Enum):
+    """Determines which sibling fields are allowed. recharge: recharge_range required, uses and resource_key null. at_will: all three null. per_turn/per_round/per_day: uses required, others null. once: uses null or 1, others null. resource: resource_key required, uses null. spell_slots: leveled spell groups only, uses and resource_key null. manual: recharge_range null, others optional."""
+
     at_will = "at_will"
     recharge = "recharge"
     per_turn = "per_turn"
@@ -141,18 +143,43 @@ class RechargeRange(StrictModel):
 
 class Usage(StrictModel):
     kind: UsageKind
-    recharge_range: RechargeRange | None = None
-    uses: int | None = Field(default=None, ge=1)
-    resource_key: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]*$")
+    recharge_range: RechargeRange | None = Field(
+        default=None,
+        description="Required for kind 'recharge' (ordered d6 window); must be null for every other kind.",
+    )
+    uses: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Required for per_turn, per_round, and per_day. For 'once' it is null or exactly 1. "
+            "Must be null for at_will, recharge, resource, and spell_slots."
+        ),
+    )
+    resource_key: str | None = Field(
+        default=None,
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description=(
+            "Required for kind 'resource' and must name a declared resources[].key. "
+            "Optional for kind 'manual'; must be null for every other kind."
+        ),
+    )
     refresh_text: str | None = None
 
 
 class ResourceCost(StrictModel):
-    resource_key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    resource_key: str = Field(
+        pattern=r"^[a-z][a-z0-9_]*$",
+        description=(
+            "Must name a declared resources[].key. A pool may appear at most once per element, "
+            "and combined costs must not exceed that pool's maximum."
+        ),
+    )
     amount: int = Field(ge=1)
 
 
 class AutomationSupport(str, Enum):
+    """Must be 'manual' when mechanic.kind is 'human_adjudicated'."""
+
     full = "full"
     partial = "partial"
     manual = "manual"
