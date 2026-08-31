@@ -20,6 +20,7 @@ os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("ALLOWED_HOSTS", "localhost,testserver,127.0.0.1")
 os.environ.setdefault("REACT_LANDING_URL", "http://localhost:3000")
 os.environ.setdefault("DUNGEONMIND_API_URL", "http://localhost:7860")
+os.environ.setdefault("OPENAI_API_KEY", "pytest-openai-key-not-for-prod")
 os.environ.setdefault("FIREBASE_SKIP_INIT", "true")
 os.environ.setdefault("TRUST_PROXY", "false")
 
