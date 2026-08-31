@@ -1,7 +1,7 @@
 [project]
-name = "dungeonmind"
+name = "dungeonmind-web-api"
 version = "0.2.0"
-description = "Foundation API server for DungeonMind projects"
+description = "Public API/backend for the dungeonmind.net product."
 authors = [
     {name = "Alan Meigs", email = "alan.meigs@gmail.com"},
 ]
