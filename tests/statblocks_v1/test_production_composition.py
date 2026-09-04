@@ -128,7 +128,7 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
 
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "test-model")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_MODEL", "test-model")
     monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", "12")
     monkeypatch.setenv("STATBLOCKS_V1_CANDIDATE_TTL_SECONDS", "30")
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")

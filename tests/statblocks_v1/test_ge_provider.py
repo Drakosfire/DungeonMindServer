@@ -116,7 +116,7 @@ def test_generate_definition_maps_timeout() -> None:
         options=_options(),
     )
     assert outcome.kind is ProviderOutcomeKind.timeout
-    assert outcome.message == "timed out"
+    assert outcome.message == "Provider request timed out."
     assert outcome.response_id is None
 
 

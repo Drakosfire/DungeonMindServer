@@ -9,7 +9,7 @@ old key; this version accepts one active key at a time.
 | --- | --- | --- |
 | `DUNGEONBUDDY_INTERNAL_API_KEY` | required | Internal service authentication |
 | `OPENAI_API_KEY` | required when generation enabled | Provider credential |
-| `STATBLOCKS_V1_OPENAI_MODEL` | empty | Optional explicit model override; empty defers to GenerationEngine profile resolution |
+| `STATBLOCKS_V1_INFERENCE_MODEL` | empty | Optional explicit GenerationEngine catalog model override; empty defers to profile resolution |
 | `STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS` | `90` | Overall GenerationEngine inference budget (`deadline_ms`) |
 | `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS` | `86400` | Candidate expiration |
 | `STATBLOCKS_V1_FIRESTORE_ENABLED` | `true` | Enables durable v1 persistence |

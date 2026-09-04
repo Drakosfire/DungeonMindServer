@@ -78,7 +78,7 @@ class StatblocksV1Settings:
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if require_generation and feature_enabled and not openai_api_key:
             raise ConfigurationError("OPENAI_API_KEY is required when generation is enabled")
-        configured_model = os.getenv("STATBLOCKS_V1_OPENAI_MODEL")
+        configured_model = os.getenv("STATBLOCKS_V1_INFERENCE_MODEL")
         model = configured_model.strip() if configured_model and configured_model.strip() else ""
         inference_budget_seconds = _positive_float("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", 90)
         asset_timeout_seconds = _positive_float("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", 20)

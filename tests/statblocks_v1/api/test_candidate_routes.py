@@ -910,7 +910,7 @@ def test_production_generation_service_wires_persistence_resolver(monkeypatch) -
 
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "test-key")
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "test-model")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_MODEL", "test-model")
     candidates = InMemoryCandidateRepository()
     persistence = InMemoryStatblockPersistenceRepository(
         clock=lambda: datetime(2026, 1, 1, tzinfo=timezone.utc),

@@ -63,7 +63,7 @@ packages = [
 
 [tool.uv.sources]
 # Paired GenerationEngine cutover commit. After GE merge, replace with the merge SHA.
-generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "b139cf65062dfa28c3fd5a3a62112d42ce76d304" }
+generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "a5f5dcea6b27d4c025f5134e7c67357c49d2c908" }
 
 [dependency-groups]
 dev = [

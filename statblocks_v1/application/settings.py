@@ -17,7 +17,7 @@ class GenerationSettingsV1:
     def __post_init__(self) -> None:
         if not isinstance(self.model, str):
             raise InternalServiceMisconfiguredError(
-                "STATBLOCKS_V1_OPENAI_MODEL must be a string"
+                "STATBLOCKS_V1_INFERENCE_MODEL must be a string"
             )
         if isinstance(self.inference_budget_seconds, bool) or not isinstance(
             self.inference_budget_seconds, (int, float)
@@ -46,7 +46,7 @@ class GenerationSettingsV1:
     @classmethod
     def from_environment(cls) -> "GenerationSettingsV1":
         try:
-            configured = os.getenv("STATBLOCKS_V1_OPENAI_MODEL")
+            configured = os.getenv("STATBLOCKS_V1_INFERENCE_MODEL")
             return cls(
                 model=configured.strip() if configured and configured.strip() else "",
                 inference_budget_seconds=float(

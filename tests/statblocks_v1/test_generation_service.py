@@ -844,14 +844,14 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
 
 
 def test_settings_default_model_defers_to_profile(monkeypatch) -> None:
-    monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
+    monkeypatch.delenv("STATBLOCKS_V1_INFERENCE_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
     assert settings.model == ""
     assert settings.inference_budget_seconds == 90
 
 
 def test_settings_env_model_override(monkeypatch) -> None:
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_MODEL", "gpt-4o")
     settings = GenerationSettingsV1.from_environment()
     assert settings.model == "gpt-4o"
 
@@ -864,7 +864,7 @@ def test_settings_env_model_override(monkeypatch) -> None:
     ],
 )
 def test_settings_malformed_env_is_typed(monkeypatch, env_name, env_value) -> None:
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "test-model")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_MODEL", "test-model")
     monkeypatch.setenv(env_name, env_value)
     with pytest.raises(InternalServiceMisconfiguredError, match="malformed"):
         GenerationSettingsV1.from_environment()
