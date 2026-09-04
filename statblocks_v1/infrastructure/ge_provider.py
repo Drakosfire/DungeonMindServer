@@ -61,11 +61,12 @@ class GenerationEngineDefinitionProvider:
             )
 
         client = self._client or GenerationClient.from_env()
+        explicit_model = options.model.strip() if options.model and options.model.strip() else None
         request = TextRequest(
             user_prompt=prompt,
             system_prompt=system,
             profile=self._profile,
-            model=options.model or None,
+            model=explicit_model,
             json_schema=schema.schema,
             schema_name=schema.name,
             deadline_ms=int(options.timeout_seconds * 1000),
@@ -73,30 +74,41 @@ class GenerationEngineDefinitionProvider:
         try:
             result = asyncio.run(client.generate_structured(request))
         except GenerationEngineError as error:
-            kind = _KIND_BY_FAILURE.get(error.failure.code, ProviderOutcomeKind.failure)
-            obs = error.observation
-            return ProviderOutcomeV1(
-                kind,
+            return _outcome_from_observation(
+                _KIND_BY_FAILURE.get(error.failure.code, ProviderOutcomeKind.failure),
+                error.observation,
                 message=error.failure.message,
-                request_id=obs.provider_request_id,
-                latency_ms=obs.latency_ms,
-                input_tokens=obs.input_tokens,
-                output_tokens=obs.output_tokens,
             )
         if not result.parsed:
-            return ProviderOutcomeV1(
+            return _outcome_from_observation(
                 ProviderOutcomeKind.incomplete,
+                result.observation,
                 message="Provider returned no JSON",
-                request_id=result.observation.provider_request_id,
-                latency_ms=result.observation.latency_ms,
-                input_tokens=result.observation.input_tokens,
-                output_tokens=result.observation.output_tokens,
             )
-        return ProviderOutcomeV1.succeeded(
-            result.parsed,
-            request_id=result.observation.provider_request_id,
-            response_id=result.observation.provider_request_id,
-            latency_ms=result.observation.latency_ms,
-            input_tokens=result.observation.input_tokens,
-            output_tokens=result.observation.output_tokens,
+        return _outcome_from_observation(
+            ProviderOutcomeKind.success,
+            result.observation,
+            payload=result.parsed,
         )
+
+
+def _outcome_from_observation(
+    kind: ProviderOutcomeKind,
+    observation,
+    *,
+    message: str | None = None,
+    payload: dict | None = None,
+) -> ProviderOutcomeV1:
+    return ProviderOutcomeV1(
+        kind,
+        payload=payload,
+        message=message,
+        request_id=observation.provider_request_id,
+        response_id=observation.provider_response_id,
+        latency_ms=observation.latency_ms,
+        input_tokens=observation.input_tokens,
+        output_tokens=observation.output_tokens,
+        provider=observation.provider,
+        resolved_model=observation.resolved_model,
+        response_model=observation.response_model,
+    )

@@ -36,6 +36,7 @@ from statblocks_v1.infrastructure.firestore_repositories import (
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
+from shared.inference_policy import inference_for
 from statblocks_v1.infrastructure.ge_provider import GenerationEngineDefinitionProvider
 from statblocks_v1.observability import apply_telemetry_settings
 
@@ -189,8 +190,11 @@ def build_generation_service(
         asset_gateway = build_asset_gateway(settings, pipeline=asset_pipeline)
     except InternalServiceMisconfiguredError:
         raise
+    action = inference_for("statblock_definition_generation")
     return GenerationServiceV1(
-        provider=provider if provider is not None else GenerationEngineDefinitionProvider(),
+        provider=provider
+        if provider is not None
+        else GenerationEngineDefinitionProvider(profile=action.profile),
         candidates=candidate_repo,
         settings=GenerationSettingsV1(
             model=settings.model,

@@ -22,17 +22,18 @@ def _schema() -> CompiledSchemaV1:
     )
 
 
-def _options() -> ProviderOptionsV1:
-    return ProviderOptionsV1(model="gpt-5.6-luna", timeout_seconds=45, max_retries=1)
+def _options(*, model: str = "") -> ProviderOptionsV1:
+    return ProviderOptionsV1(model=model, timeout_seconds=45, max_retries=1)
 
 
 def _observation(**overrides):
     payload = dict(
         provider="openai",
         requested_profile="structured_high_reliability",
-        requested_model="gpt-5.6-luna",
+        requested_model=None,
         resolved_model="gpt-5.6-luna",
         provider_request_id="req-1",
+        provider_response_id=None,
         input_tokens=10,
         output_tokens=20,
         latency_ms=7,
@@ -56,7 +57,7 @@ class _FakeClient:
         return self.result
 
 
-def test_generate_definition_maps_success_and_tokens() -> None:
+def test_generate_definition_defaults_to_profile_resolution() -> None:
     client = _FakeClient(
         result=TextResult(
             text=None,
@@ -75,8 +76,26 @@ def test_generate_definition_maps_success_and_tokens() -> None:
     assert outcome.payload == {"name": "Ogre"}
     assert outcome.input_tokens == 10
     assert outcome.output_tokens == 20
-    assert client.calls[0].model == "gpt-5.6-luna"
+    assert outcome.provider == "openai"
+    assert outcome.resolved_model == "gpt-5.6-luna"
+    assert outcome.request_id == "req-1"
+    assert outcome.response_id is None
+    assert client.calls[0].model is None
+    assert client.calls[0].profile.value == "structured_high_reliability"
     assert client.calls[0].deadline_ms == 45000
+
+
+def test_generate_definition_passes_explicit_model_override() -> None:
+    client = _FakeClient(
+        result=TextResult(text=None, parsed={"name": "Ogre"}, observation=_observation())
+    )
+    GenerationEngineDefinitionProvider(client=client).generate_definition(
+        prompt="x",
+        system="s",
+        schema=_schema(),
+        options=_options(model="gpt-4o"),
+    )
+    assert client.calls[0].model == "gpt-4o"
 
 
 def test_generate_definition_maps_timeout() -> None:
@@ -98,6 +117,7 @@ def test_generate_definition_maps_timeout() -> None:
     )
     assert outcome.kind is ProviderOutcomeKind.timeout
     assert outcome.message == "timed out"
+    assert outcome.response_id is None
 
 
 def test_generate_definition_rejects_running_event_loop() -> None:

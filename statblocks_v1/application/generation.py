@@ -988,8 +988,12 @@ class GenerationServiceV1:
             validation_receipt=receipt,
             generation_receipt=GenerationReceiptV1(
                 request_id=intent.request_id,
-                provider=self._provider.provider_name,
-                model=self._settings.model,
+                provider=outcome.provider or self._provider.provider_name,
+                model=(
+                    outcome.resolved_model
+                    or outcome.response_model
+                    or self._settings.model
+                ),
                 prompt_version=PROMPT_VERSION,
                 schema_version=compiled.compiler_version,
                 schema_fingerprint=compiled.fingerprint,
@@ -1034,9 +1038,7 @@ def _default_generate_lease_seconds(settings: GenerationSettingsV1) -> int:
         os.getenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
     )
     provider_budget = math.ceil(
-        float(settings.timeout_seconds) * (settings.max_retries + 1)
-        + asset_timeout_seconds
-        + 30
+        float(settings.timeout_seconds) + asset_timeout_seconds + 30
     )
     return max(120, provider_budget)
 

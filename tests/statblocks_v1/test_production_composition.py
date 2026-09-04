@@ -36,22 +36,22 @@ def test_generate_lease_must_cover_full_provider_retry_budget(monkeypatch) -> No
     monkeypatch.setenv("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "45.7")
     monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "1")
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
-    # Full GE budget = ceil(45.7 * 3 + 20 + 30) = ceil(187.1) = 188
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "187")
+    # Product-visible budget = ceil(45.7 + 20 + 30) = ceil(95.7) = 96
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "95")
     with pytest.raises(ConfigurationError, match="asset generation"):
         StatblocksV1Settings.from_environment()
 
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "188")
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "96")
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == 188
+    assert settings.generate_lease_seconds == 96
     monkeypatch.delenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", raising=False)
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == max(120, 188)
+    assert settings.generate_lease_seconds == max(120, 96)
 
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "60")
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == max(120, 228)
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "227")
+    assert settings.generate_lease_seconds == max(120, 136)
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "135")
     with pytest.raises(ConfigurationError, match="asset generation"):
         StatblocksV1Settings.from_environment()
 

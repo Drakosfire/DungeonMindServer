@@ -122,6 +122,25 @@ def test_generation_persists_valid_candidate(load_fixture) -> None:
     assert candidates.get("cand_1").candidate_id == "cand_1"
 
 
+def test_receipt_uses_provider_outcome_truth(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    provider = FakeDefinitionProvider(
+        ProviderOutcomeV1.succeeded(
+            payload,
+            provider="openai",
+            resolved_model="gpt-5.6-luna",
+            request_id="http-req",
+            response_id="resp_1",
+        )
+    )
+    result = _service(payload, provider=provider).generate(_command())
+    assert not isinstance(result, GenerationFailureV1)
+    assert result.generation_receipt.provider == "openai"
+    assert result.generation_receipt.model == "gpt-5.6-luna"
+    assert result.generation_receipt.provider_request_id == "http-req"
+    assert result.generation_receipt.provider_response_id == "resp_1"
+
+
 def test_advanced_fixture_generation_persists(load_fixture) -> None:
     result = _service(load_fixture("legendary_creature"), candidate_id="cand_adv").generate(
         _command(source=SourceSnapshotV1(name_hint="Legend", description="A mythic threat."))
@@ -824,10 +843,10 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
     assert len(provider.calls) == 1
 
 
-def test_settings_default_model_preserves_frontier(monkeypatch) -> None:
+def test_settings_default_model_defers_to_profile(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
-    assert settings.model == "gpt-5.6-luna"
+    assert settings.model == ""
 
 
 def test_settings_env_model_override(monkeypatch) -> None:
@@ -854,7 +873,6 @@ def test_settings_malformed_env_is_typed(monkeypatch, env_name, env_value) -> No
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"model": "", "timeout_seconds": 1.0, "max_retries": 0, "candidate_ttl_seconds": 60}, "MODEL"),
         ({"model": "m", "timeout_seconds": 0.0, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
         ({"model": "m", "timeout_seconds": -1.0, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
         ({"model": "m", "timeout_seconds": math.nan, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),

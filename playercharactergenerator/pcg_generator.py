@@ -144,9 +144,13 @@ class PlayerCharacterGenerator:
                 )
             )
             obs = result.observation
-            input_tokens = obs.input_tokens or 0
-            output_tokens = obs.output_tokens or 0
-            total_tokens = input_tokens + output_tokens
+            input_tokens = obs.input_tokens
+            output_tokens = obs.output_tokens
+            total_tokens = (
+                input_tokens + output_tokens
+                if input_tokens is not None and output_tokens is not None
+                else None
+            )
             logger.info(
                 "GenerationEngine response received: input=%s output=%s",
                 input_tokens,
