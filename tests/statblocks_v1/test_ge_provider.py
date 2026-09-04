@@ -23,7 +23,7 @@ def _schema() -> CompiledSchemaV1:
 
 
 def _options(*, model: str = "") -> ProviderOptionsV1:
-    return ProviderOptionsV1(model=model, timeout_seconds=45, max_retries=1)
+    return ProviderOptionsV1(model=model, inference_budget_seconds=90)
 
 
 def _observation(**overrides):
@@ -82,7 +82,7 @@ def test_generate_definition_defaults_to_profile_resolution() -> None:
     assert outcome.response_id is None
     assert client.calls[0].model is None
     assert client.calls[0].profile.value == "structured_high_reliability"
-    assert client.calls[0].deadline_ms == 45000
+    assert client.calls[0].deadline_ms == 90000
 
 
 def test_generate_definition_passes_explicit_model_override() -> None:

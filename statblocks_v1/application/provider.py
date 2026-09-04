@@ -39,8 +39,7 @@ class ProviderOutcomeV1:
 @dataclass(frozen=True)
 class ProviderOptionsV1:
     model: str
-    timeout_seconds: float
-    max_retries: int
+    inference_budget_seconds: float
 
 
 class DefinitionProvider(Protocol):

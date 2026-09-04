@@ -103,8 +103,7 @@ def _provider_options() -> ProviderOptionsV1:
     settings = GenerationSettingsV1.from_environment()
     return ProviderOptionsV1(
         model=settings.model,
-        timeout_seconds=settings.timeout_seconds,
-        max_retries=settings.max_retries,
+        inference_budget_seconds=settings.inference_budget_seconds,
     )
 
 

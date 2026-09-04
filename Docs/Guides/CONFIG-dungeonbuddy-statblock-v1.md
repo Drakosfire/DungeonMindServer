@@ -9,9 +9,8 @@ old key; this version accepts one active key at a time.
 | --- | --- | --- |
 | `DUNGEONBUDDY_INTERNAL_API_KEY` | required | Internal service authentication |
 | `OPENAI_API_KEY` | required when generation enabled | Provider credential |
-| `STATBLOCKS_V1_OPENAI_MODEL` | model policy role | Structured generation model |
-| `STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS` | `45` | Per-attempt provider timeout |
-| `STATBLOCKS_V1_OPENAI_MAX_RETRIES` | `1` | SDK retries for transient provider failures |
+| `STATBLOCKS_V1_OPENAI_MODEL` | empty | Optional explicit model override; empty defers to GenerationEngine profile resolution |
+| `STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS` | `90` | Overall GenerationEngine inference budget (`deadline_ms`) |
 | `STATBLOCKS_V1_CANDIDATE_TTL_SECONDS` | `86400` | Candidate expiration |
 | `STATBLOCKS_V1_FIRESTORE_ENABLED` | `true` | Enables durable v1 persistence |
 | `STATBLOCKS_V1_FIRESTORE_NAMESPACE` | `dungeonbuddy_statblocks_v1` | Deployment namespace label |
@@ -19,9 +18,9 @@ old key; this version accepts one active key at a time.
 | `STATBLOCKS_V1_STATBLOCKS_COLLECTION` | `dungeonbuddy_statblocks_v1` | Logical statblocks and revisions |
 | `STATBLOCKS_V1_IDEMPOTENCY_COLLECTION` | `dungeonbuddy_statblock_idempotency_v1` | Idempotency records |
 | `STATBLOCKS_V1_GENERATE_OPS_COLLECTION` | `dungeonbuddy_statblock_candidate_generate_ops_v1` | Candidate generate-operation leases |
-| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, ceil(timeout×(retries+1)+asset_timeout+30))` | Pending generate lease; must cover provider retries plus asset generation |
+| `STATBLOCKS_V1_GENERATE_LEASE_SECONDS` | `max(120, ceil(inference_budget+asset_timeout+30))` | Pending generate lease; must cover the GE inference budget plus asset generation |
 | `STATBLOCKS_V1_REVISE_OPS_COLLECTION` | `dungeonbuddy_statblock_candidate_revise_ops_v1` | Candidate revise-operation leases |
-| `STATBLOCKS_V1_REVISE_LEASE_SECONDS` | same default as generate lease | Pending revise lease; same provider/asset budget rule as generate |
+| `STATBLOCKS_V1_REVISE_LEASE_SECONDS` | same default as generate lease | Pending revise lease; same inference/asset budget rule as generate |
 | `STATBLOCKS_V1_ASSET_GATEWAY_ENABLED` | `false` | Enables optional asset pipeline wiring |
 | `STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS` | `20` | Asset pipeline timeout policy |
 | `FAL_KEY` | required when assets enabled | fal.ai credential for text-to-image |

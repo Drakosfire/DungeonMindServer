@@ -69,7 +69,7 @@ class GenerationEngineDefinitionProvider:
             model=explicit_model,
             json_schema=schema.schema,
             schema_name=schema.name,
-            deadline_ms=int(options.timeout_seconds * 1000),
+            deadline_ms=int(options.inference_budget_seconds * 1000),
         )
         try:
             result = asyncio.run(client.generate_structured(request))

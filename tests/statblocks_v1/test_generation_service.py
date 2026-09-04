@@ -94,7 +94,7 @@ def _service(
     return GenerationServiceV1(
         provider=provider or FakeDefinitionProvider(payload),
         candidates=candidate_repo,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=clock_fn,
         candidate_id_factory=next_candidate_id,
         asset_gateway=asset_gateway,
@@ -200,7 +200,7 @@ def test_provider_exception_is_typed_failure(load_fixture) -> None:
     service = GenerationServiceV1(
         provider=ExplodingProvider(),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_x",
         generate_operations=InMemoryCandidateGenerationOperationRepository(
@@ -232,7 +232,7 @@ def test_generate_without_operations_repository_fails_closed(load_fixture) -> No
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_x",
         generate_operations=None,
@@ -553,7 +553,7 @@ def test_concurrent_command_mutation_cannot_alter_pinned_revise_intent(load_fixt
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider({}, callback=blocking_callback),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_pinned",
         definition_resolver=PersistenceDefinitionResolver(persistence),
@@ -719,7 +719,7 @@ def test_revise_locator_replay_skips_resolver_after_completion(load_fixture) -> 
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_locreplay1",
         definition_resolver=tracking,
@@ -735,7 +735,7 @@ def test_revise_locator_replay_skips_resolver_after_completion(load_fixture) -> 
     replay_service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_other",
         definition_resolver=replay_tracking,
@@ -772,7 +772,7 @@ def test_revise_locator_changed_body_conflicts_before_resolver(load_fixture) -> 
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_locconflict1",
         definition_resolver=inner,
@@ -785,7 +785,7 @@ def test_revise_locator_changed_body_conflicts_before_resolver(load_fixture) -> 
     conflict_service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_other",
         definition_resolver=conflict_tracking,
@@ -825,7 +825,7 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
         return GenerationServiceV1(
             provider=provider,
             candidates=candidates,
-            settings=GenerationSettingsV1("test-model", 1, 0, 60),
+            settings=GenerationSettingsV1("test-model", 1, 60),
             clock=lambda: now,
             candidate_id_factory=lambda: "cand_freshrev1",
             generate_operations=gen_ops,
@@ -847,6 +847,7 @@ def test_settings_default_model_defers_to_profile(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
     assert settings.model == ""
+    assert settings.inference_budget_seconds == 90
 
 
 def test_settings_env_model_override(monkeypatch) -> None:
@@ -858,8 +859,7 @@ def test_settings_env_model_override(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("env_name", "env_value"),
     [
-        ("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "garbage"),
-        ("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "1.5"),
+        ("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", "garbage"),
         ("STATBLOCKS_V1_CANDIDATE_TTL_SECONDS", "nope"),
     ],
 )
@@ -873,13 +873,12 @@ def test_settings_malformed_env_is_typed(monkeypatch, env_name, env_value) -> No
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
-        ({"model": "m", "timeout_seconds": 0.0, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
-        ({"model": "m", "timeout_seconds": -1.0, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
-        ({"model": "m", "timeout_seconds": math.nan, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
-        ({"model": "m", "timeout_seconds": math.inf, "max_retries": 0, "candidate_ttl_seconds": 60}, "TIMEOUT"),
-        ({"model": "m", "timeout_seconds": 1.0, "max_retries": -1, "candidate_ttl_seconds": 60}, "RETRIES"),
-        ({"model": "m", "timeout_seconds": 1.0, "max_retries": 0, "candidate_ttl_seconds": 0}, "TTL"),
-        ({"model": "m", "timeout_seconds": 1.0, "max_retries": 0, "candidate_ttl_seconds": -5}, "TTL"),
+        ({"model": "m", "inference_budget_seconds": 0.0, "candidate_ttl_seconds": 60}, "INFERENCE_BUDGET"),
+        ({"model": "m", "inference_budget_seconds": -1.0, "candidate_ttl_seconds": 60}, "INFERENCE_BUDGET"),
+        ({"model": "m", "inference_budget_seconds": math.nan, "candidate_ttl_seconds": 60}, "INFERENCE_BUDGET"),
+        ({"model": "m", "inference_budget_seconds": math.inf, "candidate_ttl_seconds": 60}, "INFERENCE_BUDGET"),
+        ({"model": "m", "inference_budget_seconds": 1.0, "candidate_ttl_seconds": 0}, "TTL"),
+        ({"model": "m", "inference_budget_seconds": 1.0, "candidate_ttl_seconds": -5}, "TTL"),
     ],
 )
 def test_settings_direct_construction_fails_closed(kwargs, match) -> None:
@@ -963,7 +962,7 @@ def test_revise_without_operations_repository_fails_closed(load_fixture) -> None
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_x",
         generate_operations=InMemoryCandidateGenerationOperationRepository(
@@ -1068,7 +1067,7 @@ def test_generate_in_progress_when_lease_active(load_fixture) -> None:
     service = GenerationServiceV1(
         provider=BlockingProvider(),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=clock,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1178,7 +1177,7 @@ def test_generate_expired_lease_takeover_retains_candidate_id(load_fixture) -> N
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_should_not_use",
         generate_operations=ops,
@@ -1209,7 +1208,7 @@ def test_generate_replay_rejects_replaced_candidate_under_same_id(load_fixture) 
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1271,7 +1270,7 @@ def test_stale_worker_complete_convergence_is_observed_as_replay(load_fixture) -
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ConvergenceOps(),
@@ -1298,7 +1297,7 @@ def test_generate_expired_candidate_replay_raises_410(load_fixture) -> None:
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 5),
+        settings=GenerationSettingsV1("test-model", 1, 5),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1326,7 +1325,7 @@ def test_generate_premature_candidate_loss_is_integrity_failure(load_fixture) ->
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1374,7 +1373,7 @@ def test_replay_foreign_candidate_earlier_expiry_is_integrity_not_410(
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1428,7 +1427,7 @@ def test_replay_respects_operation_expiry_over_extended_candidate_ttl(
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1517,7 +1516,7 @@ def test_terminal_race_mismatched_reserved_candidate_id_fails_closed(
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_reserved",
         generate_operations=RaceOps(),
@@ -1589,7 +1588,7 @@ def test_terminal_race_mismatched_request_digest_fails_closed(load_fixture) -> N
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=RaceOps(),
@@ -1695,7 +1694,7 @@ def test_fail_generate_indeterminate_recovers_concurrent_completed_candidate(
             ProviderOutcomeV1(kind=ProviderOutcomeKind.refusal, message="nope")
         ),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=IndeterminateFailOps(),
@@ -1725,7 +1724,7 @@ def test_generate_replay_rejects_altered_mechanics_same_receipt(load_fixture) ->
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -1849,7 +1848,7 @@ def test_complete_path_respects_operation_expiry_when_candidate_retained(
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ExpiredCompleteOps(),
@@ -1923,7 +1922,7 @@ def test_complete_path_missing_candidate_before_expiry_is_premature_loss(
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=MissingCompleteOps(),
@@ -2027,7 +2026,7 @@ def test_complete_path_redirected_completed_record_fails_closed(load_fixture) ->
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=RedirectedCompleteOps(),
@@ -2130,7 +2129,7 @@ def test_complete_path_corrupted_digest_after_complete_fails_closed(load_fixture
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=CorruptedDigestOps(),
@@ -2163,7 +2162,7 @@ def test_replay_mismatched_operation_and_candidate_expiry_fails_closed(
     service = GenerationServiceV1(
         provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+        settings=GenerationSettingsV1("test-model", 1, 3600),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -2223,7 +2222,7 @@ def test_replay_past_op_expiry_with_later_candidate_expiry_is_integrity(
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 7200),
+        settings=GenerationSettingsV1("test-model", 1, 7200),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -2282,7 +2281,7 @@ def test_replay_missing_candidate_after_op_expiry_raises_410(load_fixture) -> No
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now["t"],
         candidate_id_factory=lambda: "cand_1",
         generate_operations=ops,
@@ -2603,7 +2602,7 @@ def test_legacy_failed_operation_without_diagnostics_replays_generically(load_fi
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_legacy",
         generate_operations=ops,

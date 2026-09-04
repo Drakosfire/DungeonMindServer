@@ -60,7 +60,7 @@ def test_asset_gateway_populates_refs_and_failure_warns(load_fixture) -> None:
         return GenerationServiceV1(
             provider=FakeDefinitionProvider(load_fixture("simple_bruiser")),
             candidates=candidates,
-            settings=GenerationSettingsV1("test-model", 1, 0, 60),
+            settings=GenerationSettingsV1("test-model", 1, 60),
             clock=lambda: now,
             candidate_id_factory=lambda: candidate_id,
             asset_gateway=gateway,

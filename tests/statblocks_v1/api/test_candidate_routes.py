@@ -56,7 +56,7 @@ def api_client(monkeypatch, load_fixture, auth_headers):
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=next_candidate_id,
         definition_resolver=PersistenceDefinitionResolver(persistence),
@@ -410,7 +410,7 @@ def test_generation_failures_use_typed_envelopes(api_client, outcome, status, co
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         candidate_id_factory=lambda: "cand_2",
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
     )
@@ -448,7 +448,7 @@ def test_domain_invalid_generate_and_revise_return_candidates_with_invalid_recei
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=invalid_provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         candidate_id_factory=next_candidate_id,
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
         revise_operations=InMemoryCandidateRevisionOperationRepository(candidates),
@@ -652,7 +652,7 @@ def test_ruleset_and_source_digest_mismatches_are_not_provider_unavailable(
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider(payload),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         candidate_id_factory=lambda: "cand_ruleset",
         generate_operations=InMemoryCandidateGenerationOperationRepository(candidates),
     )
@@ -764,7 +764,7 @@ def test_revise_missing_revision_is_typed_404(api_client) -> None:
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         definition_resolver=MissingResolver(),
         revise_operations=InMemoryCandidateRevisionOperationRepository(
@@ -795,7 +795,7 @@ def test_revise_persistence_unavailable_is_typed_503(api_client) -> None:
     client.app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         definition_resolver=UnavailableResolver(),
         revise_operations=InMemoryCandidateRevisionOperationRepository(
@@ -875,7 +875,7 @@ def test_legacy_routes_keep_fastapi_validation_envelope(monkeypatch) -> None:
     app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider({}),
         candidates=InMemoryCandidateRepository(),
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
     )
 
     @app.post("/legacy/echo")

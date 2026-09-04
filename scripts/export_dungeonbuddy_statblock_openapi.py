@@ -242,7 +242,7 @@ def export_fixture_pack() -> None:
             )
         ),
         candidates=candidates,
-        settings=GenerationSettingsV1("fixture-model", 1.0, 0, candidate_ttl_seconds),
+        settings=GenerationSettingsV1("fixture-model", 1.0, candidate_ttl_seconds),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_fixture1",
         generate_operations=InMemoryCandidateGenerationOperationRepository(

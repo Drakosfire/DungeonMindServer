@@ -192,7 +192,7 @@ def offline(*, run_buddy_proof: bool = True) -> None:
     app.dependency_overrides[get_generation_service] = lambda: GenerationServiceV1(
         provider=FakeDefinitionProvider(json.loads(FIXTURE.read_text())),
         candidates=candidates,
-        settings=GenerationSettingsV1("offline", 1.0, 0, 60),
+        settings=GenerationSettingsV1("offline", 1.0, 60),
         clock=lambda: now,
         candidate_id_factory=next_id,
     )

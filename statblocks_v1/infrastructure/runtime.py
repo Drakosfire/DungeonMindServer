@@ -198,8 +198,7 @@ def build_generation_service(
         candidates=candidate_repo,
         settings=GenerationSettingsV1(
             model=settings.model,
-            timeout_seconds=settings.provider_timeout_seconds,
-            max_retries=settings.provider_max_retries,
+            inference_budget_seconds=settings.inference_budget_seconds,
             candidate_ttl_seconds=settings.candidate_ttl_seconds,
         ),
         definition_resolver=PersistenceDefinitionResolver(persistence_repo),
