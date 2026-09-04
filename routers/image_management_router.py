@@ -34,28 +34,16 @@ from services.image_asset_registry import (
 from cloudflare.handle_images import delete_cloudflare_image_by_id, upload_image_to_cloudflare_detailed
 
 # GenerationEngine
-from generationengine import (
-    ImageService,
-    ImageGenerationRequest as GEImageGenerationRequest,
-    ImageSize,
-)
+from generationengine import GenerationEngineError, ImageRequest
+from shared.generation import get_generation_client
+from shared.generated_images import publish_generated_image
+from shared.inference_policy import inference_for
 
 # Shared configuration
 from shared.image_models import MODEL_MAP, IMAGE_CAPABILITIES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/images", tags=["Image Management"])
-
-# Initialize ImageService (singleton pattern)
-_image_service: Optional[ImageService] = None
-
-
-def get_image_service() -> ImageService:
-    """Get or create the ImageService singleton."""
-    global _image_service
-    if _image_service is None:
-        _image_service = ImageService()
-    return _image_service
 
 
 # =============================================================================
@@ -277,55 +265,45 @@ async def generate_image(
                 status_code=400,
                 detail=f"Unknown model: {request.model}. Available: {list(MODEL_MAP.keys())}"
             )
-        
-        # Build GenerationEngine request
-        ge_request = GEImageGenerationRequest(
+
+        action = inference_for("user_selected_image_generation")
+        ge_request = ImageRequest(
             prompt=request.prompt,
+            profile=action.profile,
             model=ge_model,
             num_images=num_images,
-            size=ImageSize.SQUARE,  # Default 1024x1024
+            width=1024,
+            height=1024,
         )
-        
-        # Call GenerationEngine
-        image_service = get_image_service()
-        response = await image_service.generate(ge_request)
-        
-        if not response.success:
-            error_msg = response.error.message if response.error else "Unknown error"
-            logger.error(f"❌ [ImageGenerate] Failed: {error_msg}")
-            return ImageGenerateResponse(
-                success=False,
-                error=error_msg
-            )
-        
-        # Transform to response format (matching frontend ApiImageGenerationResponse)
+
+        try:
+            response = await get_generation_client().generate_image(ge_request)
+        except GenerationEngineError as error:
+            logger.error("❌ [ImageGenerate] Failed: %s", error.failure.message)
+            return ImageGenerateResponse(success=False, error=error.failure.message)
+
         generated_images: List[GeneratedImage] = []
-        if response.images:
-            for idx, img_result in enumerate(response.images):
-                asset = register_cloudflare_url_asset(
-                    owner_id=current_user.user_id,
-                    canonical_url=img_result.url,
-                    service="images",
-                )
-                generated_images.append(GeneratedImage(
-                    id=asset.asset_id,
-                    url=img_result.url,
-                    asset_id=asset.asset_id,
-                    prompt=request.prompt,
-                    created_at=datetime.now().isoformat()
-                ))
-        
-        logger.info(f"✅ [ImageGenerate] Generated {len(generated_images)} images")
-        
-        # Log metrics if available
-        if response.metrics:
-            logger.info(
-                f"📊 [ImageGenerate] duration={response.metrics.duration_ms}ms, "
-                f"model={response.metrics.model_used}, retries={response.metrics.retry_count}"
+        for img_result in response.images:
+            uploaded = await publish_generated_image(img_result)
+            asset = register_cloudflare_url_asset(
+                owner_id=current_user.user_id,
+                canonical_url=uploaded.url,
+                provider_image_id=uploaded.provider_image_id,
+                account_or_bucket=uploaded.account_id,
+                service="images",
             )
-        
-        model_used = response.metrics.model_used if response.metrics else request.model
-        
+            generated_images.append(GeneratedImage(
+                id=asset.asset_id,
+                url=uploaded.url,
+                asset_id=asset.asset_id,
+                prompt=request.prompt,
+                created_at=datetime.now().isoformat()
+            ))
+
+        logger.info("✅ [ImageGenerate] Generated %s images", len(generated_images))
+        obs = response.observation
+        model_used = obs.resolved_model or request.model
+
         return ImageGenerateResponse(
             success=True,
             data=ImageGenerationData(

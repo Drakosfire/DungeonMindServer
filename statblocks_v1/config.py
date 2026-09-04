@@ -5,8 +5,7 @@ import math
 import os
 from dataclasses import dataclass
 
-from statblocks_v1.application.settings import _policy_model
-from statblocks_v1.domain.errors import InternalServiceMisconfiguredError
+from statblocks_v1.application.settings import DEFAULT_STATBLOCK_MODEL
 
 
 class ConfigurationError(ValueError):
@@ -83,17 +82,15 @@ class StatblocksV1Settings:
         if require_generation and feature_enabled and not openai_api_key:
             raise ConfigurationError("OPENAI_API_KEY is required when generation is enabled")
         configured_model = os.getenv("STATBLOCKS_V1_OPENAI_MODEL")
-        try:
-            model = configured_model if configured_model else _policy_model()
-        except InternalServiceMisconfiguredError as error:
-            raise ConfigurationError("structured generation model is not configured") from error
+        model = configured_model.strip() if configured_model and configured_model.strip() else DEFAULT_STATBLOCK_MODEL
         provider_timeout_seconds = _positive_float("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", 45)
         provider_max_retries = _positive_int("STATBLOCKS_V1_OPENAI_MAX_RETRIES", 1)
         asset_timeout_seconds = _positive_float("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", 20)
-        # Lease must cover provider retries, post-provider asset work, and margin.
-        # Ceil so fractional timeouts cannot shrink the budget via truncation.
+        # Lease must cover GenerationEngine attempts, post-provider asset work, and margin.
+        # GenerationClient retries up to 3 attempts per call.
+        ge_attempts = 3
         provider_retry_budget_seconds = math.ceil(
-            provider_timeout_seconds * (provider_max_retries + 1)
+            provider_timeout_seconds * ge_attempts
             + asset_timeout_seconds
             + 30
         )

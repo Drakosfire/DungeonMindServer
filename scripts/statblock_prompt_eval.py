@@ -49,7 +49,7 @@ from statblocks_v1.domain.profiles import RulesetEdition, RulesetRef, RulesetSys
 from statblocks_v1.domain.receipts import ValidationMode, ValidationSeverity  # noqa: E402
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1  # noqa: E402
 from statblocks_v1.domain.validation import validate_definition  # noqa: E402
-from statblocks_v1.infrastructure.openai_provider import OpenAIDefinitionProvider  # noqa: E402
+from statblocks_v1.infrastructure.ge_provider import GenerationEngineDefinitionProvider  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -238,7 +238,7 @@ def _error_codes_from_definition(definition: StatblockDefinitionV1) -> list[str]
 
 def _run_trial(
     *,
-    provider: OpenAIDefinitionProvider,
+    provider: GenerationEngineDefinitionProvider,
     options: ProviderOptionsV1,
     fixture: Fixture,
     arm: str,
@@ -410,7 +410,7 @@ def main(argv: list[str] | None = None) -> None:
     if dump_dir is not None:
         dump_dir.mkdir(parents=True, exist_ok=True)
 
-    provider = OpenAIDefinitionProvider()
+    provider = GenerationEngineDefinitionProvider()
     options = _provider_options()
     all_results: list[TrialResult] = []
 

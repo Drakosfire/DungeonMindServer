@@ -62,10 +62,8 @@ packages = [
 ]
 
 [tool.uv.sources]
-# Production: Use git-based dependency (works in Docker/CI)
-generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git" }
-# For local development, override with: generationengine = { path = "../GenerationEngine", editable = true }
-# generationengine = { path = "../GenerationEngine", editable = true }
+# Paired GenerationEngine cutover commit. After GE merge, replace with the merge SHA.
+generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "57a05b4049fee89905fa26de29bd836cc5dbbb6a" }
 
 [dependency-groups]
 dev = [

@@ -824,20 +824,16 @@ def test_revise_replay_through_fresh_service_instance(load_fixture) -> None:
     assert len(provider.calls) == 1
 
 
-def test_settings_resolve_in_repo_model_policy(monkeypatch) -> None:
+def test_settings_default_model_preserves_frontier(monkeypatch) -> None:
     monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
     settings = GenerationSettingsV1.from_environment()
     assert settings.model == "gpt-5.6-luna"
 
 
-def test_settings_fail_closed_without_policy(monkeypatch, tmp_path) -> None:
-    monkeypatch.delenv("STATBLOCKS_V1_OPENAI_MODEL", raising=False)
-    monkeypatch.setattr(
-        "statblocks_v1.application.settings._REPO_ROOT",
-        tmp_path,
-    )
-    with pytest.raises(InternalServiceMisconfiguredError):
-        GenerationSettingsV1.from_environment()
+def test_settings_env_model_override(monkeypatch) -> None:
+    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "gpt-4o")
+    settings = GenerationSettingsV1.from_environment()
+    assert settings.model == "gpt-4o"
 
 
 @pytest.mark.parametrize(

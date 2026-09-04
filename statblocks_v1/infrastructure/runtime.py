@@ -36,7 +36,7 @@ from statblocks_v1.infrastructure.firestore_repositories import (
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
-from statblocks_v1.infrastructure.openai_provider import OpenAIDefinitionProvider
+from statblocks_v1.infrastructure.ge_provider import GenerationEngineDefinitionProvider
 from statblocks_v1.observability import apply_telemetry_settings
 
 logger = logging.getLogger("statblocks_v1")
@@ -190,7 +190,7 @@ def build_generation_service(
     except InternalServiceMisconfiguredError:
         raise
     return GenerationServiceV1(
-        provider=provider if provider is not None else OpenAIDefinitionProvider(),
+        provider=provider if provider is not None else GenerationEngineDefinitionProvider(),
         candidates=candidate_repo,
         settings=GenerationSettingsV1(
             model=settings.model,
