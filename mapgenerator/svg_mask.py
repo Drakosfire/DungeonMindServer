@@ -17,7 +17,9 @@ import re
 import cairosvg
 from PIL import Image
 
-from generationengine import TextGenerationService, TextGenerationRequest, TextModel
+from generationengine import GenerationEngineError, TextRequest
+from shared.generation import get_generation_client
+from shared.inference_policy import profile_for
 
 logger = logging.getLogger(__name__)
 
@@ -200,30 +202,26 @@ async def generate_svg_from_description(description: str) -> str:
     """
     logger.info(f"🎨 [SVGMask] Generating SVG from description: {description[:50]}...")
     
-    text_service = TextGenerationService()
-    
+    client = get_generation_client()
     user_prompt = SVG_USER_PROMPT_TEMPLATE.format(description=description)
-    
-    request = TextGenerationRequest(
-        system_prompt=SVG_SYSTEM_PROMPT,
-        user_prompt=user_prompt,
-        model=TextModel.GPT_5_1,
-        temperature=0.7,
-        max_tokens=2000,
-    )
-    
-    result = await text_service.generate(request)
-    
-    if not result.success:
-        error_msg = result.error.message if result.error else "Unknown error"
-        logger.error(f"❌ [SVGMask] LLM generation failed: {error_msg}")
-        raise Exception(f"SVG generation failed: {error_msg}")
-    
-    if not result.content:
+    try:
+        result = await client.generate_text(
+            TextRequest(
+                system_prompt=SVG_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                profile=profile_for("svg_mask_generation"),
+                temperature=0.7,
+            )
+        )
+    except GenerationEngineError as error:
+        logger.error("❌ [SVGMask] LLM generation failed: %s", error.failure.message)
+        raise Exception(f"SVG generation failed: {error.failure.message}") from error
+
+    if not result.text:
         raise Exception("Empty response from LLM")
-    
+
     # Extract and validate SVG
-    svg_string = _extract_svg(result.content)
+    svg_string = _extract_svg(result.text)
     _validate_svg(svg_string)
     
     logger.info(f"✅ [SVGMask] Generated valid SVG: {len(svg_string)} chars")

@@ -32,12 +32,10 @@ from security_limits.download_limits import (
 )
 
 # GenerationEngine
-from generationengine import (
-    ImageService,
-    ImageGenerationRequest as GEImageGenerationRequest,
-    ImageModel,
-    ImageSize,
-)
+from generationengine import GenerationEngineError, ImageRequest
+from shared.generation import get_generation_client
+from shared.generated_images import publish_generated_image
+from shared.inference_policy import inference_for
 
 from mapgenerator.models import (
     MapProject,
@@ -83,17 +81,6 @@ logger = logging.getLogger(__name__)
 
 # Firestore collection name
 MAP_PROJECTS_COLLECTION = "map_projects"
-
-# Initialize ImageService (singleton pattern)
-_image_service: Optional[ImageService] = None
-
-
-def get_image_service() -> ImageService:
-    """Get or create the ImageService singleton."""
-    global _image_service
-    if _image_service is None:
-        _image_service = ImageService()
-    return _image_service
 
 router = APIRouter(prefix="/api/mapgenerator", tags=["mapgenerator"])
 
@@ -156,61 +143,57 @@ async def generate_map(
         # Stage 2: Compile image prompt
         logger.info("🔧 [MapGenerator] Compiling image prompt...")
         image_prompt = compile_image_prompt(mapspec)
-        
-        # Stage 3: Generate image with GPT Image 1.5
-        # Map width/height to ImageSize enum
-        size_map = {
-            (512, 512): ImageSize.SQUARE,
-            (1024, 1024): ImageSize.SQUARE,
-            (2048, 2048): ImageSize.SQUARE,
-            (768, 1024): ImageSize.PORTRAIT,
-            (1024, 768): ImageSize.LANDSCAPE,
-        }
-        image_size = size_map.get((request.width, request.height), ImageSize.SQUARE)
-        
-        # Build negative prompt from MapSpec constraints
         negative_prompt = ", ".join(mapspec.constraints.forbid) if mapspec.constraints.forbid else None
-        
-        ge_request = GEImageGenerationRequest(
+
+        # Stage 3: Generate image with GPT Image 1.5 via GenerationEngine
+        action = inference_for("map_image_generation")
+        ge_request = ImageRequest(
             prompt=image_prompt,
             negative_prompt=negative_prompt,
-            model=ImageModel.GPT_IMAGE_15,  # OpenAI GPT Image 1.5 via Fal.ai
+            profile=action.profile,
+            model=action.model,
             num_images=1,
-            size=image_size,
+            width=request.width,
+            height=request.height,
         )
-        
-        # Call GenerationEngine
-        image_service = get_image_service()
-        response = await image_service.generate(ge_request)
-        
-        if not response.success:
-            error_msg = response.error.message if response.error else "Unknown error"
-            logger.error(f"❌ [MapGenerator] Generation failed: {error_msg}")
+
+        try:
+            response = await get_generation_client().generate_image(ge_request)
+        except GenerationEngineError as error:
+            logger.error("❌ [MapGenerator] Generation failed: %s", error.failure.message)
             raise HTTPException(
                 status_code=500,
-                detail=f"Map generation failed: {error_msg}"
-            )
-        
-        if not response.images or len(response.images) == 0:
+                detail=f"Map generation failed: {error.failure.message}"
+            ) from error
+
+        if not response.images:
             logger.error("❌ [MapGenerator] No images returned from generation")
             raise HTTPException(
                 status_code=500,
                 detail="Map generation returned no images"
             )
-        
+
         generation_time = time.time() - start_time
         image = response.images[0]
-        
-        logger.info(f"✅ [MapGenerator] Generation complete: {generation_time:.2f}s, size={image.width}x{image.height}")
+        uploaded = await publish_generated_image(image)
+
+        logger.info(
+            "✅ [MapGenerator] Generation complete: %.2fs, size=%sx%s",
+            generation_time,
+            image.width,
+            image.height,
+        )
 
         asset = register_cloudflare_url_asset(
             owner_id=current_user.user_id,
-            canonical_url=image.url,
+            canonical_url=uploaded.url,
+            provider_image_id=uploaded.provider_image_id,
+            account_or_bucket=uploaded.account_id,
             service="map",
         )
-        
+
         return GenerateMapResponse(
-            imageUrl=image.url,
+            imageUrl=uploaded.url,
             assetId=asset.asset_id,
             width=image.width,
             height=image.height,

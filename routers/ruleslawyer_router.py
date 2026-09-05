@@ -25,8 +25,6 @@ from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
 from openai import AsyncOpenAI
 import os
 from pathlib import Path
-from generationengine.services.text_service import TextGenerationService
-from generationengine.models.requests import TextGenerationRequest, TextModel
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)

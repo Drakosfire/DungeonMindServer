@@ -1,17 +1,15 @@
 """
 Shared image generation model configuration.
 
-Single source of truth for model mappings used across routers.
+Frontend aliases map to GenerationEngine catalog ids. Profile selection lives
+in shared.inference_policy; this file does not copy provider pricing.
 """
 
-from generationengine import ImageModel
-
-# Map frontend model IDs to GenerationEngine ImageModel enum
-# All models support both text-to-image and inpainting via /edit endpoints
+# Map frontend model IDs to GenerationEngine catalog ids
 MODEL_MAP = {
-    "flux-2-pro": ImageModel.FLUX_2_PRO,
-    "nano-banana-pro": ImageModel.NANO_BANANA_PRO,
-    "gpt-image-1.5": ImageModel.GPT_IMAGE_15,
+    "flux-2-pro": "flux-2-pro",
+    "nano-banana-pro": "nano-banana-pro",
+    "gpt-image-1.5": "gpt-image-1.5",
 }
 
 # Capabilities returned by /api/images/capabilities
@@ -89,4 +87,3 @@ IMAGE_CAPABILITIES = {
     "maxImages": 4,
     "defaultNumImages": 4
 }
-

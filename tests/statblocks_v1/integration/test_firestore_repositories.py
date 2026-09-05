@@ -876,7 +876,7 @@ def test_firestore_revise_replay_through_fresh_generation_service(
         return GenerationServiceV1(
             provider=provider,
             candidates=candidates,
-            settings=GenerationSettingsV1("test-model", 1, 0, 3600),
+            settings=GenerationSettingsV1("test-model", 1, 3600),
             clock=lambda: now,
             candidate_id_factory=lambda: fixed_candidate_id,
             generate_operations=generate_ops,
