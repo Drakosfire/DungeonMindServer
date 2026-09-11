@@ -124,6 +124,52 @@ async def upload_image_to_cloudflare_detailed(
         )
 
 
+async def upload_generated_image_bytes(
+    image_bytes: bytes,
+    *,
+    media_type: str = "image/png",
+    filename: str = "generated.png",
+) -> CloudflareUploadResult:
+    """Upload GenerationEngine image bytes with the same bounds as user uploads."""
+    mime = validate_image_bytes(image_bytes, max_bytes=MAX_PROXY_BYTES)
+    files = {
+        "file": (filename, image_bytes, mime or media_type),
+        "metadata": (None, '{"key":"value"}'),
+        "requireSignedURLs": (None, "false"),
+    }
+    cloudflare_account_id, cloudflare_api_token = _cloudflare_credentials()
+    if not cloudflare_account_id:
+        raise HTTPException(
+            status_code=500,
+            detail="CLOUDFLARE_ACCOUNT_ID environment variable is not set",
+        )
+    if not cloudflare_api_token:
+        raise HTTPException(
+            status_code=500,
+            detail="CLOUDFLARE_IMAGES_API_TOKEN environment variable is not set",
+        )
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cloudflare_account_id}/images/v1"
+    headers = {"Authorization": f"Bearer {cloudflare_api_token}"}
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, headers=headers, files=files)
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Cloudflare API error: {response.text}",
+            )
+        result = response.json()["result"]
+        provider_image_id = result.get("id") or ""
+        public_url = result.get("variants")[0]
+        if not public_url.endswith("/Full"):
+            public_url = "/".join(public_url.split("/")[:-1]) + "/Full"
+        logger.info("Generated image uploaded successfully to Cloudflare Images")
+        return CloudflareUploadResult(
+            url=public_url,
+            provider_image_id=provider_image_id,
+            account_id=cloudflare_account_id or "",
+        )
+
+
 async def delete_cloudflare_image_by_id(provider_image_id: str) -> bool:
     """Delete by trusted Cloudflare Images id from the asset registry."""
     cloudflare_account_id, cloudflare_api_token = _cloudflare_credentials()

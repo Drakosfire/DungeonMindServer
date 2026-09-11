@@ -10,7 +10,10 @@ from typing import Optional, Tuple
 
 from PIL import Image
 
-from generationengine import ImageService, ImageGenerationRequest, ImageModel, ImageSize
+from generationengine import GenerationEngineError, ImageRequest
+from shared.generation import get_generation_client
+from shared.generated_images import publish_generated_image
+from shared.inference_policy import inference_for
 from security_limits.image_bounds import (
     decode_data_uri_bounded,
     encode_image_data_uri,
@@ -123,33 +126,35 @@ async def generate_inpainted_map(
     if len(prompt) > 8000:
         prompt = prompt[:8000]
 
-    image_service = ImageService()
-    request = ImageGenerationRequest(
+    action = inference_for("map_image_edit")
+    client = get_generation_client()
+    request = ImageRequest(
         prompt=prompt,
         negative_prompt=negative_prompt,
-        model=ImageModel.GPT_IMAGE_15,
+        profile=action.profile,
+        model=action.model,
         num_images=1,
-        size=ImageSize.SQUARE,
+        width=STANDARD_INPAINT_SIZE[0],
+        height=STANDARD_INPAINT_SIZE[1],
         mask_base64=mask_base64,
         base_image_base64=base_image_base64,
     )
 
     if not request.mask_base64 or not request.base_image_base64:
-        raise InpaintingValidationError("ImageGenerationRequest missing mask or base_image")
+        raise InpaintingValidationError("ImageRequest missing mask or base_image")
 
     try:
-        result = await image_service.generate(request)
+        result = await client.edit_image(request)
+    except GenerationEngineError as error:
+        logger.error("❌ [Inpainting] Generation failed: %s", error.failure.message)
+        raise Exception(f"Inpainting generation failed: {error.failure.message}") from error
     except Exception as e:
         logger.error("❌ [Inpainting] Generation failed: %s", type(e).__name__)
         raise
 
-    if not result.success or not result.images:
-        error_msg = result.error.message if result.error else "Unknown error"
-        raise Exception(f"Inpainting generation failed: {error_msg}")
+    if not result.images:
+        raise Exception("Inpainting generation failed: no images returned")
 
-    image_url = result.images[0].url
-    if not image_url:
-        raise Exception("Inpainting generation failed: no image URL in response")
-
+    uploaded = await publish_generated_image(result.images[0])
     logger.info("✅ [Inpainting] Generation complete")
-    return image_url
+    return uploaded.url

@@ -33,29 +33,39 @@ def test_generate_lease_must_cover_full_provider_retry_budget(monkeypatch) -> No
 
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "45.7")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "1")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", "45.7")
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
-    # Full budget = ceil(45.7 * 2 + 20 + 30) = ceil(141.4) = 142
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "141")
+    # Product-visible budget = ceil(45.7 + 20 + 30) = ceil(95.7) = 96
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "95")
     with pytest.raises(ConfigurationError, match="asset generation"):
         StatblocksV1Settings.from_environment()
 
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "142")
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "96")
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == 142
-    # Default without explicit lease uses ceil, not truncating int().
+    assert settings.generate_lease_seconds == 96
     monkeypatch.delenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", raising=False)
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == max(120, 142)
+    assert settings.generate_lease_seconds == max(120, 96)
 
-    # Asset timeout above the fixed margin must still force a larger lease.
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "60")
     settings = StatblocksV1Settings.from_environment()
-    assert settings.generate_lease_seconds == max(120, 182)
-    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "181")
+    assert settings.generate_lease_seconds == max(120, 136)
+    monkeypatch.setenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", "135")
     with pytest.raises(ConfigurationError, match="asset generation"):
         StatblocksV1Settings.from_environment()
+
+
+def test_default_inference_budget_is_ninety_seconds(monkeypatch) -> None:
+    from statblocks_v1.config import StatblocksV1Settings
+
+    monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
+    monkeypatch.setenv("OPENAI_API_KEY", "openai")
+    monkeypatch.delenv("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", raising=False)
+    monkeypatch.delenv("STATBLOCKS_V1_GENERATE_LEASE_SECONDS", raising=False)
+    monkeypatch.delenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", raising=False)
+    settings = StatblocksV1Settings.from_environment()
+    assert settings.inference_budget_seconds == 90
+    assert settings.generate_lease_seconds == 140
 
 
 def test_firestore_disabled_blocks_repository_construction(monkeypatch) -> None:
@@ -118,9 +128,8 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
 
     monkeypatch.setenv("DUNGEONBUDDY_INTERNAL_API_KEY", "key")
     monkeypatch.setenv("OPENAI_API_KEY", "openai")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MODEL", "test-model")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_TIMEOUT_SECONDS", "12")
-    monkeypatch.setenv("STATBLOCKS_V1_OPENAI_MAX_RETRIES", "2")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_MODEL", "test-model")
+    monkeypatch.setenv("STATBLOCKS_V1_INFERENCE_BUDGET_SECONDS", "12")
     monkeypatch.setenv("STATBLOCKS_V1_CANDIDATE_TTL_SECONDS", "30")
     monkeypatch.setenv("STATBLOCKS_V1_ASSET_GATEWAY_ENABLED", "true")
 
@@ -145,8 +154,7 @@ def test_generation_service_uses_settings_and_optional_assets(monkeypatch) -> No
         provider=provider,
     )
     assert service._settings.model == "test-model"
-    assert service._settings.timeout_seconds == 12.0
-    assert service._settings.max_retries == 2
+    assert service._settings.inference_budget_seconds == 12.0
     assert service._settings.candidate_ttl_seconds == 30
     assert service._asset_gateway is not None
     assert service._provider is provider

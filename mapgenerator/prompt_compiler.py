@@ -18,7 +18,9 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from generationengine import TextGenerationService, TextGenerationRequest, TextModel
+from generationengine import GenerationEngineError, TextRequest
+from shared.generation import get_generation_client
+from shared.inference_policy import profile_for
 
 from .models import MapSpec
 from .prompts import (
@@ -50,8 +52,7 @@ async def generate_mapspec(
     if defaults is None:
         defaults = get_defaults()
     
-    text_service = TextGenerationService()
-    
+    client = get_generation_client()
     combined_prompt = f"""
 USER_TEXT:
 <<<{user_prompt}>>>
@@ -66,34 +67,23 @@ DEFAULTS:
     # Get schema from MapSpec model
     schema = MapSpec.model_json_schema()
     
-    request = TextGenerationRequest(
-        system_prompt=MAPSPEC_SYSTEM_PROMPT,
-        user_prompt=combined_prompt,
-        model=TextModel.GPT_5_1,
-        temperature=0.7,
-        response_schema=schema,
-        response_schema_name="mapspec",
-        max_tokens=800,  # Constrain upfront to keep compiled prompt under 2000 chars
-    )
-    
-    result = await text_service.generate(request)
-    
-    if not result.success:
-        error_msg = result.error.message if result.error else "Unknown error"
-        logger.error(f"❌ [PromptCompiler] MapSpec generation failed: {error_msg}")
-        raise Exception(f"MapSpec generation failed: {error_msg}")
-    
-    # Parse and validate
     try:
-        # Use parsed_content (already a dict) when structured outputs are used
-        # Fall back to parsing content string if needed
-        if result.parsed_content:
-            mapspec_dict = result.parsed_content
-        elif result.content:
-            mapspec_dict = json.loads(result.content)
-        else:
-            raise ValueError("No content in response")
-        
+        result = await client.generate_structured(
+            TextRequest(
+                system_prompt=MAPSPEC_SYSTEM_PROMPT,
+                user_prompt=combined_prompt,
+                profile=profile_for("map_spec_generation"),
+                temperature=0.7,
+                json_schema=schema,
+                schema_name="mapspec",
+            )
+        )
+    except GenerationEngineError as error:
+        logger.error("❌ [PromptCompiler] MapSpec generation failed: %s", error.failure.message)
+        raise Exception(f"MapSpec generation failed: {error.failure.message}") from error
+
+    try:
+        mapspec_dict = result.parsed if result.parsed is not None else json.loads(result.text or "")
         mapspec = MapSpec.model_validate(mapspec_dict)
     except Exception as e:
         logger.error(f"❌ [PromptCompiler] Failed to parse MapSpec: {str(e)}")

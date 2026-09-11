@@ -68,6 +68,7 @@ PACKAGE_SUPPORT_MODULES = frozenset(
 # Empty in PR12; later adapters opt in explicitly (e.g. firestore client wrap).
 INFRASTRUCTURE_ADAPTER_EXCEPTIONS: dict[str, frozenset[str]] = {
     # Self-contained httpx upload; no repository cloudflare package import.
+    "runtime.py": frozenset({"shared"}),
 }
 
 def _repo_owned_package_roots() -> frozenset[str]:

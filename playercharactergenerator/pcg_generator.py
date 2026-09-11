@@ -10,8 +10,9 @@ import os
 from typing import Dict, Any, Tuple, Optional
 from datetime import datetime
 
-from generationengine.services.text_service import TextGenerationService
-from generationengine.models.requests import TextGenerationRequest, TextModel
+from generationengine import GenerationEngineError, TextRequest
+from shared.generation import get_generation_client
+from shared.inference_policy import inference_for
 
 from .models.pcg_models import (
     GenerationInput,
@@ -40,23 +41,13 @@ class PlayerCharacterGenerator:
     def __init__(self):
         self.prompt_manager = PCGPromptManager()
         self.rule_engine = PCGRuleEngine()
-        self.text_service = None
-        # Use GPT_5_1 for now (GPT-5.2 not yet in TextModel enum)
-        # TODO: Add GPT_5_2 to TextModel enum if available in Responses API
-        self.model = TextModel.GPT_5_1
-        self.model_name = "gpt-5.1"  # For logging/health check
-
-        # Initialize TextGenerationService if API key is available
-        try:
-            self.text_service = TextGenerationService()
-            logger.info(
-                "PlayerCharacterGenerator initialized | model=%s | module_path=%s",
-                self.model_name,
-                __file__,
-            )
-        except ValueError as e:
-            logger.warning(f"TextGenerationService initialization failed: {str(e)}")
-            self.text_service = None
+        self.model_name = "gpt-5.1"
+        self.client = get_generation_client()
+        logger.info(
+            "PlayerCharacterGenerator initialized | model=%s | module_path=%s",
+            self.model_name,
+            __file__,
+        )
 
     async def generate_preferences(
         self,
@@ -74,9 +65,6 @@ class PlayerCharacterGenerator:
         try:
             concept = request.input.concept
             logger.info(f"Generating preferences for: {concept[:50]}...")
-
-            if not self.text_service:
-                return False, {"error": "TextGenerationService not initialized"}
 
             # Get or create constraints
             if request.constraints:
@@ -99,7 +87,7 @@ class PlayerCharacterGenerator:
             )
 
             # Call GenerationEngine
-            response = await self._call_openai(system_prompt, user_prompt)
+            response = await self._generate_preferences_text(system_prompt, user_prompt)
 
             if not response["success"]:
                 return False, response
@@ -133,70 +121,53 @@ class PlayerCharacterGenerator:
             logger.error(f"Error generating preferences: {str(e)}")
             return False, {"error": "Generation failed", "details": str(e)}
 
-    async def _call_openai(
+    async def _generate_preferences_text(
         self,
         system_prompt: str,
         user_prompt: str
     ) -> Dict[str, Any]:
-        """
-        Call GenerationEngine TextGenerationService for preference generation
-
-        Args:
-            system_prompt: System message
-            user_prompt: User message with constraints and concept
-
-        Returns:
-            Dict with success, content, and token counts
-        """
+        """Call GenerationEngine for preference generation and return product-shaped tokens."""
         try:
-            logger.debug(f"Calling GenerationEngine with prompt length: {len(user_prompt)} chars")
-
-            # Build TextGenerationRequest
-            # Note: max_tokens not supported in Responses API - removed
-            ge_request = TextGenerationRequest(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model=self.model,
-                temperature=0.7,
-            )
-
+            action = inference_for("pcg_preference_generation")
             logger.info(
-                "Calling GenerationEngine TextGenerationService | model=%s",
+                "Calling GenerationEngine | profile=%s model=%s",
+                action.profile.value,
                 self.model_name,
             )
-
-            # Call GenerationEngine
-            response = await self.text_service.generate(
-                ge_request,
-                service_name="playercharactergenerator"
+            result = await self.client.generate_text(
+                TextRequest(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    profile=action.profile,
+                    model=action.model,
+                    temperature=0.7,
+                )
             )
-
-            if not response.success:
-                error_msg = response.error.message if response.error else "Unknown error"
-                logger.error(f"GenerationEngine error: {error_msg}")
-                return {"success": False, "error": error_msg}
-
-            # Extract content and metrics
-            content = response.content
-            metrics = response.metrics
-
-            # Note: Responses API may not provide prompt/completion breakdown
-            # Use total tokens for all counts (approximation)
-            total_tokens = metrics.tokens_used if metrics else 0
-            logger.info(f"GenerationEngine response received: {total_tokens} tokens")
-
+            obs = result.observation
+            input_tokens = obs.input_tokens
+            output_tokens = obs.output_tokens
+            total_tokens = (
+                input_tokens + output_tokens
+                if input_tokens is not None and output_tokens is not None
+                else None
+            )
+            logger.info(
+                "GenerationEngine response received: input=%s output=%s",
+                input_tokens,
+                output_tokens,
+            )
             return {
                 "success": True,
-                "content": content,
-                # Responses API doesn't provide prompt/completion breakdown
-                # Use total tokens as approximation (may need adjustment)
-                "promptTokens": total_tokens,  # Approximation
-                "completionTokens": total_tokens,  # Approximation
+                "content": result.text or "",
+                "promptTokens": input_tokens,
+                "completionTokens": output_tokens,
                 "totalTokens": total_tokens,
             }
-
+        except GenerationEngineError as error:
+            logger.error("GenerationEngine error: %s", error.failure.message)
+            return {"success": False, "error": error.failure.message}
         except Exception as e:
-            logger.error(f"GenerationEngine API error: {str(e)}")
+            logger.error("GenerationEngine API error: %s", str(e))
             return {"success": False, "error": str(e)}
 
     def _parse_preferences(self, raw_response: str) -> Optional[AiPreferences]:
@@ -268,8 +239,8 @@ class PlayerCharacterGenerator:
             Health status dict
         """
         return {
-            "status": "healthy" if self.text_service else "degraded",
-            "text_service_configured": self.text_service is not None,
+            "status": "healthy" if os.getenv("OPENAI_API_KEY") else "degraded",
+            "text_service_configured": bool(os.getenv("OPENAI_API_KEY")),
             "prompt_version": self.prompt_manager.version,
             "model": self.model_name,
             "module_path": __file__,

@@ -27,6 +27,9 @@ class ProviderOutcomeV1:
     latency_ms: int | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    provider: str | None = None
+    resolved_model: str | None = None
+    response_model: str | None = None
 
     @classmethod
     def succeeded(cls, payload: dict[str, Any], **metadata: Any) -> "ProviderOutcomeV1":
@@ -36,8 +39,7 @@ class ProviderOutcomeV1:
 @dataclass(frozen=True)
 class ProviderOptionsV1:
     model: str
-    timeout_seconds: float
-    max_retries: int
+    inference_budget_seconds: float
 
 
 class DefinitionProvider(Protocol):

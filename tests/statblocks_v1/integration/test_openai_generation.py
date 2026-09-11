@@ -10,7 +10,7 @@ from statblocks_v1.application.provider import ProviderOptionsV1, ProviderOutcom
 from statblocks_v1.application.schema_compiler import compile_openai_definition_schema
 from statblocks_v1.application.settings import GenerationSettingsV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
-from statblocks_v1.infrastructure.openai_provider import OpenAIDefinitionProvider
+from statblocks_v1.infrastructure.ge_provider import GenerationEngineDefinitionProvider
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_OPENAI_GENERATION_TESTS") or not os.getenv("OPENAI_API_KEY"),
@@ -22,8 +22,7 @@ def _options() -> ProviderOptionsV1:
     settings = GenerationSettingsV1.from_environment()
     return ProviderOptionsV1(
         model=settings.model,
-        timeout_seconds=settings.timeout_seconds,
-        max_retries=settings.max_retries,
+        inference_budget_seconds=settings.inference_budget_seconds,
     )
 
 
@@ -33,7 +32,7 @@ def test_openai_accepts_the_published_strict_artifact() -> None:
     A `description` beside a `$ref` compiles and serializes cleanly, then 400s
     every generation call. This is the only gate that catches that class.
     """
-    provider = OpenAIDefinitionProvider()
+    provider = GenerationEngineDefinitionProvider()
     outcome = provider.generate_definition(
         prompt="Create one creature named 'Schema Probe'. Source description: a tiny test rodent.",
         system=build_system_prompt("2024"),
@@ -45,7 +44,7 @@ def test_openai_accepts_the_published_strict_artifact() -> None:
 
 
 def test_openai_simple_generation_validates_against_canonical_model() -> None:
-    provider = OpenAIDefinitionProvider()
+    provider = GenerationEngineDefinitionProvider()
     schema = compile_openai_definition_schema()
     prompt = """
 You produce only a StatblockDefinitionV1 JSON object for D&D 5e 2024.
@@ -71,7 +70,7 @@ definition.ruleset must be {"system":"dnd5e","edition":"2024","house_ruleset_id"
 
 
 def test_openai_advanced_generation_validates_against_canonical_model() -> None:
-    provider = OpenAIDefinitionProvider()
+    provider = GenerationEngineDefinitionProvider()
     schema = compile_openai_definition_schema()
     prompt = """
 You produce only a StatblockDefinitionV1 JSON object for D&D 5e 2024.

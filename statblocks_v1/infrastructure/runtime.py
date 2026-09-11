@@ -36,7 +36,8 @@ from statblocks_v1.infrastructure.firestore_repositories import (
     FirestoreCandidateRepository,
     FirestoreStatblockPersistenceRepository,
 )
-from statblocks_v1.infrastructure.openai_provider import OpenAIDefinitionProvider
+from shared.inference_policy import inference_for
+from statblocks_v1.infrastructure.ge_provider import GenerationEngineDefinitionProvider
 from statblocks_v1.observability import apply_telemetry_settings
 
 logger = logging.getLogger("statblocks_v1")
@@ -189,13 +190,15 @@ def build_generation_service(
         asset_gateway = build_asset_gateway(settings, pipeline=asset_pipeline)
     except InternalServiceMisconfiguredError:
         raise
+    action = inference_for("statblock_definition_generation")
     return GenerationServiceV1(
-        provider=provider if provider is not None else OpenAIDefinitionProvider(),
+        provider=provider
+        if provider is not None
+        else GenerationEngineDefinitionProvider(profile=action.profile),
         candidates=candidate_repo,
         settings=GenerationSettingsV1(
             model=settings.model,
-            timeout_seconds=settings.provider_timeout_seconds,
-            max_retries=settings.provider_max_retries,
+            inference_budget_seconds=settings.inference_budget_seconds,
             candidate_ttl_seconds=settings.candidate_ttl_seconds,
         ),
         definition_resolver=PersistenceDefinitionResolver(persistence_repo),

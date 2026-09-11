@@ -901,8 +901,7 @@ class GenerationServiceV1:
                 schema=compiled,
                 options=ProviderOptionsV1(
                     model=self._settings.model,
-                    timeout_seconds=self._settings.timeout_seconds,
-                    max_retries=self._settings.max_retries,
+                    inference_budget_seconds=self._settings.inference_budget_seconds,
                 ),
             )
         except Exception:
@@ -988,8 +987,12 @@ class GenerationServiceV1:
             validation_receipt=receipt,
             generation_receipt=GenerationReceiptV1(
                 request_id=intent.request_id,
-                provider=self._provider.provider_name,
-                model=self._settings.model,
+                provider=outcome.provider or self._provider.provider_name,
+                model=(
+                    outcome.resolved_model
+                    or outcome.response_model
+                    or self._settings.model
+                ),
                 prompt_version=PROMPT_VERSION,
                 schema_version=compiled.compiler_version,
                 schema_fingerprint=compiled.fingerprint,
@@ -1027,16 +1030,14 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _default_generate_lease_seconds(settings: GenerationSettingsV1) -> int:
-    """Lease must outlast provider retries, asset generation, and fixed margin."""
+    """Lease must outlast the GE inference budget, asset generation, and fixed margin."""
 
     # Match StatblocksV1Settings default when composition does not pass an explicit lease.
     asset_timeout_seconds = float(
         os.getenv("STATBLOCKS_V1_ASSET_TIMEOUT_SECONDS", "20")
     )
     provider_budget = math.ceil(
-        float(settings.timeout_seconds) * (settings.max_retries + 1)
-        + asset_timeout_seconds
-        + 30
+        float(settings.inference_budget_seconds) + asset_timeout_seconds + 30
     )
     return max(120, provider_budget)
 

@@ -366,7 +366,7 @@ async def generate_core_images(
     Generate core images directly from text prompt without requiring a template.
     This is used in Step 2 of the new workflow.
     
-    Uses GenerationEngine ImageService for unified generation infrastructure.
+    Uses GenerationEngine generate_image and DungeonMindServer Cloudflare publish.
     """
     try:
         # Use CardGenerationService which now uses GenerationEngine

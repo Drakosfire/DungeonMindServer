@@ -155,7 +155,7 @@ def test_revise_request_fixture_round_trips_through_fastapi_route(monkeypatch) -
     service = GenerationServiceV1(
         provider=provider,
         candidates=candidates,
-        settings=GenerationSettingsV1("test-model", 1, 0, 60),
+        settings=GenerationSettingsV1("test-model", 1, 60),
         clock=lambda: now,
         candidate_id_factory=lambda: "cand_fix00000001",
         generate_operations=InMemoryCandidateGenerationOperationRepository(
