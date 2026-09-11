@@ -62,13 +62,12 @@ packages = [
 ]
 
 [tool.uv.sources]
-# Paired GenerationEngine cutover commit. After GE merge, replace with the merge SHA.
-generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "9ff5675eab3843e1676ead3d6e30330461721a8a" }
+# Accepted GenerationEngine cutover merge from PR #3.
+generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "0d01547e2d9afec68e87b4c8f7e6aaa047e8c42a" }
 
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=1.3.0",
 ]
-
 
