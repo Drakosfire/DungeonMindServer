@@ -13,7 +13,6 @@ from cloudflare.handle_images import upload_image_to_cloudflare
 from cloudflareR2.cloudflareR2_utils import upload_temp_file_and_get_url
 from typing import List, Tuple, Optional, Dict, Any
 
-from openai import OpenAI
 # Updated import to use new prompt management system
 from cardgenerator.prompts import prompt_manager
 from cardgenerator.card_generator_new import CardGeneratorV2, render_text_on_card
@@ -180,147 +179,6 @@ async def upload_image(file: UploadFile = File(...)):  # Note the File(...) spec
     return {"url": url}
 
 
-client = OpenAI()
-
-# Define the JSON schema
-ITEM_SCHEMA = {
-    "name": "item",
-    "schema": {
-    "type": "object",
-    "properties": {
-        "Name": {
-            "type": "string",
-            "description": "The name of the magical item."
-        },
-        "Type": {
-            "type": "string",
-            "description": "The type or category of the magical item."
-        },
-        "Rarity": {
-            "type": "string",
-            "description": "The rarity classification of the item.",
-            "enum": [
-                "Common",
-                "Uncommon",
-                "Rare",
-                "Very Rare",
-                "Legendary"
-            ]
-        },
-        "Value": {
-            "type": "string",
-            "description": "The monetary value of the item."
-        },
-        "Properties": {
-            "type": "array",
-            "description": "Unique properties or abilities of the magical item.",
-            "items": {
-                "type": "string"
-            }
-        },
-        "Damage Formula": {
-            "type": "string",
-            "description": "The formula used to calculate the damage of the item."
-        },
-        "Damage Type": {
-            "type": "string",
-            "description": "The type of damage the item inflicts."
-        },
-        "Weight": {
-            "type": "string",
-            "description": "The weight of the item."
-        },
-        "Description": {
-            "type": "string",
-            "description": "A detailed description of the item, including its design and features."
-        },
-        "Quote": {
-            "type": "string",
-            "description": "A memorable quote associated with the item."
-        },
-        "SD Prompt": {
-            "type": "string",
-            "description": "A description used for visual or artistic representation of the item."
-        }
-    },
-    "required": [
-        "Name",
-        "Type",
-        "Rarity",
-        "Value",
-        "Properties",
-        "Weight",
-        "Description",
-        "Quote",
-        "SD Prompt"
-    ],
-        "additionalProperties": False
-    }
-}
-
-@router.post('/generate-item-dict')
-async def generate_item_dict(user_idea: dict):
-    try:
-        # Extract the user's item idea
-        item_name = user_idea.get('userIdea', '')
-        
-        # Use the new prompt management system
-        prompt = prompt_manager.render_prompt(
-            template_name="item_generation",
-            context={"item_name": item_name}
-        )
-        
-        # Make the API call
-        response = client.beta.chat.completions.parse(
-            model="gpt-4o",  # Ensure the model is supported
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": ITEM_SCHEMA,  # Ensure ITEM_SCHEMA is correctly defined
-            }
-        )
-        
-        # Log the full response for debugging
-        logging.debug(f"Full response: {response}")
-        
-        # Safely extract and parse the structured data
-        parsed_data = response.choices[0].message.parsed if response.choices else None
-        if not parsed_data:
-            print("Parsed data is missing from the response trying content.")
-            parsed_data = response.choices[0].message.content
-            print(parsed_data)
-            
-
-        # Test if parsed data is a string and jsonify it
-        if isinstance(parsed_data, str):
-            parsed_data = json.loads(parsed_data)
-        
-        # Handle OpenAI wrapping response in extra structure
-        if "properties" in parsed_data and isinstance(parsed_data["properties"], dict):
-            parsed_data = parsed_data["properties"]
-        
-        # Ensure the parsed data contains the required fields
-        if "Name" not in parsed_data:
-            raise ValueError("Parsed data does not contain the 'Name' field.")
-        
-        # Format the structured response for the frontend
-        formatted_response = {parsed_data["Name"]: parsed_data}
-        
-        # Return the structured item data
-        return formatted_response
-
-    except Exception as e:
-        # Log detailed error for debugging
-        logging.error(f"Error generating item dictionary: {str(e)}", exc_info=True)
-        
-        # Raise an HTTP exception with details
-        raise HTTPException(status_code=500, detail=f"Failed to generate item: {str(e)}")
-    
 @router.post('/render-card-text')
 async def render_card_text(request: RenderCardRequest):
     """
@@ -1191,4 +1049,3 @@ async def duplicate_project(project_id: str, new_name: str, current_user=Depends
     except Exception as e:
         logger.error("Error duplicating project: %s", str(e))
         raise HTTPException(status_code=500, detail=f"Failed to duplicate project: {str(e)}")
-

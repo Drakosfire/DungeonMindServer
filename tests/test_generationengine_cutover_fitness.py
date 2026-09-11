@@ -37,6 +37,11 @@ MIGRATED_FILES = (
     "statblocks_v1/application/settings.py",
 )
 
+MIGRATED_PRODUCT_SURFACES = (
+    "cardgenerator/services/card_generation_service.py",
+    "routers/cardgenerator_router.py",
+)
+
 
 def test_migrated_modules_do_not_import_legacy_generationengine() -> None:
     root = Path(__file__).resolve().parents[1]
@@ -59,3 +64,14 @@ def test_ruleslawyer_does_not_import_generationengine() -> None:
         encoding="utf-8"
     )
     assert "generationengine" not in text
+
+
+def test_migrated_card_surfaces_have_no_direct_provider_bypass() -> None:
+    root = Path(__file__).resolve().parents[1]
+    violations: list[str] = []
+    for relative in MIGRATED_PRODUCT_SURFACES:
+        text = (root / relative).read_text(encoding="utf-8")
+        for needle in ("from openai import", "import openai", "fal_client"):
+            if needle in text:
+                violations.append(f"{relative}: {needle}")
+    assert violations == []
