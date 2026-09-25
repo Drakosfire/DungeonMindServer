@@ -82,14 +82,18 @@ def test_pr21_artifacts_are_gitignored():
     assert "egg-info" in checked.stdout
 
 
-def test_pr21_authority_docs_exist():
+def test_current_authority_docs_exist():
     required = (
+        "Docs/README.md",
+        "Docs/Design/README.md",
         "Docs/Design/DESIGN-dungeonbuddy-statblock-contract-v1.md",
-        "Docs/Design/AUDIT-dungeonbuddy-statblock-v1-route-readiness.md",
-        "Docs/Plans/PLAN-dungeonbuddy-statblock-v1-route-roadmap.md",
         "Docs/Design/AUDIT-statblock-legacy-consumers.md",
         "Docs/Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md",
-        "Docs/Plans/HANDOFF-pr21-statblock-legacy-quarantine-repo-hygiene.md",
+        "Docs/Design/GENERATION-STRUCTURED-CONFORMANCE.md",
+        "Docs/Guides/CONFIG-dungeonbuddy-statblock-v1.md",
+        "Docs/Runbooks/RUNBOOK-dungeonbuddy-statblock-v1.md",
+        "Docs/Plans/ANCHOR-dungeonmind-net-platform-refresh.md",
+        "Docs/Plans/README.md",
         "README.md",
     )
     for relative in required:
