@@ -1,46 +1,64 @@
-# DungeonMind - TTRPG Support Platform
+# DungeonMind Web API
 
-DungeonMind is a platform designed to support tabletop role-playing game (TTRPG) players, game masters, and content creators. This repository contains the modular FastAPI application that provides backend capabilities within the larger multi-container DungeonMind product.
+DungeonMindServer is the **public backend / BFF for dungeonmind.net**.
 
-## Project Overview
+It is a modular FastAPI application that owns public product APIs, authentication/session behavior, authorization/quotas, product workflow composition, and backend persistence for the web product.
 
-DungeonMind combines a FastAPI backend application with separate product containers and infrastructure. Within this server, the Rules-As-Guide system, card generator, statblock tools, and store features are modular routes and packages—not independently deployed backend microservices.
+It is not the owner of:
 
-## Key Features
+- frontend state/presentation — `LandingPage` / DungeonMind Web;
+- reusable inference execution — `GenerationEngine`;
+- durable governed world knowledge — `DungeonMind`;
+- DungeonBuddy product semantics/orchestration — `DungeonMindBuddy`.
 
-- **Professional Landing Page**: A separate React product container introduces the DungeonMind platform and its tools.
-- **API Server**: Built with FastAPI, the API server handles backend logic and supports all the TTRPG tools with a RESTful architecture.
-- **StoreGenerator Module**: Backend routes and packages for creating and managing in-game shops and stores.
-- **AI-Enhanced Tools**:
-   - **Rules Lawyer**: An interactive Rules-As-Guide (RAG) system that provides in-context rule guidance for smoother gameplay.
-   - **Card Generator**: Customizable TTRPG cards for characters, items, or spells, enhancing game immersion.
-   - **Statblock Generator**: Automatic generation of stat blocks for characters and creatures, simplifying preparation for game masters.
-- **NGINX and Cloudflare Configuration**: Efficient routing and redirection management to ensure secure, reliable, and fast access to all microservices.
+## Runtime shape
 
-## Project Goals
+This repository is a **modular monolith**, not a collection of independently deployed backend microservices.
 
-DungeonMind serves as a showcase for a modular, scalable TTRPG support platform, with the following goals:
+Current feature modules include:
 
-1. **Demonstrate Advanced Development Skills**: Showcase Alan Meigs' ability to create a modern, microservices-based web application utilizing Docker, NGINX, FastAPI, and React.
-2. **Enhance TTRPG Gameplay with AI and Automation**: Provide interactive, AI-driven tools that accelerate TTRPG world-building and make running campaigns smoother and more accessible.
-3. **Provide a Robust, Scalable Demo Platform**: Create a flexible and scalable foundation to support further tool development and feature additions, with potential for future user expansion.
+- authentication/session infrastructure;
+- CardGenerator;
+- StatBlockGenerator and the newer `statblocks_v1` bounded context;
+- Rules Lawyer / Rules-As-Guide;
+- StoreGenerator;
+- PlayerCharacterGenerator backend support;
+- asset/image integration;
+- other compatibility and product routes composed by the FastAPI app.
 
-## Architecture
+Extract a separately deployed service only when a concrete operational reason exists.
 
-DungeonMind is deployed as a multi-container product. This repository is one modular FastAPI application within that product:
+## Documentation
 
-- **Hostinger**: Domain and VPS.
-- **Frontend Service**: Hosts the React-based landing page, showcasing the platform and handling user interactions.
-- **DungeonMindAPI Server**: Manages backend logic, data processing, and serves the central API through modular routers and packages.
-- **StoreGenerator Module**: A feature module within the API server, not an independently deployed backend service.
-- **Reverse Proxy and Security**: NGINX handles routing and load balancing between services, while Cloudflare provides additional security, caching, and SSL/TLS support.
-- **Cloudflare**: Providing caching, security, and DNS services.
+Start at [Docs/README.md](Docs/README.md).
 
-## Deployment
+Current high-value authority includes:
 
-DungeonMind uses Docker for the product's containers. NGINX routes requests between product containers, while Cloudflare provides DNS, TLS, caching, and security services. This FastAPI application is deployed as one backend container; modular feature packages can be extracted only when a real deployment need justifies it.
+- `Docs/Design/DESIGN-dungeonbuddy-statblock-contract-v1.md` — current DungeonBuddy statblock contract owned by this server;
+- `Docs/Guides/CONFIG-dungeonbuddy-statblock-v1.md` — operational configuration;
+- `Docs/Runbooks/RUNBOOK-dungeonbuddy-statblock-v1.md` — deployment/rollback/smoke procedure;
+- `Docs/Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md` — current server composition/startup debt;
+- `Docs/Plans/ANCHOR-dungeonmind-net-platform-refresh.md` — local anchor for the cross-repository platform-refresh stewardship lane.
 
-## Future Plans
+Executable contract fixtures under `Docs/Design/fixtures/` are evidence, not generic prose documentation; keep them aligned with the owning schema/tests.
 
-DungeonMind is an evolving project with plans to expand tool functionality, enhance generative AI integration, and support even more complex TTRPG systems. Planned features include enhanced user interfaces, expanded API endpoints, and a broader range of AI-driven TTRPG creation tools.
+## Cross-repository architecture
 
+DungeonOverMind owns ecosystem architecture, repository ownership, contract topology, and cross-repository sequencing.
+
+Current platform-refresh architecture/reconnaissance lives there. This repository owns implementation once a bounded Server slice is dispatched here.
+
+## Development
+
+Use the committed `uv.lock` for reproducible environments.
+
+```bash
+uv sync --locked
+uv run pytest
+```
+
+The focused statblock-v1 lane also has repository scripts/tests documented by its config and runbook.
+
+## Current caution
+
+Open statblock PRs may contain branch-only contract evolution. Treat `main` plus merged PR evidence as current repository authority; do not update active docs to describe a stacked/open branch as shipped behavior.
