@@ -76,3 +76,20 @@ If files are missing, you'll get a 404 error when trying to load embeddings:
 Embeddings file not found: /path/to/DungeonMindServer/ruleslawyer/DnD_PHB_55_embeddings.csv
 ```
 
+
+
+## Embedding model cache
+
+The runtime model is currently `BAAI/bge-m3` on CPU.
+
+`ruleslawyer.ruleslawyer_helper.EmbeddingLoader` chooses its cache root in this order:
+
+1. `EMBEDDING_MODEL_PATH`
+2. `HF_HOME`
+3. `HUGGINGFACE_HUB_CACHE`
+4. `SENTENCE_TRANSFORMERS_HOME`
+5. default `~/.cache/huggingface`
+
+When a cache root is explicitly chosen, the loader also seeds the Hugging Face / sentence-transformers cache environment variables to that root before constructing `SentenceTransformer(model_name_or_path="BAAI/bge-m3", device="cpu")`.
+
+Do not rely on the retired root `README_MODEL_DOWNLOAD.md` Docker-volume instructions; this repository no longer contains the compose file or `TRANSFORMERS_CACHE` contract that document described. Current deployment must provide a writable/persistent cache using the environment actually configured by the deployment.
