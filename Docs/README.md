@@ -24,6 +24,10 @@ Use the smallest authority needed:
 - [Design/GENERATION-STRUCTURED-CONFORMANCE.md](Design/GENERATION-STRUCTURED-CONFORMANCE.md) — GenerationEngine consumer-boundary guidance.
 - `Design/fixtures/**` — executable contract/eval evidence.
 
+## Audit baseline
+
+- [Reports/REPORT-document-authority-audit-2026-09-25.md](Reports/REPORT-document-authority-audit-2026-09-25.md) — first documentation-rigor pass and placement evidence.
+
 ## Directory roles
 
 ### `Design/`

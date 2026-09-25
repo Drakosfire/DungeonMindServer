@@ -54,3 +54,10 @@ Use:
 - current code/tests/OpenAPI artifacts.
 
 Open PRs remain proposal/review evidence until merged into `main`.
+
+
+## Additional root-document retirement
+
+`README_MODEL_DOWNLOAD.md` was moved into `legacy-root/` because its Docker compose volume and `TRANSFORMERS_CACHE` instructions no longer describe current repository/deployment behavior.
+
+Current RulesLawyer model-cache guidance lives beside the module in `ruleslawyer/README_DATA_FILES.md`.
