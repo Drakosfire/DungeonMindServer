@@ -69,15 +69,17 @@ EMBEDDING_MODEL_PATH
 
 ## Active central documentation shape
 
-At this pass:
+Final first-pass shape:
 
 ```text
-69 files under Docs/
-22 historical Archive files
-47 active files
+71 files under Docs/
+23 historical Archive files
+48 active files
 36 active executable/design fixtures
-11 active prose/index/config/runbook files
+12 active prose/index/config/runbook/report files
 ```
+
+The increase from the working census is intentional: the cleanup added authority indexes, this durable audit report, and the dated archive ledger while removing stale material from active context.
 
 The 36 fixtures are intentionally active because tests/smokes consume them or they are current contract/evaluation evidence. They are not treated as prose-documentation clutter.
 
@@ -148,6 +150,8 @@ current code/tests/schema
 ```
 
 Open/stacked PRs are proposals, not current-main documentation authority.
+
+This rule is executable: `tests/statblockgenerator/test_production_app_mount_smoke.py::test_current_authority_docs_exist` now asserts the current authority set instead of requiring archived PR21-era plans/audits.
 
 ## Current cross-repository pressure
 
