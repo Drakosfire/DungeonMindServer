@@ -10,17 +10,14 @@ PYTHONPATH=. uv run --isolated --no-project --with 'fastapi==0.115.6' \
   python scripts/export_dungeonbuddy_statblock_openapi.py
 ```
 
-Use the committed `uv.lock` for reproducible environments:
+Use the committed `uv.lock` for reproducible local/server environments:
 
 ```bash
 uv sync --locked
-uv run uvicorn app:app --host 0.0.0.0 --port 8000
+uv run uvicorn app:app --host 0.0.0.0 --port 7860
 ```
 
-There is no Dockerfile in this repository at this commit, so no untested image
-build change is made. A future image should copy `pyproject.toml` and `uv.lock`
-before source and install with `uv sync --locked`, rather than compiling a new
-resolution during the image build.
+**Current Docker caveat:** the repository now has a Dockerfile, but it copies only `pyproject.toml` and runs `uv pip compile` during image build. The current image is therefore **not proven to resolve the same dependency graph as `uv.lock`**. Treat that as platform/deployment debt rather than claiming lockfile reproducibility for the image. A modernization slice should install from the committed lock before this runbook calls the Docker build reproducible.
 
 Check liveness without credentials:
 
