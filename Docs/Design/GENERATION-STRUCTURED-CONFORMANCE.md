@@ -76,6 +76,16 @@ Provider-native strict JSON Schema is an implementation optimization, not the Ge
 
 A provider without native strict-schema support may still satisfy `generate_structured()` through JSON-object or text generation followed by local validation and bounded correction inside GenerationEngine.
 
+Temperature policy has three distinct `TextRequest.temperature` states:
+
+- Omitted: GenerationEngine retains its compatibility default.
+- Numeric: the provider adapter forwards the value.
+- `None`: the provider adapter omits the temperature field.
+
+A product that delegates sampling to a provider/model must pass
+`temperature=None` explicitly. This controls inference execution only; the
+product still owns why that policy applies.
+
 The final structural conformance check belongs above provider adapters.
 
 ## Transition rule
