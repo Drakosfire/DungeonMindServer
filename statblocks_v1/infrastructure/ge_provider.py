@@ -67,6 +67,7 @@ class GenerationEngineDefinitionProvider:
             system_prompt=system,
             profile=self._profile,
             model=explicit_model,
+            temperature=None,
             json_schema=schema.schema,
             schema_name=schema.name,
             deadline_ms=int(options.inference_budget_seconds * 1000),
