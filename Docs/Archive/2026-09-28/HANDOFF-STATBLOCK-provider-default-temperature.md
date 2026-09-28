@@ -1,20 +1,24 @@
 # HANDOFF — STATBLOCK: request provider-default temperature through accepted GE
 
 **Created:** 2026-09-27
-**Status:** IMPLEMENTED / CYCLE 2 PENDING — PRIME owns acceptance and merge
-**Owner/repository:** DungeonMindServer; SERVER activates, PRIME reviews/controls merge
+**Status:** MERGED / ACCEPTED — PRIME Cycle 2 PASS; DEMO local adoption authorized and in progress
+**Owner/repository:** DungeonMindServer; implementation accepted and merged by PRIME
 **Activated implementation base:** Server `eb3125455454716d32c6daf53ad005cdc1ec968c`
 **Implementation code commit:** `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`
+**Accepted PR head:** `0ddedbde9836bd05c9812e182c715b9a42199dca`
+**Merged main commit:** `1e8a6185ed16f4cb4cd3596aec7e9e22a3f74ad1`
 
 **Cycle 2 test/evidence commit:** `7d0f21462fec76360515391b313d6bddca2c6dd8`
 
-**PR:** https://github.com/Drakosfire/DungeonMindServer/pull/34 (draft; PRIME review authority)
+**PR #34:** [merged 2026-09-28](https://github.com/Drakosfire/DungeonMindServer/pull/34)
+**PRIME acceptance:** [Cycle 2 PASS](https://github.com/Drakosfire/DungeonMindServer/pull/34#pullrequestreview-5334080400)
+**Exact-head CI:** [redteam-hardening SUCCESS](https://github.com/Drakosfire/DungeonMindServer/actions/runs/36378550004)
 **Activation GE pin:** `0d01547e2d9afec68e87b4c8f7e6aaa047e8c42a` (accepted #3)
 **Target GE pin:** `80288d7b467ac3c3586f4e3c964385cefe69f931` (accepted #7 / E5B.2)
 **PR topology:** serial — one bounded Server repair
-**Suggested branch/title:** `codex/statblock-provider-default-temperature` / `STATBLOCK: omit provider temperature through GenerationEngine`
+**Implementation branch/title:** `codex/statblock-provider-default-temperature` / `STATBLOCK: omit provider temperature through GenerationEngine`
 
-This is the SERVER implementation lease activated by the operator request and PRIME direction. It does not activate platform refresh, dispatch GE work, or grant merge authority.
+This archived handoff records the SERVER implementation lease activated by the operator request and PRIME direction. The code and evidence are accepted and merged. It does not activate platform refresh or dispatch GE work.
 
 ## 1. Evidence and execution contract
 
@@ -63,7 +67,7 @@ generic structured-conformance capabilities. Those are already accepted GE
 contracts, but Server consumer compatibility must be proved—not assumed from
 the narrow final #7 diff. No E5H–E5P/Jev/lifecycle capability is selected here.
 
-## 2. One merge-ready invariant
+## 2. Accepted invariant
 
 Server statblock generation and revision use the existing product request,
 profile/model, prompts, strict schema and deadline, but explicitly choose
@@ -124,20 +128,25 @@ Available owning-boundary regressions are `tests/statblocks_v1/**` (non-integrat
 This repair is independent of broad platform modernization. Keep
 `ANCHOR-dungeonmind-net-platform-refresh.md` at no-implementation-dispatch; do
 not activate its roadmap or mutate OverMind for a sampling call-site repair.
-Current archived statblock handoffs stay historical. Only mutable documents
-that actually claim this repair's pin/active state need settlement. The new
-report/handoff and the bounded consumer guidance comprise this local state set;
-SERVER records accepted merge/review after merge and then releases the lease.
-The target GE prerequisite is already merged; never invent this repair's future
-merge SHA or mark it complete inside its implementation PR.
+Current archived statblock handoffs stay historical. The source change, consumer
+proof, reviewer disposition and merge are recorded in this archive and its
+accompanying report. Current guidance remains in
+`Docs/Design/GENERATION-STRUCTURED-CONFORMANCE.md`; this archive is historical
+evidence and does not override code/tests. Target GE #7 and this Server repair
+are both merged.
 
-Runtime ownership: fake SDKs, test-only credentials, in-memory operation stores;
-no live Firestore, assets, provider calls, model prompt, Buddy World/campaign,
-DEMO request record or deployed service changes are authorized in this lane.
-Any live test is a separate explicit operator decision, not permission inherited
-from SERVER's earlier minimal diagnostic.
+Implementation/review runtime ownership was limited to fake SDKs, test-only
+credentials and in-memory operation stores; no provider, Firestore or deployed
+service calls were made by SERVER. After merge, PRIME separately authorized
+DEMO to adopt the accepted ref at its existing local API on port 7861. DEMO owns
+that runtime operation and the ordinary-UI request witness; hosted deployment is
+outside the authorization.
 
-## 6. Merge-blocking evidence
+## 6. Acceptance evidence (closed)
+
+All six handoff acceptance items below were satisfied on the reviewed head.
+PRIME Cycle 2 PASS and exact-head CI are recorded above. Known inherited
+harness failures and direct-handler scope limits remain explicit in the report.
 
 1. New omission regression fails on the old exact dependency/request combination.
    Against target pin, default-profile and explicit-model statblock requests
@@ -185,7 +194,7 @@ Name the additional migrated-consumer cohort/environment at activation. Do not
 silently weaken it to four fake-client statblock tests.
 
 Implementation evidence (2026-09-27) is in
-`Docs/Reports/REPORT-STATBLOCK-provider-default-temperature.md`. The exact #7
+[evidence report](../../Reports/REPORT-STATBLOCK-provider-default-temperature.md). The exact #7
 pin is installed and lock-checked; the public Server → real GE → OpenAI adapter
 fake-SDK witness passes initial and structural-repair calls, and fails against
 the old pin as required. The isolated v1 API/auth/lease/idempotency cohort passed
@@ -196,22 +205,29 @@ passed 10. The larger non-integration v1 cohort passed 290 tests, with two
 Pydantic 2.7.4 / `pydantic-core` 2.18.4 lane cannot build on Python 3.13. The
 static mask-prompt suite has five failures outside this repair's lease; the
 map-router suite cannot collect without production Firestore composition.
-The local red-team invocation did not finish; hosted exact-head red-team run
-`36376677914` succeeded, independently verified by PRIME.
+The local red-team invocation did not finish; hosted exact-head runs
+`36376677914` (Cycle 1) and `36378550004` (accepted Cycle 2) succeeded; PRIME
+independently verified the latter.
 
-PRIME Cycle 1 review `5333928957` confirmed the implementation and retained
-HOLD solely for §6.3 behavioral shared-consumer evidence. PRIME authorized the
-test-only lease extension above, including card item/core/template images, PCG,
-MapSpec/SVG, and remaining image consumers. The new actual-consumer cohort passed 11 tests (zero skips); the combined
-shared-consumer/statblock seam cohort passed 16 (zero skips). Evidence and
-remaining limits are recorded in the report. No acceptance token is claimed before PRIME's
-Cycle 2 review; the draft PR and original failed DEMO operation remain intact.
+PRIME Cycle 1 review `5333928957` confirmed implementation correctness and held
+only for §6.3 behavioral shared-consumer evidence. PRIME Cycle 2 review
+`5334080400` passed the exact PR head and closed that hold. The PR merged as
+`1e8a6185ed16f4cb4cd3596aec7e9e22a3f74ad1` on 2026-09-28. Hosted redteam run
+`36378550004` passed on the accepted head. PRIME authorized the test-only lease
+extension above, including card item/core/template images, PCG, MapSpec/SVG, and
+remaining image consumers. The new actual-consumer cohort passed 11 tests (zero
+skips); the combined shared-consumer/statblock seam cohort passed 16 (zero skips).
+Evidence and remaining limits are recorded in the report. PRIME accepted the
+reviewed evidence. The original failed DEMO operation remains terminal and
+untouched.
 
-Handback includes exact base/head/PR, lease diff, installed GE pin, request parity,
-SDK omission/repair proof, regression union, lock changes, inherited failures,
-tests not run and remaining live-witness status. PRIME reviews the frozen head;
-worker opens only the assigned PR after activation and never merges autonomously.
+Acceptance receipt: exact base/head/merge, installed GE pin, request parity,
+SDK omission/repair proof, consumer regression union, lock changes, known
+harness failures and test limits are preserved here and in the report. PRIME
+owns review and merge; both are complete for PR #34.
 
-After accepted merge/deployment, DEMO may request a genuinely new explicit
+After adoption at the existing local runtime is independently confirmed ready,
+DEMO may use the authorized ordinary-UI flow for a genuinely new explicit
 generation intent. Preserve `d41f849e-334d-4248-814d-8e9ccebf9148` as the
-original failed witness. Do not reuse its same key/body expecting new inference.
+original failed witness; do not reuse its key/body expecting new inference.
+Runtime adoption/readiness evidence is pending in DEMO's owner handback.

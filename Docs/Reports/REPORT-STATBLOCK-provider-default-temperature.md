@@ -1,8 +1,12 @@
 # Evidence — statblock provider-default temperature
 
-**Status:** Cycle 2 evidence submitted for PRIME review; draft PR #34 remains unmerged; no live DEMO acceptance claimed
+**Status:** IMPLEMENTED, ACCEPTED and MERGED; local DEMO adoption/readiness remains in progress
 
-**Base:** Server main `eb3125455454716d32c6daf53ad005cdc1ec968c`
+**Implementation base:** Server main `eb3125455454716d32c6daf53ad005cdc1ec968c`
+
+**Accepted head:** `0ddedbde9836bd05c9812e182c715b9a42199dca`
+
+**Merged main:** `1e8a6185ed16f4cb4cd3596aec7e9e22a3f74ad1` (2026-09-28)
 
 **Branch:** `codex/statblock-provider-default-temperature`
 
@@ -10,7 +14,13 @@
 
 **Cycle 2 test/evidence commit:** `7d0f21462fec76360515391b313d6bddca2c6dd8`
 
-**PR:** https://github.com/Drakosfire/DungeonMindServer/pull/34 (draft; PRIME review authority)
+**Final PR documentation commit:** `0ddedbde9836bd05c9812e182c715b9a42199dca`
+
+**PR #34:** [merged](https://github.com/Drakosfire/DungeonMindServer/pull/34)
+
+**PRIME Cycle 2:** [PASS](https://github.com/Drakosfire/DungeonMindServer/pull/34#pullrequestreview-5334080400)
+
+**Accepted-head CI:** [redteam-hardening SUCCESS](https://github.com/Drakosfire/DungeonMindServer/actions/runs/36378550004)
 
 **GE dependency:** accepted #7 merge `80288d7b467ac3c3586f4e3c964385cefe69f931`
 
@@ -57,16 +67,15 @@ update and call-site change must land together.
 - `uv lock --check`: passed; `git diff --check`: passed on tracked implementation
   paths; `compileall` passed on changed Python files.
 - The local red-team invocation stalled and was stopped. Hosted exact-head
-  run `36376677914` on `0828fbbecfacd5cd1ed594f2bea17bf29946a25d`
-  completed **SUCCESS**, independently verified by PRIME and refreshed by SERVER.
-  The new test-only head has its own hosted gate; its status is reported with the
-  handback. No lint/type-check command is configured in the repository workflow.
+runs `36376677914` (Cycle 1) and `36378550004` (accepted Cycle 2 head) both
+completed **SUCCESS**. PRIME independently confirmed the current-head result.
+No lint/type-check command is configured in the repository workflow.
 
 Commands used the isolated Python 3.13.1 environment, accepted GE #7 and fake
 SDKs. No live OpenAI/Gateway/Firestore call was made. The existing failed DEMO
 request `d41f849e-334d-4248-814d-8e9ccebf9148` was not retried or modified.
 
-## Remaining review evidence / limits
+## Review boundaries and known inherited failures
 
 - The current source's `tests/test_map_prompt.py` has five failures in static
   mask-prompt expectations; these tests do not exercise GenerationEngine and
@@ -74,10 +83,10 @@ request `d41f849e-334d-4248-814d-8e9ccebf9148` was not retried or modified.
 - `tests/test_map_router.py` cannot collect in the isolated checkout because it
   imports the full app, whose global Firestore composition requires an unavailable
   service account. Its collection failure is outside the changed paths.
-- No live DEMO acceptance is claimed. After this fix is accepted and deployed,
-  DEMO may use its standing authorization for a genuinely new explicit
-  generation intent. The original failed operation remains terminal and
-  replay-only.
+- No provider call or live DEMO generation is included in this implementation
+evidence. PRIME authorized adoption only at DEMO's existing local service;
+DEMO owns its separate readiness and new-intent witness. The original failed
+operation remains terminal and replay-only.
 
 ## Cycle 1 review and authorized rework
 
@@ -139,14 +148,14 @@ Verification on the same exact installed GE #7:
 - Installed `direct_url.json` reconfirmed #7 SHA. The base remains
   `eb3125455454716d32c6daf53ad005cdc1ec968c`; no other open work was inherited.
 
-This is the second substantive implementation/evidence cycle following PRIME's
-Cycle 1 review. Broad unchanged cohorts were not repeated. Measured test times
-above are test wall time only; total task cost/token usage is unavailable and
-account-wide usage must not be represented as task cost. PRIME owns Cycle 2
-acceptance, token issuance and merge. SERVER has not updated runtime 7861 or
-mutated/retried the original terminal failed operation.
+One substantive test-only rework cycle followed PRIME's Cycle 1 HOLD. PRIME's
+independent Cycle 2 PASS closed the evidence hold, and PR #34 was merged to main.
+Broad unchanged cohorts were not repeated. Measured test times above are test
+wall time only; total task cost/token usage was unavailable. SERVER did not
+mutate/retry the original terminal failed operation.
 
-Cumulative committed diff against the exact base contains only the nine
-leased files. `git diff --check`, `uv lock --check` and compilation of the new
-test passed. Hydrated LFS assets in this temporary worktree were not staged or
-committed; saved checkout and running DEMO runtime were not changed.
+Cumulative PR diff against the exact implementation base contains only the
+nine leased files. `git diff --check`, `uv lock --check` and compilation of the new
+test passed. The temporary implementation worktree contained hydrated LFS assets; none were
+staged or committed. The main checkout has since been fast-forwarded to the merge.
+DEMO runtime adoption is a separate owner-coordinated operation.

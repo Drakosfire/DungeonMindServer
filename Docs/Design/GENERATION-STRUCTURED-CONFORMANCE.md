@@ -84,7 +84,9 @@ Temperature policy has three distinct `TextRequest.temperature` states:
 
 A product that delegates sampling to a provider/model must pass
 `temperature=None` explicitly. This controls inference execution only; the
-product still owns why that policy applies.
+product still owns why that policy applies. The SERVER statblock-v1 call site
+uses this state; its regression exercises initial and structural-repair requests
+through the accepted pin.
 
 The final structural conformance check belongs above provider adapters.
 

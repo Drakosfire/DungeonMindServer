@@ -8,4 +8,4 @@ Current:
 
 Current statblock-v1 contract/config/runbook authority lives under `Design/`, `Guides/`, and `Runbooks/`. Open PRs #28/#29 are branch work, not mainline plan authority.
 
-Completed statblock-v1 transition handoffs are historical evidence under `Docs/Archive/2026-09-25/statblock-v1-transition/`.
+Completed statblock-v1 transition handoffs are historical evidence under `Docs/Archive/2026-09-25/statblock-v1-transition/`. The accepted provider-default temperature handoff is archived at `Docs/Archive/2026-09-28/HANDOFF-STATBLOCK-provider-default-temperature.md`; its evidence receipt remains under `Docs/Reports/`.
