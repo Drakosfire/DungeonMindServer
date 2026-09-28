@@ -1,7 +1,7 @@
 # HANDOFF — STATBLOCK: request provider-default temperature through accepted GE
 
 **Created:** 2026-09-27
-**Status:** IMPLEMENTED / REVIEW HOLD — consumer coverage gaps and test-harness failures recorded for PRIME
+**Status:** IMPLEMENTED / CYCLE 2 PENDING — PRIME owns acceptance and merge
 **Owner/repository:** DungeonMindServer; SERVER activates, PRIME reviews/controls merge
 **Activated implementation base:** Server `eb3125455454716d32c6daf53ad005cdc1ec968c`
 **Implementation code commit:** `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`
@@ -92,6 +92,7 @@ Durable idempotency/failure replay and observation truth remain unchanged.
 statblocks_v1/infrastructure/ge_provider.py
 tests/statblocks_v1/test_ge_provider.py
 tests/statblocks_v1/test_ge_temperature_omission.py                 # new integrated fake-SDK proof
+tests/test_ge_shared_consumer_compatibility.py                      # PRIME Cycle 1 test-only extension
 pyproject.toml
 uv.lock
 Docs/Design/GENERATION-STRUCTURED-CONFORMANCE.md                    # bounded current sampling guidance
@@ -114,7 +115,7 @@ The shared GenerationEngine consumer cohort was identified before editing:
 - text: map SVG mask generation and player-character generation;
 - image: card generation, map inpainting, map generation and image-management routes.
 
-Available owning-boundary regressions are `tests/statblocks_v1/**` (non-integration), `tests/test_map_inpainting.py`, `tests/test_map_router.py`, `tests/test_map_prompt.py`, `tests/test_inference_policy.py`, `tests/test_generationengine_cutover_fitness.py`, and `tests/test_packaging_identity.py`. The current repository has no focused tests for card-generation service, player-character generation, or map prompt/SVG-mask GenerationEngine invocation; those coverage gaps will be reported explicitly and will not be presented as exercised. The installed environment uses fake SDK clients only, dummy test credentials from the test conftest where required, and no provider/network call.
+Available owning-boundary regressions are `tests/statblocks_v1/**` (non-integration), `tests/test_map_inpainting.py`, `tests/test_map_router.py`, `tests/test_map_prompt.py`, `tests/test_inference_policy.py`, `tests/test_generationengine_cutover_fitness.py`, and `tests/test_packaging_identity.py`. At activation the repository had no focused behavioral tests for card-generation service, player-character generation, or map prompt/SVG-mask GenerationEngine invocation. PRIME Cycle 1 authorized adding these witnesses in `tests/test_ge_shared_consumer_compatibility.py` on this same PR. This test-only extension captures actual consumer requests and normal results through real pinned GE with external IO fakes; runtime/model/prompt/dependency edits remain excluded. The installed environment uses fake SDK clients only, dummy test credentials from the test conftest where required, and no provider/network call.
 
 This repair is independent of broad platform modernization. Keep
 `ANCHOR-dungeonmind-net-platform-refresh.md` at no-implementation-dispatch; do
@@ -191,15 +192,15 @@ passed 10. The larger non-integration v1 cohort passed 290 tests, with two
 Pydantic 2.7.4 / `pydantic-core` 2.18.4 lane cannot build on Python 3.13. The
 static mask-prompt suite has five failures outside this repair's lease; the
 map-router suite cannot collect without production Firestore composition.
-The repository red-team CI target emitted ten passing tests but did not finish
-with a summary in this environment; record that gate as unverified.
+The local red-team invocation did not finish; hosted exact-head red-team run
+`36376677914` succeeded, independently verified by PRIME.
 
-No focused consumer tests exist for card generation, player-character
-generation, or map prompt/SVG-mask GenerationEngine calls. Those shared-pin
-compatibility witnesses are not satisfied by this evidence; PRIME must decide
-whether to add an in-lease static/request-parity witness, amend the lease, or
-hold acceptance pending owner-supplied consumer tests. Do not claim the
-acceptance token is satisfied while that review gate is open.
+PRIME Cycle 1 review `5333928957` confirmed the implementation and retained
+HOLD solely for §6.3 behavioral shared-consumer evidence. PRIME authorized the
+test-only lease extension above, including card item/core/template images, PCG,
+MapSpec/SVG, and remaining image consumers. New evidence and remaining limits
+are recorded in the report. No acceptance token is claimed before PRIME's
+Cycle 2 review; the draft PR and original failed DEMO operation remain intact.
 
 Handback includes exact base/head/PR, lease diff, installed GE pin, request parity,
 SDK omission/repair proof, regression union, lock changes, inherited failures,

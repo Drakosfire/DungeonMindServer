@@ -1,6 +1,6 @@
 # Evidence — statblock provider-default temperature
 
-**Status:** implementation evidence for PRIME review; no merge or live DEMO acceptance claimed
+**Status:** Cycle 2 evidence submitted for PRIME review; draft PR #34 remains unmerged; no live DEMO acceptance claimed
 
 **Base:** Server main `eb3125455454716d32c6daf53ad005cdc1ec968c`
 
@@ -52,10 +52,11 @@ update and call-site change must land together.
 - Map inpainting and compositing regressions: **10 passed**.
 - `uv lock --check`: passed; `git diff --check`: passed on tracked implementation
   paths; `compileall` passed on changed Python files.
-- The repository's red-team CI target was started with CI-style dummy
-  credentials; it emitted 10 passing tests but stalled before a final summary and
-  was stopped. Its overall result remains unverified. No lint/type-check command
-  is configured in the repository workflow.
+- The local red-team invocation stalled and was stopped. Hosted exact-head
+  run `36376677914` on `0828fbbecfacd5cd1ed594f2bea17bf29946a25d`
+  completed **SUCCESS**, independently verified by PRIME and refreshed by SERVER.
+  The new test-only head has its own hosted gate; its status is reported with the
+  handback. No lint/type-check command is configured in the repository workflow.
 
 Commands used the isolated Python 3.13.1 environment, accepted GE #7 and fake
 SDKs. No live OpenAI/Gateway/Firestore call was made. The existing failed DEMO
@@ -69,13 +70,74 @@ request `d41f849e-334d-4248-814d-8e9ccebf9148` was not retried or modified.
 - `tests/test_map_router.py` cannot collect in the isolated checkout because it
   imports the full app, whose global Firestore composition requires an unavailable
   service account. Its collection failure is outside the changed paths.
-- This repository has no focused unit suites for `CardGenerationService`, player
-  character generation, or the GenerationEngine invocations in map prompt/SVG
-  mask compilation. The unchanged call sites were identified in the handoff;
-  this PR does not claim those behaviors were directly exercised. PRIME should
-  treat the missing consumer-specific witnesses as a review gate or explicitly
-  accept the bounded evidence limitation.
 - No live DEMO acceptance is claimed. After this fix is accepted and deployed,
   DEMO may use its standing authorization for a genuinely new explicit
   generation intent. The original failed operation remains terminal and
   replay-only.
+
+## Cycle 1 review and authorized rework
+
+PRIME review `5333928957` on `0828fbbecfacd5cd1ed594f2bea17bf29946a25d`
+confirmed the implementation, exact dependency and hosted CI, and retained HOLD
+solely for handoff §6.3 shared-consumer behavioral evidence. PRIME independently
+ran the 290 v1 cases with the two unchanged nested-install checks deselected,
+the five focused tests and the 19 existing shared/map-image tests successfully.
+
+PRIME extended the lease to one test file,
+`tests/test_ge_shared_consumer_compatibility.py`, and factual handoff/report/PR
+updates. This rework changes no runtime, prompt, model, schema or dependency.
+SERVER implemented the following actual consumer witnesses:
+
+- Card item: real service prompt manager, `STRUCTURED_LOW_COST` / explicit
+  `gpt-4o`, item schema/required fields, omitted request temperature retaining
+  default numeric `0.7`, and keyed frontend item response.
+- PCG: actual `generate_preferences`, real prompt manager and validated
+  preference parsing; `TEXT_FAST` / no explicit model resolves `gpt-5.1`,
+  numeric `0.7`, unchanged token/product response mapping.
+- MapSpec: actual compiler and Pydantic model/schema, input/style/default prompt,
+  `STRUCTURED_LOW_COST` resolving `gpt-5.1`, numeric `0.7`, source-prompt and hard
+  constraint interpretation.
+- SVG: actual generation/extraction/validation; `TEXT_FAST` resolving
+  `gpt-5.1`, unchanged prompts/numeric `0.7`, fenced SVG interpreted normally.
+- Card core/template image methods: actual service calls through real GE,
+  explicit `nano-banana-pro` / `flux-lora-i2i`, original prompts, dimensions,
+  image counts and template/strength policy; actual GE image bytes reach the
+  publication seam and return the product URL list.
+- Map inpainting: actual bounded PNG decoding and `edit_image` through real GE,
+  `IMAGE_EDIT_HIGH_QUALITY` / `gpt-image-1.5`, mask/base/negative prompt
+  preserved; real GE image result is published and returned as a URL.
+- Map generation route: actual MapSpec → compiled prompt → real GE image
+  pipeline, `IMAGE_HIGH_QUALITY` / `gpt-image-1.5`, requested dimensions,
+  negative constraints, and normal response/asset/owner mapping.
+- Image-library route: actual handler for each of `flux-2-pro`,
+  `nano-banana-pro`, and `gpt-image-1.5`; selected model/count/dimensions,
+  publication bytes, asset ownership and generation-info response preserved.
+
+A recording subclass captures requests then delegates to the real installed
+`GenerationClient`. Text/structured calls use its real OpenAI adapter with a
+fake SDK; image calls use its injected provider interface returning generated
+PNG bytes. Only external IO seams are faked: image publication, asset storage,
+quota persistence and Firestore bootstrap. Unexpected Firestore access raises;
+actual consumer bodies, schemas, prompt managers and result interpretation run.
+Dummy R2 credentials suppress metadata discovery and dotenv loading is disabled.
+These route witnesses call handlers directly with a validated user; they prove
+consumer compatibility, not HTTP authentication or deployed composition.
+
+Verification on the same exact installed GE #7:
+
+- New shared-consumer file: **11 passed, zero skips**, 12.40 seconds.
+- New file plus existing statblock adapter/omission witnesses in one process:
+  **16 passed, zero skips**, 12.13 seconds; this verifies test isolation against
+  the changed statblock seam. Existing Pydantic deprecation warnings remain.
+- One targeted map-route diagnostic: **1 passed**, 12.37 seconds. An earlier
+  first invocation was interrupted after seven progress passes before a summary;
+  it is not counted as completed evidence.
+- Installed `direct_url.json` reconfirmed #7 SHA. The base remains
+  `eb3125455454716d32c6daf53ad005cdc1ec968c`; no other open work was inherited.
+
+This is the second substantive implementation/evidence cycle following PRIME's
+Cycle 1 review. Broad unchanged cohorts were not repeated. Measured test times
+above are test wall time only; total task cost/token usage is unavailable and
+account-wide usage must not be represented as task cost. PRIME owns Cycle 2
+acceptance, token issuance and merge. SERVER has not updated runtime 7861 or
+mutated/retried the original terminal failed operation.
