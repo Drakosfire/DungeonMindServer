@@ -5,7 +5,11 @@
 **Owner/repository:** DungeonMindServer; SERVER activates, PRIME reviews/controls merge
 **Activated implementation base:** Server `eb3125455454716d32c6daf53ad005cdc1ec968c`
 **Implementation code commit:** `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`
-**Current GE pin:** `0d01547e2d9afec68e87b4c8f7e6aaa047e8c42a` (accepted #3)
+
+**Cycle 2 test/evidence commit:** `7d0f21462fec76360515391b313d6bddca2c6dd8`
+
+**PR:** https://github.com/Drakosfire/DungeonMindServer/pull/34 (draft; PRIME review authority)
+**Activation GE pin:** `0d01547e2d9afec68e87b4c8f7e6aaa047e8c42a` (accepted #3)
 **Target GE pin:** `80288d7b467ac3c3586f4e3c964385cefe69f931` (accepted #7 / E5B.2)
 **PR topology:** serial — one bounded Server repair
 **Suggested branch/title:** `codex/statblock-provider-default-temperature` / `STATBLOCK: omit provider temperature through GenerationEngine`
@@ -198,8 +202,9 @@ The local red-team invocation did not finish; hosted exact-head red-team run
 PRIME Cycle 1 review `5333928957` confirmed the implementation and retained
 HOLD solely for §6.3 behavioral shared-consumer evidence. PRIME authorized the
 test-only lease extension above, including card item/core/template images, PCG,
-MapSpec/SVG, and remaining image consumers. New evidence and remaining limits
-are recorded in the report. No acceptance token is claimed before PRIME's
+MapSpec/SVG, and remaining image consumers. The new actual-consumer cohort passed 11 tests (zero skips); the combined
+shared-consumer/statblock seam cohort passed 16 (zero skips). Evidence and
+remaining limits are recorded in the report. No acceptance token is claimed before PRIME's
 Cycle 2 review; the draft PR and original failed DEMO operation remain intact.
 
 Handback includes exact base/head/PR, lease diff, installed GE pin, request parity,
