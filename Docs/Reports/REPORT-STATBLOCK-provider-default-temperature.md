@@ -6,6 +6,8 @@
 
 **Branch:** `codex/statblock-provider-default-temperature`
 
+**Implementation code commit:** `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`
+
 **GE dependency:** accepted #7 merge `80288d7b467ac3c3586f4e3c964385cefe69f931`
 
 ## Change

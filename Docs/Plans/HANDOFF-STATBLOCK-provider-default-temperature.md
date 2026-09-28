@@ -4,6 +4,7 @@
 **Status:** IMPLEMENTED / REVIEW HOLD — consumer coverage gaps and test-harness failures recorded for PRIME
 **Owner/repository:** DungeonMindServer; SERVER activates, PRIME reviews/controls merge
 **Activated implementation base:** Server `eb3125455454716d32c6daf53ad005cdc1ec968c`
+**Implementation code commit:** `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`
 **Current GE pin:** `0d01547e2d9afec68e87b4c8f7e6aaa047e8c42a` (accepted #3)
 **Target GE pin:** `80288d7b467ac3c3586f4e3c964385cefe69f931` (accepted #7 / E5B.2)
 **PR topology:** serial — one bounded Server repair
@@ -105,7 +106,7 @@ and owner rebrief. Discovery is not permission to bundle cleanup.
 
 ## 5. Activation and authority sync
 
-Activation facts (2026-09-27): Server main was fetched at exact base `eb3125455454716d32c6daf53ad005cdc1ec968c`. Current open PRs are #28 (`7273be812c0158b8e4aa645d0ff19acc0e1639b1`) and #29 (`83e242f8c2ba791bd30c70c9409f99f3cc46f9db`). File lists confirm neither touches this lease; #28 changes prompts/domain/schema/openapi/fixtures, #29 changes rule_elements and legacy revision tests. They remain proposed behavior. The implementation branch is `codex/statblock-provider-default-temperature`. GE #7 is already merged; this lease changes only the consumer and pin, not GE.
+Activation facts (2026-09-27): Server main was fetched at exact base `eb3125455454716d32c6daf53ad005cdc1ec968c`. Current open PRs are #28 (`7273be812c0158b8e4aa645d0ff19acc0e1639b1`) and #29 (`83e242f8c2ba791bd30c70c9409f99f3cc46f9db`). File lists confirm neither touches this lease; #28 changes prompts/domain/schema/openapi/fixtures, #29 changes rule_elements and legacy revision tests. They remain proposed behavior. The implementation branch is `codex/statblock-provider-default-temperature`, code commit `ca3ffa5794fea3ff5ad0a83ace999d2e54899f67`. GE #7 is already merged; this lease changes only the consumer and pin, not GE.
 
 The shared GenerationEngine consumer cohort was identified before editing:
 
