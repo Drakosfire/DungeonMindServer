@@ -3,7 +3,7 @@ Enhanced Session Models for Global Session Management
 Supports CardGenerator and future tool integrations
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field
 from models.dungeonmind_objects import StepId
@@ -248,6 +248,50 @@ class SessionResponse(BaseModel):
     message: Optional[str] = Field(None, description="Additional message")
 
 
+class SessionSnapshotV1(BaseModel):
+    """Allowlisted frontend session state; deliberately excludes request metadata."""
+    schema_version: Literal[1] = 1
+    session_id: str
+    user_id: Optional[str] = None
+    created_at: datetime
+    last_accessed: datetime
+    expires_at: datetime
+    cardgenerator: Optional[CardGeneratorSessionState] = None
+    storegenerator: Optional[StoreGeneratorSessionState] = None
+    ruleslawyer: Optional[RulesLawyerSessionState] = None
+    statblockgenerator: Optional[StatblockGeneratorSessionState] = None
+    active_world_id: Optional[str] = None
+    active_project_id: Optional[str] = None
+    current_tool: str
+    clipboard: List[str]
+    recently_viewed: List[str]
+    pinned_objects: List[str]
+    preferences: GlobalSessionPreferences
+    platform: str
+
+
+class SessionAvailableResponseV1(BaseModel):
+    """Versioned create/restore success response with a complete public snapshot."""
+    schema_version: Literal[1] = 1
+    outcome: Literal["created", "restored", "created_fallback"]
+    success: Literal[True] = True
+    session_id: str
+    session: SessionSnapshotV1
+    status: SessionStatus
+    message: Optional[str] = None
+
+
+class SessionNotFoundResponseV1(BaseModel):
+    """Typed restore miss returned when fallback creation is disabled."""
+    schema_version: Literal[1] = 1
+    outcome: Literal["not_found"] = "not_found"
+    success: Literal[False] = False
+    session_id: None = None
+    session: None = None
+    status: None = None
+    message: str
+
+
 # Tool-specific update requests
 class CardGeneratorUpdateRequest(BaseModel):
     """Update request for CardGenerator session state"""
@@ -260,4 +304,4 @@ class CardGeneratorUpdateRequest(BaseModel):
     current_project_id: Optional[str] = None
     preferences: Optional[Dict[str, Any]] = None
     generated_images: Optional[List[str]] = None
-    selected_assets: Optional[Dict[str, str]] = None 
+    selected_assets: Optional[Dict[str, str]] = None
