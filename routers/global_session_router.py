@@ -5,6 +5,7 @@ Provides endpoints for managing global session state across all DungeonMind tool
 
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import logging
 from session_management import (
@@ -14,7 +15,8 @@ from session_management import (
 from models.session_models import (
     CreateSessionRequest, UpdateSessionRequest, RestoreSessionRequest,
     SessionResponse, SessionStatus, CardGeneratorUpdateRequest,
-    GlobalSessionPreferences
+    GlobalSessionPreferences, SessionSnapshotV1,
+    SessionAvailableResponseV1, SessionNotFoundResponseV1
 )
 from models.dungeonmind_objects import ObjectType
 from database.dungeonmind_objects_db import dungeonmind_db
@@ -23,7 +25,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/session", tags=["Global Session"])
 
 
-@router.post("/create", response_model=SessionResponse)
+def _session_snapshot(session: EnhancedGlobalSession) -> SessionSnapshotV1:
+    """Build the public allowlisted snapshot without request metadata."""
+    return SessionSnapshotV1(
+        session_id=session.session_id,
+        user_id=session.user_id,
+        created_at=session.created_at,
+        last_accessed=session.last_accessed,
+        expires_at=session.expires_at,
+        cardgenerator=session.cardgenerator,
+        storegenerator=session.storegenerator,
+        ruleslawyer=session.ruleslawyer,
+        statblockgenerator=session.statblockgenerator,
+        active_world_id=session.active_world_id,
+        active_project_id=session.active_project_id,
+        current_tool=session.current_tool,
+        clipboard=session.clipboard,
+        recently_viewed=session.recently_viewed,
+        pinned_objects=session.pinned_objects,
+        preferences=session.preferences,
+        platform=session.platform,
+    )
+
+
+@router.post("/create", response_model=SessionAvailableResponseV1)
 async def create_session(
     request: CreateSessionRequest,
     http_request: Request,
@@ -59,9 +84,11 @@ async def create_session(
         
         logger.info(f"Created new session {session_id} for user {request.user_id}")
         
-        return SessionResponse(
+        return SessionAvailableResponseV1(
+            outcome="created",
             success=True,
             session_id=session_id,
+            session=_session_snapshot(session),
             status=status,
             message="Session created successfully"
         )
@@ -71,7 +98,16 @@ async def create_session(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/restore", response_model=SessionResponse)
+@router.post(
+    "/restore",
+    response_model=SessionAvailableResponseV1,
+    responses={
+        404: {
+            "model": SessionNotFoundResponseV1,
+            "description": "Session not found and fallback creation is disabled",
+        }
+    },
+)
 async def restore_session(
     request: RestoreSessionRequest,
     http_request: Request,
@@ -86,6 +122,7 @@ async def restore_session(
             session_id = http_request.cookies.get("dungeonmind_session_id")
         
         session = None
+        outcome = "restored"
         if session_id:
             session = session_manager.get_session(session_id)
         
@@ -93,6 +130,9 @@ async def restore_session(
         if not session and request.fallback_to_new:
             session_id = session_manager.create_session(request=http_request)
             session = session_manager.get_session(session_id)
+            outcome = "created_fallback"
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to create fallback session")
             
             # Update cookie using session configuration
             from session_config import session_config
@@ -108,13 +148,18 @@ async def restore_session(
         elif session:
             message = "Session restored successfully"
         else:
-            raise HTTPException(status_code=404, detail="Session not found")
+            not_found = SessionNotFoundResponseV1(
+                message="Session not found and fallback creation is disabled"
+            )
+            return JSONResponse(status_code=404, content=jsonable_encoder(not_found))
         
         status = session_manager.get_session_status(session)
         
-        return SessionResponse(
+        return SessionAvailableResponseV1(
+            outcome=outcome,
             success=True,
             session_id=session_id,
+            session=_session_snapshot(session),
             status=status,
             message=message
         )
@@ -506,4 +551,4 @@ async def cleanup_expired_sessions():
         
     except Exception as e:
         logger.error(f"Failed to cleanup sessions: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
