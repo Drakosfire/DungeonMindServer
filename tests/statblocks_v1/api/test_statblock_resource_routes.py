@@ -7,8 +7,10 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-import pytest
+from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
+import pytest
 
 from statblocks_v1.api.dependencies import (
     get_candidate_repository,
@@ -17,10 +19,21 @@ from statblocks_v1.api.dependencies import (
     get_revision_service,
 )
 from statblocks_v1.application.revisions import SERVICE_CREATED_BY, RevisionServiceV1
+from statblocks_v1.domain.canonicalization import canonicalize_definition
+from statblocks_v1.domain.digests import compute_definition_digest
+from statblocks_v1.domain.resources import (
+    STATBLOCK_CONTRACT,
+    STATBLOCK_CONTRACT_VERSION,
+    GeneratedStatblockCandidateV1,
+    StatblockRevisionResourceV1,
+)
 from statblocks_v1.domain.receipts import ValidationMode
-from statblocks_v1.domain.resources import STATBLOCK_CONTRACT, STATBLOCK_CONTRACT_VERSION, GeneratedStatblockCandidateV1
 from statblocks_v1.domain.rule_elements import StatblockDefinitionV1
 from statblocks_v1.domain.validation import validate_definition
+from statblocks_v1.infrastructure.firestore_repositories import (
+    FirestoreStatblockPersistenceRepository,
+    STATBLOCKS_COLLECTION,
+)
 from statblocks_v1.infrastructure.memory_repositories import (
     DeterministicIdFactory,
     InMemoryCandidateRepository,
@@ -190,6 +203,132 @@ def test_create_append_and_exact_replay(resource_client) -> None:
     )
     assert append_replay.status_code == 200
     assert append_replay.json() == second
+
+
+@pytest.mark.asyncio
+async def test_get_legacy_revision_preserves_sealed_bytes_and_receipt(
+    load_fixture, monkeypatch
+) -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    legacy_definition = load_fixture("simple_bruiser")
+    for element in legacy_definition["rule_elements"]:
+        element["explains"] = []
+
+    definition = StatblockDefinitionV1.model_validate(legacy_definition)
+    receipt = validate_definition(
+        definition, ValidationMode.persistence, validated_at=now
+    )
+    revision = StatblockRevisionResourceV1(
+        statblock_id="sb_legacy01",
+        revision_id="rev_legacy01",
+        parent_revision_id=None,
+        contract=STATBLOCK_CONTRACT,
+        contract_version=STATBLOCK_CONTRACT_VERSION,
+        definition=definition,
+        canonical_definition=str(canonicalize_definition(definition)),
+        definition_digest=compute_definition_digest(definition),
+        validation_receipt=receipt,
+        provenance={},
+        asset_bindings=[],
+        created_at=now,
+    )
+    # Treat this as the exact Firestore document written by an earlier build.
+    # The reader must carry these sealed fields through model validation and
+    # HTTP response serialization without rebuilding either value.
+    stored = revision.model_dump(mode="python")
+    original_canonical_definition = stored["canonical_definition"]
+    original_definition_digest = stored["definition_digest"]
+    original_validation_receipt = jsonable_encoder(stored["validation_receipt"])
+
+    class Snapshot:
+        exists = True
+
+        def __init__(self, payload: dict) -> None:
+            self.payload = payload
+
+        def to_dict(self) -> dict:
+            return copy.deepcopy(self.payload)
+
+    class RevisionDocument:
+        def get(self) -> Snapshot:
+            return Snapshot(stored)
+
+    class RevisionsCollection:
+        def document(self, revision_id: str) -> RevisionDocument:
+            assert revision_id == "rev_legacy01"
+            return RevisionDocument()
+
+    class StatblockDocument:
+        def get(self) -> Snapshot:
+            return Snapshot({"statblock_id": "sb_legacy01"})
+
+        def collection(self, name: str) -> RevisionsCollection:
+            assert name == "revisions"
+            return RevisionsCollection()
+
+    class StatblocksCollection:
+        def document(self, statblock_id: str) -> StatblockDocument:
+            assert statblock_id == "sb_legacy01"
+            return StatblockDocument()
+
+    class FirestoreClient:
+        def collection(self, name: str) -> StatblocksCollection:
+            assert name == STATBLOCKS_COLLECTION
+            return StatblocksCollection()
+
+    persistence = FirestoreStatblockPersistenceRepository(FirestoreClient())
+    app = create_test_app()
+    from importlib import import_module
+
+    api_router = import_module("statblocks_v1.api.router")
+
+    read_route = next(
+        route
+        for route in app.routes
+        if getattr(route, "path", None)
+        == "/api/internal/dungeonbuddy/v1/statblocks/{statblock_id}/revisions/{revision_id}"
+    )
+    assert read_route.response_model is StatblockRevisionResourceV1
+
+    async def run_persistence_inline(function, *args):
+        return function(*args)
+
+    monkeypatch.setattr(api_router.asyncio, "to_thread", run_persistence_inline)
+    request = Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": read_route.path,
+            "raw_path": read_route.path.encode(),
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 123),
+            "server": ("test", 80),
+            "root_path": "",
+        }
+    )
+    response_model = read_route.response_model
+    read_response = await read_route.endpoint(
+        "sb_legacy01", "rev_legacy01", request, persistence
+    )
+    # Apply the same declared response model FastAPI uses on the HTTP boundary.
+    body = response_model.model_validate(jsonable_encoder(read_response)).model_dump(
+        mode="json"
+    )
+
+    assert body["definition"]["rule_elements"][0]["explains"] == []
+    assert body["canonical_definition"] == original_canonical_definition
+    assert body["definition_digest"] == original_definition_digest
+    assert body["validation_receipt"]["definition_digest"] == original_validation_receipt[
+        "definition_digest"
+    ]
+    assert (
+        StatblockRevisionResourceV1.model_validate(body).validation_receipt
+        == revision.validation_receipt
+    )
 
 
 def test_write_idempotency_parent_stale_and_exact_locator_errors(resource_client) -> None:
