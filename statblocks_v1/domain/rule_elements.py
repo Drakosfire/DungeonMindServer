@@ -161,6 +161,18 @@ Mechanic = Annotated[
 ]
 
 
+class ExplainsEdge(StrictModel):
+    """Descriptive-only cross-reference; the combat engine ignores this edge.
+
+    Kept on the domain model so revisions sealed while the field existed
+    (often ``explains: []``) still load under ``extra=forbid``. New content
+    should omit the key; empty lists are legacy seal noise, not a signal.
+    """
+
+    element_key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    note: str | None = None
+
+
 class RuleElement(StrictModel):
     key: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     name: str = Field(min_length=1)
@@ -173,6 +185,7 @@ class RuleElement(StrictModel):
     mechanic: Mechanic
     tags: list[str] = Field(default_factory=list)
     automation_support: AutomationSupport
+    explains: list[ExplainsEdge] | None = None
 
 
 class StatblockDefinitionV1(StrictModel):
