@@ -17,6 +17,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 def main():
     """Main function for running the development server."""
+    raw_port = os.environ.get("DUNGEONMIND_SERVER_PORT", "7860")
+    try:
+        port = int(raw_port)
+    except ValueError:
+        raise SystemExit("DUNGEONMIND_SERVER_PORT must be an integer between 1 and 65535") from None
+    if not 1 <= port <= 65535:
+        raise SystemExit("DUNGEONMIND_SERVER_PORT must be an integer between 1 and 65535")
+
     print("🚀 Starting DungeonMindServer in development mode with hot reload...")
     print("📁 Watching directories for changes:")
     print("   - routers/")
@@ -29,8 +37,8 @@ def main():
     print("   - sms/")
     print("   - mapgenerator/")
     print("")
-    print("🌐 Server will be available at: http://localhost:7860")
-    print("📊 Health check: http://localhost:7860/health")
+    print(f"🌐 Server will be available at: http://localhost:{port}")
+    print(f"📊 Health check: http://localhost:{port}/health")
     print("")
     print("Press Ctrl+C to stop the server")
     print("=" * 50)
@@ -39,7 +47,7 @@ def main():
     uvicorn.run(
         "app:app",  # Import string format required for reload
         host="0.0.0.0",
-        port=7860,
+        port=port,
         reload=True,
         reload_dirs=[
             "routers",
