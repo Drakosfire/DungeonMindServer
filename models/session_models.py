@@ -5,7 +5,7 @@ Supports CardGenerator and future tool integrations
 
 from typing import Dict, List, Optional, Any, Literal
 from datetime import datetime, timedelta
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from models.dungeonmind_objects import StepId
 
 
@@ -77,6 +77,10 @@ class GlobalSessionPreferences(BaseModel):
 
 class EnhancedGlobalSession(BaseModel):
     """Enhanced global session with tool-specific states and cross-tool features"""
+
+    # This marker is set only by the authenticated API path. Older sessions may
+    # have a caller-asserted `user_id`, so that field alone is not proof of auth.
+    _authenticated_principal_id: Optional[str] = PrivateAttr(default=None)
     
     # Session identity
     session_id: str = Field(..., description="Unique session identifier")
@@ -223,7 +227,10 @@ class SessionStatus(BaseModel):
 # Request/Response models for session API
 class CreateSessionRequest(BaseModel):
     """Request to create a new session"""
-    user_id: Optional[str] = Field(None, description="User ID if authenticated")
+    user_id: Optional[str] = Field(
+        None,
+        description="Deprecated and ignored; authenticated identity comes from the DMS session.",
+    )
     platform: str = Field(default='web', description="Platform creating the session")
     preferences: Optional[GlobalSessionPreferences] = Field(None, description="Initial preferences")
 
