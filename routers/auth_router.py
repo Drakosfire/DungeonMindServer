@@ -5,7 +5,7 @@ from starlette.responses import RedirectResponse, JSONResponse
 import logging
 from datetime import datetime, timedelta
 import re
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,10 +47,29 @@ if not _oauth_configured:
 
 
 _RETURN_PATH_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
-# Reject direct and nested encoded separators/control bytes before downstream URL parsing.
-_RETURN_PATH_ENCODED_BOUNDARY = re.compile(
-    r'%(?:25)*(?:2f|5c|0[0-9a-f]|1[0-9a-f]|7f)', re.IGNORECASE
-)
+
+
+def _has_unsafe_percent_decoding(value: str, *, reject_separators: bool = True) -> bool:
+    """Reject separators or controls revealed by repeated percent decoding."""
+    current = value
+    for _ in range(8):
+        decoded = unquote(current)
+        if decoded == current:
+            return False
+
+        if len(_RETURN_PATH_CONTROL.findall(decoded)) > len(
+            _RETURN_PATH_CONTROL.findall(current)
+        ):
+            return True
+        if reject_separators and (
+            decoded.count('/') > current.count('/')
+            or decoded.count('\\') > current.count('\\')
+        ):
+            return True
+        current = decoded
+
+    # Deeply nested escaping is ambiguous and not useful in a return path.
+    return unquote(current) != current
 
 
 def _safe_frontend_return_path(value: str | None) -> str:
@@ -59,9 +78,6 @@ def _safe_frontend_return_path(value: str | None) -> str:
         return '/'
     if '\\' in value or _RETURN_PATH_CONTROL.search(value):
         return '/'
-    if _RETURN_PATH_ENCODED_BOUNDARY.search(value):
-        return '/'
-
     try:
         parsed = urlsplit(value)
     except ValueError:
@@ -71,6 +87,12 @@ def _safe_frontend_return_path(value: str | None) -> str:
         or parsed.netloc
         or not parsed.path.startswith('/')
         or parsed.path.startswith('//')
+    ):
+        return '/'
+    if (
+        _has_unsafe_percent_decoding(parsed.path)
+        or _has_unsafe_percent_decoding(parsed.query, reject_separators=False)
+        or _has_unsafe_percent_decoding(parsed.fragment, reject_separators=False)
     ):
         return '/'
     return value

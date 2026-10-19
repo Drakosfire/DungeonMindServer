@@ -47,7 +47,7 @@ async def test_login_callback_preserves_same_origin_path_query_and_fragment(
     auth_app, monkeypatch
 ):
     monkeypatch.setenv('REACT_LANDING_URL', 'https://app.example.test')
-    return_path = '/world/elderwyld?view=play&search=moon%20bridge#scene-4'
+    return_path = '/world/elderwyld?view=play&search=moon%2Fbridge#scene-4'
 
     async with AsyncClient(
         transport=ASGITransport(app=auth_app),
@@ -72,6 +72,10 @@ async def test_login_callback_preserves_same_origin_path_query_and_fragment(
         '/\\\\attacker.example/path',
         '/%252f%252fattacker.example/path',
         '/%255c%255cattacker.example/path',
+        '/%252%66host',
+        '/%25%32%66%25%32%66host',
+        '/%255%63host',
+        '/%250%64x',
         '/path\r\nLocation: https://attacker.example',
     ],
 )
@@ -94,13 +98,23 @@ async def test_login_replaces_external_or_ambiguous_return_targets_with_root(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'return_target',
+    [
+        '//attacker.example/path',
+        '/%252%66host',
+        '/%25%32%66%25%32%66host',
+        '/%255%63host',
+        '/%250%64x',
+    ],
+)
 async def test_callback_revalidates_an_existing_session_return_target(
-    monkeypatch, stubbed_oauth_redirects
+    monkeypatch, stubbed_oauth_redirects, return_target
 ):
     from routers.auth_router import auth_callback
 
     monkeypatch.setenv('REACT_LANDING_URL', 'https://app.example.test')
-    request = SimpleNamespace(session={'return_to': '//attacker.example/path', 'nonce': None})
+    request = SimpleNamespace(session={'return_to': return_target, 'nonce': None})
 
     response = await auth_callback(request)
 
