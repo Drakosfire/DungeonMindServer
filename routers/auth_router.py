@@ -4,6 +4,8 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from starlette.responses import RedirectResponse, JSONResponse
 import logging
 from datetime import datetime, timedelta
+import re
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,6 +45,37 @@ if not _oauth_configured:
         "/api/auth/login will return 503 until configured"
     )
 
+
+_RETURN_PATH_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
+# Reject direct and nested encoded separators/control bytes before downstream URL parsing.
+_RETURN_PATH_ENCODED_BOUNDARY = re.compile(
+    r'%(?:25)*(?:2f|5c|0[0-9a-f]|1[0-9a-f]|7f)', re.IGNORECASE
+)
+
+
+def _safe_frontend_return_path(value: str | None) -> str:
+    """Accept only a same-origin absolute path for the post-login return."""
+    if not value or not value.startswith('/') or value.startswith('//'):
+        return '/'
+    if '\\' in value or _RETURN_PATH_CONTROL.search(value):
+        return '/'
+    if _RETURN_PATH_ENCODED_BOUNDARY.search(value):
+        return '/'
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return '/'
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or not parsed.path.startswith('/')
+        or parsed.path.startswith('//')
+    ):
+        return '/'
+    return value
+
+
 @router.get('/login')
 async def login(request: Request):
     if not _oauth_configured:
@@ -51,7 +84,7 @@ async def login(request: Request):
     redirect_uri = redirect_callback
     
     # Store the return URL in session so we can redirect back after OAuth
-    return_to = request.query_params.get('redirect', '/')
+    return_to = _safe_frontend_return_path(request.query_params.get('redirect', '/'))
     request.session['return_to'] = return_to
     
     logger.info(
@@ -77,7 +110,7 @@ async def auth_callback(request: Request):
         logger.info("User authenticated successfully (sub present=%s)", bool(user_dict.get("sub")))
         
         # Get the return URL from session (stored during login)
-        return_to = request.session.pop('return_to', '/')
+        return_to = _safe_frontend_return_path(request.session.pop('return_to', '/'))
         
         # Redirect back to the frontend application at the original page
         frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
