@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 import logging
+from auth_service import auth_service
 from session_management import (
     session_manager, get_session, get_authenticated_session,
     EnhancedGlobalSession
@@ -29,7 +30,11 @@ def _session_snapshot(session: EnhancedGlobalSession) -> SessionSnapshotV1:
     """Build the public allowlisted snapshot without request metadata."""
     return SessionSnapshotV1(
         session_id=session.session_id,
-        user_id=session.user_id,
+        user_id=(
+            session._authenticated_principal_id
+            if session._authenticated_principal_id == session.user_id
+            else None
+        ),
         created_at=session.created_at,
         last_accessed=session.last_accessed,
         expires_at=session.expires_at,
@@ -56,8 +61,15 @@ async def create_session(
 ):
     """Create a new global session"""
     try:
+        auth_result = await auth_service.get_current_user_from_request(http_request)
+        authenticated_principal_id = (
+            auth_result.user.user_id
+            if auth_result.authenticated and auth_result.user
+            else None
+        )
         session_id = session_manager.create_session(
-            user_id=request.user_id,
+            user_id=authenticated_principal_id,
+            authenticated_principal_id=authenticated_principal_id,
             platform=request.platform,
             request=http_request
         )
@@ -82,7 +94,11 @@ async def create_session(
         
         status = session_manager.get_session_status(session)
         
-        logger.info(f"Created new session {session_id} for user {request.user_id}")
+        logger.info(
+            "Created new session %s for authenticated user %s",
+            session_id,
+            authenticated_principal_id,
+        )
         
         return SessionAvailableResponseV1(
             outcome="created",

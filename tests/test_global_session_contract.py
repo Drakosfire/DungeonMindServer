@@ -12,7 +12,14 @@ from session_management import EnhancedGlobalSessionManager
 def session_api(monkeypatch):
     from unittest.mock import MagicMock
 
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("DUNGEONMIND_API_URL", "http://localhost:7860")
+    monkeypatch.setenv("REACT_LANDING_URL", "http://localhost:3000")
+
+    import auth_service as auth_service_module
     import firestore.firebase_config as firebase_config
+    import session_config as session_config_module
+    import session_management
 
     monkeypatch.setattr(
         firebase_config,
@@ -20,11 +27,30 @@ def session_api(monkeypatch):
         MagicMock(name="session_contract_firestore_stub"),
     )
     import routers.global_session_router as global_session_router
+    import routers.global_objects_router as global_objects_router
 
     manager = EnhancedGlobalSessionManager(session_timeout_hours=1)
     monkeypatch.setattr(global_session_router, "session_manager", manager)
+    monkeypatch.setattr(session_management, "session_manager", manager)
+
+    async def anonymous_auth(_request):
+        from auth_service import AuthResult
+
+        return AuthResult(authenticated=False, error="No test principal")
+
+    monkeypatch.setattr(
+        auth_service_module.auth_service,
+        "get_current_user_from_request",
+        anonymous_auth,
+    )
+    monkeypatch.setattr(
+        session_config_module.session_config,
+        "get_cookie_kwargs",
+        lambda: {"httponly": True, "secure": False, "samesite": "lax"},
+    )
     api = FastAPI()
     api.include_router(global_session_router.router)
+    api.include_router(global_objects_router.router)
     return api, manager
 
 
@@ -66,12 +92,18 @@ async def test_create_returns_versioned_snapshot_after_preferences_and_cookie(as
     assert payload["outcome"] == "created"
     assert payload["success"] is True
     assert_public_snapshot(payload["session"], session_id)
+    assert payload["session"]["user_id"] is None
     assert payload["session"]["preferences"]["theme"] == "dark"
     assert payload["session"]["preferences"]["language"] == "fr"
     assert response.cookies["dungeonmind_session_id"] == session_id
+    assert manager.sessions[session_id]._authenticated_principal_id is None
     assert manager.sessions[session_id].user_agent == "private-agent-marker"
     assert manager.sessions[session_id].ip_address is not None
     assert len(manager.sessions) == 1
+
+    # The caller-supplied identity did not grant access to protected objects.
+    objects_response = await client.get("/api/objects/")
+    assert objects_response.status_code == 401
 
 
 @pytest.mark.asyncio
@@ -101,6 +133,7 @@ async def test_restore_returns_existing_state_and_restored_outcome(async_client)
     assert payload["session"]["clipboard"] == ["object-a", "object-b"]
     assert payload["session"]["recently_viewed"] == ["object-c"]
     assert payload["session"]["preferences"]["theme"] == "dark"
+    assert payload["session"]["user_id"] is None
     assert payload["session"]["ruleslawyer"]["active_query_history"] == [
         {"role": "user", "content": "saved question"}
     ]
@@ -168,3 +201,134 @@ def test_openapi_declares_versioned_success_and_restore_not_found_contract(sessi
     assert set(schemas["SessionSnapshotV1"]["properties"]).isdisjoint(
         {"ip_address", "user_agent"}
     )
+
+
+def install_test_principal(monkeypatch, user):
+    import auth_service as auth_service_module
+    from auth_service import AuthResult
+
+    async def get_current_user_from_request(_request):
+        return AuthResult(
+            authenticated=user is not None,
+            user=user,
+            error=None if user is not None else "No test principal",
+        )
+
+    monkeypatch.setattr(
+        auth_service_module.auth_service,
+        "get_current_user_from_request",
+        get_current_user_from_request,
+    )
+
+
+@pytest.mark.asyncio
+async def test_authenticated_create_ignores_forged_user_id_and_existing_client_uses_cookie(
+    async_client, monkeypatch
+):
+    from auth_service import User
+    import routers.global_objects_router as global_objects_router
+
+    client, manager = async_client
+    install_test_principal(
+        monkeypatch,
+        User(sub="verified-user", email="verified@example.test", name="Verified"),
+    )
+
+    database_calls = []
+
+    async def list_user_objects(**kwargs):
+        database_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        global_objects_router.dungeonmind_db,
+        "get_user_objects",
+        list_user_objects,
+    )
+
+    # Mirrors GlobalSessionAPI.createSession: it still sends user_id for
+    # compatibility, but the backend must derive identity from the DMS session.
+    create_response = await client.post(
+        "/api/session/create",
+        json={"platform": "web", "user_id": "forged-user"},
+    )
+
+    assert create_response.status_code == 200
+    session_id = create_response.json()["session_id"]
+    assert create_response.json()["session"]["user_id"] == "verified-user"
+    assert manager.sessions[session_id].user_id == "verified-user"
+    assert manager.sessions[session_id]._authenticated_principal_id == "verified-user"
+
+    # Mirrors GlobalObjectsAPI: credentials/cookie only, with no session_id query.
+    objects_response = await client.get("/api/objects/")
+
+    assert objects_response.status_code == 200
+    assert database_calls and database_calls[0]["user_id"] == "verified-user"
+
+
+@pytest.mark.asyncio
+async def test_object_access_rejects_another_authenticated_users_session(
+    async_client, monkeypatch
+):
+    from auth_service import User
+    import routers.global_objects_router as global_objects_router
+    import auth_service as auth_service_module
+
+    client, _manager = async_client
+    current_user = {"value": User(sub="user-a", email="a@example.test", name="A")}
+
+    async def get_current_user_from_request(_request):
+        from auth_service import AuthResult
+
+        user = current_user["value"]
+        return AuthResult(authenticated=True, user=user)
+
+    monkeypatch.setattr(
+        auth_service_module.auth_service,
+        "get_current_user_from_request",
+        get_current_user_from_request,
+    )
+
+    database_calls = []
+
+    async def list_user_objects(**kwargs):
+        database_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        global_objects_router.dungeonmind_db,
+        "get_user_objects",
+        list_user_objects,
+    )
+
+    create_response = await client.post(
+        "/api/session/create",
+        json={"user_id": "user-b"},
+    )
+    assert create_response.status_code == 200
+
+    current_user["value"] = User(sub="user-b", email="b@example.test", name="B")
+    response = await client.get("/api/objects/")
+
+    assert response.status_code == 403
+    assert database_calls == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_caller_asserted_session_is_not_migrated_to_authenticated(
+    async_client, monkeypatch
+):
+    from auth_service import User
+
+    client, manager = async_client
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    legacy_id = manager.create_session(user_id="user-a")
+    client.cookies.set("dungeonmind_session_id", legacy_id)
+    response = await client.get("/api/objects/")
+
+    assert response.status_code == 403
+    assert manager.sessions[legacy_id]._authenticated_principal_id is None

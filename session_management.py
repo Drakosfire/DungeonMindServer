@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import uuid
 import logging
 from fastapi import Depends, HTTPException, Request
+from auth_service import auth_service
 from models.session_models import (
     EnhancedGlobalSession, SessionStatus, CardGeneratorSessionState,
     StoreGeneratorSessionState, RulesLawyerSessionState, StatblockGeneratorSessionState,
@@ -22,10 +23,17 @@ class EnhancedGlobalSessionManager:
         self, 
         user_id: Optional[str] = None, 
         platform: str = 'web',
-        request: Optional[Request] = None
+        request: Optional[Request] = None,
+        authenticated_principal_id: Optional[str] = None,
     ) -> str:
         """Create a new enhanced session and return its ID"""
         session_id = str(uuid.uuid4())
+
+        # When a verified principal is supplied, it is the only source of the
+        # session's authenticated user identity. `user_id` remains for legacy
+        # internal callers but does not authenticate a session by itself.
+        if authenticated_principal_id is not None:
+            user_id = authenticated_principal_id
         
         # Extract client info if request is provided
         ip_address = None
@@ -41,6 +49,7 @@ class EnhancedGlobalSessionManager:
             ip_address=ip_address,
             user_agent=user_agent
         )
+        session._authenticated_principal_id = authenticated_principal_id
         
         self.sessions[session_id] = session
         logger.info(f"Created new enhanced session: {session_id} for user: {user_id}")
@@ -200,6 +209,9 @@ session_manager = EnhancedGlobalSessionManager()
 
 async def get_session(session_id: str = None, request: Request = None) -> tuple[EnhancedGlobalSession, str]:
     """Dependency for getting or creating a session"""
+    if not session_id and request:
+        session_id = request.cookies.get("dungeonmind_session_id")
+
     if not session_id:
         session_id = session_manager.create_session(request=request)
     
@@ -211,11 +223,25 @@ async def get_session(session_id: str = None, request: Request = None) -> tuple[
     return session, session_id
 
 async def get_authenticated_session(session_id: str = None, request: Request = None) -> tuple[EnhancedGlobalSession, str]:
-    """Dependency for getting authenticated session"""
-    session, session_id = await get_session(session_id, request)
-    
-    if not session.user_id:
+    """Resolve a session only when its verified DMS principal matches the caller."""
+    if request is None:
         raise HTTPException(status_code=401, detail="Authentication required")
+
+    auth_result = await auth_service.get_current_user_from_request(request)
+    current_user = auth_result.user if auth_result.authenticated else None
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    session, session_id = await get_session(session_id, request)
+
+    if (
+        session._authenticated_principal_id != current_user.user_id
+        or session.user_id != current_user.user_id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Session is not associated with the authenticated user",
+        )
     
     return session, session_id
 
@@ -227,4 +253,4 @@ __all__ = [
     'EnhancedGlobalSession', 
     'SessionStatus',
     'EnhancedGlobalSessionManager'
-] 
+]
