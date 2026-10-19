@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 import logging
 from auth_service import auth_service
 from session_management import (
-    session_manager, get_session, get_authenticated_session,
+    session_manager, get_session, get_existing_session, get_authenticated_session,
     EnhancedGlobalSession
 )
 from models.session_models import (
@@ -140,7 +140,9 @@ async def restore_session(
         session = None
         outcome = "restored"
         if session_id:
-            session = session_manager.get_session(session_id)
+            # A verified session-ID collision raises; it must not be hidden by
+            # fallback creation when another caller supplies the ID.
+            session = await get_existing_session(session_id, http_request)
         
         # If session doesn't exist or is expired, create new one if allowed
         if not session and request.fallback_to_new:
