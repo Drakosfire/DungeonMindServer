@@ -4,6 +4,8 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from starlette.responses import RedirectResponse, JSONResponse
 import logging
 from datetime import datetime, timedelta
+import re
+from urllib.parse import unquote, urlsplit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -43,6 +45,59 @@ if not _oauth_configured:
         "/api/auth/login will return 503 until configured"
     )
 
+
+_RETURN_PATH_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def _has_unsafe_percent_decoding(value: str, *, reject_separators: bool = True) -> bool:
+    """Reject separators or controls revealed by repeated percent decoding."""
+    current = value
+    for _ in range(8):
+        decoded = unquote(current)
+        if decoded == current:
+            return False
+
+        if len(_RETURN_PATH_CONTROL.findall(decoded)) > len(
+            _RETURN_PATH_CONTROL.findall(current)
+        ):
+            return True
+        if reject_separators and (
+            decoded.count('/') > current.count('/')
+            or decoded.count('\\') > current.count('\\')
+        ):
+            return True
+        current = decoded
+
+    # Deeply nested escaping is ambiguous and not useful in a return path.
+    return unquote(current) != current
+
+
+def _safe_frontend_return_path(value: str | None) -> str:
+    """Accept only a same-origin absolute path for the post-login return."""
+    if not value or not value.startswith('/') or value.startswith('//'):
+        return '/'
+    if '\\' in value or _RETURN_PATH_CONTROL.search(value):
+        return '/'
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return '/'
+    if (
+        parsed.scheme
+        or parsed.netloc
+        or not parsed.path.startswith('/')
+        or parsed.path.startswith('//')
+    ):
+        return '/'
+    if (
+        _has_unsafe_percent_decoding(parsed.path)
+        or _has_unsafe_percent_decoding(parsed.query, reject_separators=False)
+        or _has_unsafe_percent_decoding(parsed.fragment, reject_separators=False)
+    ):
+        return '/'
+    return value
+
+
 @router.get('/login')
 async def login(request: Request):
     if not _oauth_configured:
@@ -51,7 +106,7 @@ async def login(request: Request):
     redirect_uri = redirect_callback
     
     # Store the return URL in session so we can redirect back after OAuth
-    return_to = request.query_params.get('redirect', '/')
+    return_to = _safe_frontend_return_path(request.query_params.get('redirect', '/'))
     request.session['return_to'] = return_to
     
     logger.info(
@@ -77,7 +132,7 @@ async def auth_callback(request: Request):
         logger.info("User authenticated successfully (sub present=%s)", bool(user_dict.get("sub")))
         
         # Get the return URL from session (stored during login)
-        return_to = request.session.pop('return_to', '/')
+        return_to = _safe_frontend_return_path(request.session.pop('return_to', '/'))
         
         # Redirect back to the frontend application at the original page
         frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
