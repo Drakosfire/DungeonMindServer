@@ -1,9 +1,10 @@
 import os
 from fastapi import APIRouter, Request, HTTPException, Depends
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from starlette.responses import RedirectResponse, JSONResponse
+from starlette.responses import RedirectResponse, JSONResponse, Response
 import logging
 from datetime import datetime, timedelta
+import ipaddress
 import re
 from urllib.parse import unquote, urlsplit
 
@@ -98,6 +99,99 @@ def _safe_frontend_return_path(value: str | None) -> str:
     return value
 
 
+def _canonical_http_origin(value: str | None) -> str | None:
+    """Return a canonical HTTP(S) origin, rejecting URL components beyond origin."""
+    if (
+        not value
+        or value != value.strip()
+        or value.lower() == 'null'
+        or ',' in value
+        or '?' in value
+        or '#' in value
+        or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value)
+    ):
+        return None
+
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname
+    if (
+        scheme not in {'http', 'https'}
+        or not parsed.netloc
+        or parsed.netloc.endswith(':')
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+        or not host
+        or '%' in host
+        or (port is not None and not 1 <= port <= 65535)
+    ):
+        return None
+
+    if ':' in host:
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return None
+        if address.version != 6:
+            return None
+        canonical_host = f'[{address.compressed}]'
+    else:
+        try:
+            canonical_host = host.encode('idna').decode('ascii').lower()
+        except UnicodeError:
+            return None
+        labels = canonical_host.split('.')
+        if len(canonical_host) > 253 or any(
+            not label
+            or len(label) > 63
+            or not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?', label)
+            for label in labels
+        ):
+            return None
+        if all(label.isdigit() for label in labels):
+            try:
+                if ipaddress.ip_address(canonical_host).version != 4:
+                    return None
+            except ValueError:
+                return None
+
+    if port == (443 if scheme == 'https' else 80):
+        port = None
+    port_suffix = f':{port}' if port is not None else ''
+    return f'{scheme}://{canonical_host}{port_suffix}'
+
+
+def _trusted_logout_origins() -> set[str]:
+    """Read the explicit, comma-separated logout origin allowlist."""
+    configured = os.environ.get('AUTH_TRUSTED_FRONTEND_ORIGINS', '')
+    if not configured.strip():
+        return set()
+
+    origins: set[str] = set()
+    for item in configured.split(','):
+        origin = _canonical_http_origin(item.strip())
+        if origin is None:
+            return set()
+        origins.add(origin)
+    return origins
+
+
+def _has_trusted_logout_origin(request: Request) -> bool:
+    supplied_origins = request.headers.getlist('origin')
+    if len(supplied_origins) != 1:
+        return False
+    origin = _canonical_http_origin(supplied_origins[0])
+    return origin is not None and origin in _trusted_logout_origins()
+
+
 @router.get('/login')
 async def login(request: Request):
     if not _oauth_configured:
@@ -160,14 +254,16 @@ async def profile(request: Request):
     
     return user
 
-@router.get('/logout')
+@router.post('/logout', status_code=204)
 async def logout(request: Request):
+    """Clear the browser session only for an explicitly trusted frontend origin."""
+    if not _has_trusted_logout_origin(request):
+        logger.warning('Logout rejected due to missing, malformed, or untrusted Origin')
+        raise HTTPException(status_code=403, detail='Untrusted request origin')
+
     logger.info("Logout requested (authenticated=%s)", "user" in request.session)
     request.session.clear()
-    
-    # Redirect back to frontend
-    frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
-    return RedirectResponse(url=frontend_url)
+    return Response(status_code=204)
 
 # Import centralized auth service
 from auth_service import auth_service, AuthResult, User

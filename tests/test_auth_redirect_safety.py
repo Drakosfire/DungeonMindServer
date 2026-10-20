@@ -1,4 +1,3 @@
-from importlib import import_module
 from types import SimpleNamespace
 
 import pytest
@@ -7,10 +6,12 @@ from fastapi.responses import JSONResponse
 from httpx import ASGITransport, AsyncClient
 from starlette.middleware.sessions import SessionMiddleware
 
+from auth_router_test_support import load_auth_router
+
 
 @pytest.fixture
 def stubbed_oauth_redirects(monkeypatch):
-    auth_router = import_module('routers.auth_router')
+    auth_router = load_auth_router()
 
     monkeypatch.setattr(auth_router, '_oauth_configured', True)
 
@@ -111,7 +112,7 @@ async def test_login_replaces_external_or_ambiguous_return_targets_with_root(
 async def test_callback_revalidates_an_existing_session_return_target(
     monkeypatch, stubbed_oauth_redirects, return_target
 ):
-    from routers.auth_router import auth_callback
+    auth_callback = load_auth_router().auth_callback
 
     monkeypatch.setenv('REACT_LANDING_URL', 'https://app.example.test')
     request = SimpleNamespace(session={'return_to': return_target, 'nonce': None})
