@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from session_management import (
     session_manager, 
     get_session, 
+    get_existing_session,
     EnhancedGlobalSession, 
     SessionStatus
 )
@@ -62,14 +63,16 @@ async def cleanup_sessions():
         )
 
 @router.get("/validate/{session_id}")
-async def validate_session(session_id: str):
+async def validate_session(session_id: str, request: Request):
     """Validate if a session ID is active"""
     try:
-        session = session_manager.get_session(session_id)
+        session = await get_existing_session(session_id, request)
         return {
             "valid": session is not None,
             "message": "Session is valid" if session else "Session not found or expired"
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to validate session: {str(e)}")
         raise HTTPException(
@@ -78,10 +81,10 @@ async def validate_session(session_id: str):
         )
 
 @router.get("/info/{session_id}")
-async def get_session_info(session_id: str):
+async def get_session_info(session_id: str, request: Request):
     """Get detailed information about a specific session"""
     try:
-        session = session_manager.get_session(session_id)
+        session = await get_existing_session(session_id, request)
         if not session:
             raise HTTPException(
                 status_code=404,
@@ -92,11 +95,15 @@ async def get_session_info(session_id: str):
             "session_id": session_id,
             "last_accessed": session.last_accessed,
             "active_services": {
-                "ruleslawyer": session.ruleslawyer_loader is not None,
-                "storegenerator": session.storegenerator_state is not None,
-                "cardgenerator": session.cardgenerator_state is not None
+                "ruleslawyer": session.ruleslawyer is not None,
+                "storegenerator": session.storegenerator is not None,
+                "cardgenerator": session.cardgenerator is not None
             },
-            "user_id": session.user_id
+            "user_id": (
+                session._authenticated_principal_id
+                if session._authenticated_principal_id == session.user_id
+                else None
+            )
         }
     except HTTPException:
         raise
@@ -105,4 +112,4 @@ async def get_session_info(session_id: str):
         raise HTTPException(
             status_code=500,
             detail="Failed to get session info"
-        ) 
+        )

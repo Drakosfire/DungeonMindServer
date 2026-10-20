@@ -28,6 +28,7 @@ def session_api(monkeypatch):
     )
     import routers.global_session_router as global_session_router
     import routers.global_objects_router as global_objects_router
+    import routers.session_router as session_router
 
     manager = EnhancedGlobalSessionManager(session_timeout_hours=1)
     monkeypatch.setattr(global_session_router, "session_manager", manager)
@@ -51,6 +52,7 @@ def session_api(monkeypatch):
     api = FastAPI()
     api.include_router(global_session_router.router)
     api.include_router(global_objects_router.router)
+    api.include_router(session_router)
     return api, manager
 
 
@@ -332,3 +334,309 @@ async def test_legacy_caller_asserted_session_is_not_migrated_to_authenticated(
 
     assert response.status_code == 403
     assert manager.sessions[legacy_id]._authenticated_principal_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("locator", ["query", "cookie"])
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("get", "/api/session/status", None),
+        ("put", "/api/session/tools/cardgenerator", {"active_item_id": "stolen"}),
+        ("post", "/api/session/cardgenerator/update", {"active_item_id": "stolen"}),
+        ("put", "/api/session/world/world-a", None),
+        ("put", "/api/session/project/project-a", None),
+        ("put", "/api/session/preferences", {"theme": "dark"}),
+        ("delete", "/api/session/clipboard/object-a", None),
+        ("delete", "/api/session/{session_id}", None),
+    ],
+)
+async def test_foreign_verified_session_is_not_accessible_by_id_or_cookie(
+    async_client, monkeypatch, locator, method, path, body
+):
+    from auth_service import User
+
+    client, manager = async_client
+    owner_session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    stored = manager.sessions[owner_session_id]
+    stored.clipboard = ["object-a"]
+    stored.active_world_id = "world-b"
+    stored.active_project_id = "project-b"
+    stored.preferences.theme = "light"
+    before = stored.model_dump()
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+    if locator == "cookie":
+        client.cookies.set("dungeonmind_session_id", owner_session_id)
+        query = ""
+    else:
+        query = f"?session_id={owner_session_id}"
+    resolved_path = path.format(session_id=owner_session_id) + query
+
+    if body is None:
+        response = await getattr(client, method)(resolved_path)
+    else:
+        response = await getattr(client, method)(resolved_path, json=body)
+
+    assert response.status_code == 403
+    assert manager.sessions[owner_session_id].model_dump() == before
+
+
+@pytest.mark.asyncio
+async def test_verified_session_restore_denies_foreign_and_anonymous_without_fallback(
+    async_client, monkeypatch
+):
+    from auth_service import User
+
+    client, manager = async_client
+    owner_session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    foreign = await client.post(
+        "/api/session/restore",
+        json={"session_id": owner_session_id, "fallback_to_new": True},
+    )
+    assert foreign.status_code == 403
+    assert set(manager.sessions) == {owner_session_id}
+
+    install_test_principal(monkeypatch, None)
+    anonymous = await client.post(
+        "/api/session/restore",
+        json={"session_id": owner_session_id, "fallback_to_new": True},
+    )
+    assert anonymous.status_code == 401
+    assert set(manager.sessions) == {owner_session_id}
+
+
+@pytest.mark.asyncio
+async def test_restore_cookie_cannot_expose_foreign_verified_session(
+    async_client, monkeypatch
+):
+    from auth_service import User
+
+    client, manager = async_client
+    owner_session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    client.cookies.set("dungeonmind_session_id", owner_session_id)
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    response = await client.post(
+        "/api/session/restore", json={"fallback_to_new": True}
+    )
+
+    assert response.status_code == 403
+    assert set(manager.sessions) == {owner_session_id}
+
+
+@pytest.mark.asyncio
+async def test_verified_owner_can_restore_and_use_session(async_client, monkeypatch):
+    from auth_service import User
+
+    client, manager = async_client
+    owner_session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-b", email="b@example.test", name="B"),
+    )
+
+    restored = await client.post(
+        "/api/session/restore",
+        json={"session_id": owner_session_id, "fallback_to_new": False},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["session"]["user_id"] == "user-b"
+    client.cookies.set("dungeonmind_session_id", owner_session_id)
+    status = await client.get("/api/session/status")
+    assert status.status_code == 200
+    update = await client.put(
+        "/api/session/preferences", json={"theme": "dark"}
+    )
+    assert update.status_code == 200
+    assert manager.sessions[owner_session_id].preferences.theme == "dark"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("get", "/api/session/status", None),
+        ("put", "/api/session/preferences", {"theme": "dark"}),
+        ("delete", "/api/session/clipboard/object-a", None),
+    ],
+)
+async def test_unauthenticated_caller_cannot_use_verified_session_cookie(
+    async_client, method, path, body
+):
+    client, manager = async_client
+    session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    manager.sessions[session_id].clipboard = ["object-a"]
+    before = manager.sessions[session_id].model_dump()
+    client.cookies.set("dungeonmind_session_id", session_id)
+
+    if body is None:
+        response = await getattr(client, method)(path)
+    else:
+        response = await getattr(client, method)(path, json=body)
+
+    assert response.status_code == 401
+    assert manager.sessions[session_id].model_dump() == before
+
+
+@pytest.mark.asyncio
+async def test_markerless_legacy_session_remains_bearer_compatible_but_anonymous(
+    async_client
+):
+    client, manager = async_client
+    legacy_id = manager.create_session(user_id="legacy-claimed-user")
+    client.cookies.set("dungeonmind_session_id", legacy_id)
+
+    restored = await client.post(
+        "/api/session/restore",
+        json={"session_id": legacy_id, "fallback_to_new": False},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["session"]["user_id"] is None
+    update = await client.put("/api/session/preferences", json={"theme": "dark"})
+    assert update.status_code == 200
+    assert manager.sessions[legacy_id]._authenticated_principal_id is None
+    assert manager.sessions[legacy_id].user_id == "legacy-claimed-user"
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_info_does_not_expose_claimed_user_id(async_client):
+    client, manager = async_client
+    legacy_id = manager.create_session(user_id="legacy-claimed-user")
+
+    response = await client.get(f"/info/{legacy_id}")
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_session_id_validation_does_not_bypass_verified_owner(
+    async_client, monkeypatch
+):
+    from auth_service import User
+
+    client, manager = async_client
+    session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    response = await client.get(f"/validate/{session_id}")
+
+    assert response.status_code == 403
+    assert manager.sessions[session_id].user_id == "user-b"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "principal,status",
+    [
+        (None, 401),
+        ("user-a", 403),
+    ],
+)
+async def test_session_info_rejects_unauthenticated_or_foreign_principal(
+    async_client, monkeypatch, principal, status
+):
+    from auth_service import User
+
+    client, manager = async_client
+    session_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    if principal is None:
+        install_test_principal(monkeypatch, None)
+    else:
+        install_test_principal(
+            monkeypatch,
+            User(sub=principal, email="a@example.test", name="A"),
+        )
+
+    response = await client.get(f"/info/{session_id}")
+
+    assert response.status_code == status
+    assert manager.sessions[session_id].user_id == "user-b"
+
+
+@pytest.mark.asyncio
+async def test_explicit_session_query_id_takes_precedence_over_cookie(
+    async_client, monkeypatch
+):
+    from auth_service import User
+
+    client, manager = async_client
+    own_id = manager.create_session(
+        user_id="user-a", authenticated_principal_id="user-a"
+    )
+    foreign_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    client.cookies.set("dungeonmind_session_id", own_id)
+    foreign_query = await client.get(f"/api/session/status?session_id={foreign_id}")
+    assert foreign_query.status_code == 403
+
+    client.cookies.set("dungeonmind_session_id", foreign_id)
+    own_query = await client.get(f"/api/session/status?session_id={own_id}")
+    assert own_query.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_restore_body_id_takes_precedence_over_cookie(async_client, monkeypatch):
+    from auth_service import User
+
+    client, manager = async_client
+    own_id = manager.create_session(
+        user_id="user-a", authenticated_principal_id="user-a"
+    )
+    foreign_id = manager.create_session(
+        user_id="user-b", authenticated_principal_id="user-b"
+    )
+    install_test_principal(
+        monkeypatch,
+        User(sub="user-a", email="a@example.test", name="A"),
+    )
+
+    client.cookies.set("dungeonmind_session_id", own_id)
+    foreign_restore = await client.post(
+        "/api/session/restore",
+        json={"session_id": foreign_id, "fallback_to_new": True},
+    )
+    assert foreign_restore.status_code == 403
+    assert set(manager.sessions) == {own_id, foreign_id}
+
+    client.cookies.set("dungeonmind_session_id", foreign_id)
+    own_restore = await client.post(
+        "/api/session/restore",
+        json={"session_id": own_id, "fallback_to_new": False},
+    )
+    assert own_restore.status_code == 200
+    assert own_restore.json()["session_id"] == own_id

@@ -215,12 +215,45 @@ async def get_session(session_id: str = None, request: Request = None) -> tuple[
     if not session_id:
         session_id = session_manager.create_session(request=request)
     
-    session = session_manager.get_session(session_id)
+    session = await get_existing_session(session_id, request)
     if not session:
         session_id = session_manager.create_session(request=request)
         session = session_manager.get_session(session_id)
-    
+
     return session, session_id
+
+
+async def get_existing_session(
+    session_id: str, request: Request
+) -> Optional[EnhancedGlobalSession]:
+    """Resolve an existing session while enforcing verified ownership."""
+    # Inspect the candidate without refreshing its access timestamp: a denied
+    # principal must not mutate even that small piece of session state.
+    session = session_manager.sessions.get(session_id)
+    if session and session.is_expired():
+        session_manager.delete_session(session_id)
+        session = None
+    if session and session._authenticated_principal_id is not None:
+        # A verified session is bound to the principal that created it. Session
+        # IDs and cookies are locators, not credentials. Markerless legacy
+        # sessions intentionally retain bearer compatibility below.
+        if request is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        auth_result = await auth_service.get_current_user_from_request(request)
+        current_user = auth_result.user if auth_result.authenticated else None
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        if (
+            session._authenticated_principal_id != current_user.user_id
+            or session.user_id != current_user.user_id
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Session is not associated with the authenticated user",
+            )
+    if session:
+        session = session_manager.get_session(session_id)
+    return session
 
 async def get_authenticated_session(session_id: str = None, request: Request = None) -> tuple[EnhancedGlobalSession, str]:
     """Resolve a session only when its verified DMS principal matches the caller."""
@@ -232,7 +265,10 @@ async def get_authenticated_session(session_id: str = None, request: Request = N
     if current_user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    session, session_id = await get_session(session_id, request)
+    # Resolve the requested ID without allowing get_session's compatibility
+    # fallback to hide a cross-principal session-ID collision.
+    requested_id = session_id or request.cookies.get("dungeonmind_session_id")
+    session, session_id = await get_session(requested_id, request)
 
     if (
         session._authenticated_principal_id != current_user.user_id
@@ -249,6 +285,7 @@ async def get_authenticated_session(session_id: str = None, request: Request = N
 __all__ = [
     'session_manager', 
     'get_session', 
+    'get_existing_session',
     'get_authenticated_session',
     'EnhancedGlobalSession', 
     'SessionStatus',
