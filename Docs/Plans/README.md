@@ -4,6 +4,7 @@ Only active owner-repository plans and anchors belong here.
 
 Current:
 
+- [HANDOFF-dms-ci-lock-enforcement-v1.md](HANDOFF-dms-ci-lock-enforcement-v1.md) — active bounded change requiring the red-team CI dependency install to match the committed lock.
 - [ANCHOR-dungeonmind-net-platform-refresh.md](ANCHOR-dungeonmind-net-platform-refresh.md) — local non-dispatch anchor for the cross-repository platform-refresh stewardship lane.
 
 Current statblock-v1 contract/config/runbook authority lives under `Design/`, `Guides/`, and `Runbooks/`. Open PRs #28/#29 are branch work, not mainline plan authority.
