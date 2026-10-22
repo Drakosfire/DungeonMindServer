@@ -13,12 +13,18 @@ and ExplainsEdge; committed canonical/strict artifacts omit them. Existing schem
 snapshot/compiler tests reproduce2failures/8passes at current main. Open PR28 is
 historical unmerged prompt-v6 proposal, not authority for this model repair.
 
-Regenerate only the canonical and OpenAI strict schema artifacts from the current
-accepted model using its existing writer. Do not adopt PR28, change prompts,
+Regenerate canonical schema from the accepted model. Derive the provider write
+schema through an explicit product projection excluding retired RuleElement.explains
+and its unreachable ExplainsEdge definition, then use the existing strict compiler.
+Do not force retired metadata into every new generated element. Do not adopt PR28, change prompts,
 models, accepted revisions/digests, dependencies, Firestore data, generation
 retries/claims or provider settings. This repairs DMS's product-schema input to
 GenerationEngine and Buddy's existing candidate contract; no new shared contract.
-Exclusive writes: those two schema_artifacts JSON files and this handoff.
+Exclusive writes: domain/schema.py provider projection, canonical/strict
+schema_artifacts JSON files, tests/statblocks_v1/test_schema_compiler.py, test_schema_snapshots.py and this
+handoff. The initial full-model regeneration was held by Bugbot because it made
+retired explains required in new provider output; this amended projection fixes
+that owning boundary without changing persisted models.
 
 Verify existing schema/compiler/model/generation/API tests against the cumulative
 change, independently Bugbot review, PRIME exact-head merge. Then guarded owned
@@ -32,4 +38,4 @@ at unchanged223cbbe (strict validation and source-definition digest coherence).
 The same four fail after artifact regeneration; no fixture/accepted-revision bytes
 are changed here. Do not report that cohort green or use this repair to award
 revision/full product acceptance. Existing schema gates go from2failed/8passed
-to10passed. Exact model→artifact coherence owns this repair's invariant.
+to11passed, with the path-equivalence gate asserting the exact retired-field exclusion. Exact model→artifact coherence owns this repair's invariant.
