@@ -56,15 +56,25 @@ def canonical_json_schema() -> dict[str, Any]:
 
 
 def openai_strict_json_schema() -> dict[str, Any]:
-    """Compile canonical schema into OpenAI Structured Outputs strict form.
+    """Compile the current generation write schema into OpenAI strict form.
 
+    - Excludes retired read-only fields from new generation.
     - Strips documentation-only metadata at schema-node level only.
     - Preserves property names that collide with metadata words.
     - Lossless rewrites: ``oneOf`` → ``anyOf``; single-branch ``allOf`` unwrap.
     - Fails closed on unsupported constructs without a lossless rewrite.
     - Closes every object (``additionalProperties: false`` + all properties required).
     """
-    return _transform_schema_node(copy.deepcopy(canonical_json_schema()))
+    schema = copy.deepcopy(canonical_json_schema())
+    # The domain read model retains historical fields; new generation has a
+    # narrower write contract. Do not spend output on retired metadata.
+    definitions = schema["$defs"]
+    element = definitions["RuleElement"]
+    element["properties"].pop("explains", None)
+    if "required" in element:
+        element["required"] = [key for key in element["required"] if key != "explains"]
+    definitions.pop("ExplainsEdge", None)
+    return _transform_schema_node(schema)
 
 
 def write_schema_artifacts(directory: Path = SCHEMA_ARTIFACT_DIRECTORY) -> tuple[Path, Path]:

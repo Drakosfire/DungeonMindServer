@@ -164,10 +164,17 @@ def test_openai_strict_compiler_fails_closed_on_unsupported_constructs() -> None
     assert unwrapped == {"$ref": "#/$defs/DistanceUnit"}
 
 
-def test_canonical_and_provider_property_paths_match() -> None:
+def test_provider_paths_match_current_write_contract() -> None:
     canonical_paths = collect_property_paths(canonical_json_schema())
     provider_paths = collect_property_paths(openai_strict_json_schema())
-    assert canonical_paths == provider_paths
+    retired_paths = {
+        "rule_elements[].explains",
+        "rule_elements[].explains[].element_key",
+        "rule_elements[].explains[].note",
+    }
+    assert canonical_paths - provider_paths == retired_paths
+    assert not (provider_paths - canonical_paths)
+    assert not any(".explains" in path for path in provider_paths)
     assert "defenses.armor_classes[].default" in provider_paths or any(
         "armor_classes" in p and p.endswith(".default") for p in provider_paths
     )
