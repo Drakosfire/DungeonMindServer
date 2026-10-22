@@ -843,6 +843,31 @@
       ],
       "type": "object"
     },
+    "ExplainsEdge": {
+      "additionalProperties": false,
+      "description": "Descriptive-only cross-reference; the combat engine ignores this edge.\n\nKept on the domain model so revisions sealed while the field existed\n(often ``explains: []``) still load under ``extra=forbid``. New content\nshould omit the key; empty lists are legacy seal noise, not a signal.",
+      "properties": {
+        "element_key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "note": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "element_key",
+        "note"
+      ],
+      "type": "object"
+    },
     "ForcedMovementEffect": {
       "additionalProperties": false,
       "properties": {
@@ -1441,6 +1466,19 @@
           },
           "type": "array"
         },
+        "explains": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ExplainsEdge"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "key": {
           "pattern": "^[a-z][a-z0-9_]*$",
           "type": "string"
@@ -1515,7 +1553,8 @@
         "costs",
         "mechanic",
         "tags",
-        "automation_support"
+        "automation_support",
+        "explains"
       ],
       "type": "object"
     },
