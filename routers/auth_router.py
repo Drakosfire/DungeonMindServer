@@ -438,7 +438,7 @@ async def logout(request: Request):
     return Response(status_code=204)
 
 # Import centralized auth service
-from auth_service import auth_service, AuthResult, User
+from auth_service import auth_service, User  # noqa: E402
 
 # Dependency to get current user
 async def get_current_user(request: Request) -> User:

@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI
