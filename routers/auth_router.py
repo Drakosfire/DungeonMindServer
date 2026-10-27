@@ -51,7 +51,8 @@ _RETURN_PATH_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
 _WEBSITE_FRONTEND = 'website'
 _BUDDY_FRONTEND = 'buddy'
 _AUTH_RETURN_SESSION_KEY = 'auth_returns'
-_MAX_AUTH_RETURN_FLOWS = 4
+_MAX_AUTH_RETURN_FLOWS = 2
+_MAX_AUTH_RETURN_PATH_LENGTH = 512
 _SAFE_WEBSITE_FALLBACK = 'http://localhost:3000'
 
 
@@ -82,7 +83,7 @@ def _safe_frontend_return_path(value: str | None) -> str:
     """Accept only a same-origin absolute path for the post-login return."""
     if (
         not value
-        or len(value) > 4096
+        or len(value) > _MAX_AUTH_RETURN_PATH_LENGTH
         or not value.startswith('/')
         or value.startswith('//')
     ):

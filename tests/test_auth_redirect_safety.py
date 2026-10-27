@@ -186,6 +186,7 @@ async def test_unknown_frontend_selector_uses_website_default(auth_app, monkeypa
         "/%25%32%66%25%32%66host",
         "/%255%63host",
         "/%250%64x",
+        "/" + ("a" * 512),
         "/path\r\nLocation: https://attacker.example",
     ],
 )
