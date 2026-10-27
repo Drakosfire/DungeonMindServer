@@ -1,6 +1,9 @@
 """Provider-free static checks for the proposed DMS uv/systemd deployment files."""
 
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -49,6 +52,56 @@ class UvSystemdDeploymentContractTests(unittest.TestCase):
         self.assertIn("Do not create another Nginx", runbook)
         self.assertIn("Python 3.13", runbook)
         self.assertTrue((ROOT / "uv.lock").is_file())
+
+    def test_systemd_analyzes_unit_in_synthetic_root(self):
+        analyzer = shutil.which("systemd-analyze")
+        if analyzer is None:
+            self.skipTest("systemd-analyze is unavailable on this platform")
+
+        with tempfile.TemporaryDirectory(prefix="dms-systemd-contract-") as temp_dir:
+            root = Path(temp_dir)
+            unit_path = root / "etc/systemd/system/dungeonmind-server.service"
+            unit_path.parent.mkdir(parents=True)
+            unit_path.write_text(UNIT.read_text())
+
+            env_path = root / "etc/dungeonmindserver/dms.env"
+            env_path.parent.mkdir(parents=True)
+            env_path.write_text("ENVIRONMENT=production\n")
+
+            (root / "etc/passwd").write_text(
+                "root:x:0:0:root:/root:/bin/sh\n"
+                "dungeonmindserver:x:1001:1001:DMS:/nonexistent:/usr/sbin/nologin\n"
+            )
+            (root / "etc/group").write_text("root:x:0:\ndungeonmindserver:x:1001:\n")
+
+            executable = root / "opt/dungeonmindserver/current/.venv/bin/uvicorn"
+            executable.parent.mkdir(parents=True)
+            executable.write_text("#!/bin/sh\nexit 0\n")
+            executable.chmod(0o755)
+
+            for path in ("var/lib/dungeonmindserver", "var/cache/dungeonmindserver"):
+                (root / path).mkdir(parents=True)
+
+            systemd_dir = root / "usr/lib/systemd/system"
+            systemd_dir.mkdir(parents=True)
+            for target in ("sysinit.target", "network.target", "multi-user.target"):
+                (systemd_dir / target).write_text(
+                    "[Unit]\nDescription=Synthetic target for unit verification\n"
+                )
+
+            result = subprocess.run(
+                [
+                    analyzer,
+                    f"--root={root}",
+                    "verify",
+                    "/etc/systemd/system/dungeonmind-server.service",
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout)
 
 
 if __name__ == "__main__":
