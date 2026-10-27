@@ -1,12 +1,12 @@
 import os
 from fastapi import APIRouter, Request, HTTPException, Depends
-from authlib.integrations.starlette_client import OAuth, OAuthError
+from authlib.integrations.starlette_client import OAuth
 from starlette.responses import RedirectResponse, JSONResponse, Response
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import ipaddress
 import re
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qsl, parse_qs, urlencode, unquote, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,6 +48,12 @@ if not _oauth_configured:
 
 
 _RETURN_PATH_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
+_WEBSITE_FRONTEND = 'website'
+_BUDDY_FRONTEND = 'buddy'
+_AUTH_RETURN_SESSION_KEY = 'auth_returns'
+_MAX_AUTH_RETURN_FLOWS = 2
+_MAX_AUTH_RETURN_PATH_LENGTH = 512
+_SAFE_WEBSITE_FALLBACK = 'http://localhost:3000'
 
 
 def _has_unsafe_percent_decoding(value: str, *, reject_separators: bool = True) -> bool:
@@ -75,7 +81,12 @@ def _has_unsafe_percent_decoding(value: str, *, reject_separators: bool = True) 
 
 def _safe_frontend_return_path(value: str | None) -> str:
     """Accept only a same-origin absolute path for the post-login return."""
-    if not value or not value.startswith('/') or value.startswith('//'):
+    if (
+        not value
+        or len(value) > _MAX_AUTH_RETURN_PATH_LENGTH
+        or not value.startswith('/')
+        or value.startswith('//')
+    ):
         return '/'
     if '\\' in value or _RETURN_PATH_CONTROL.search(value):
         return '/'
@@ -192,26 +203,191 @@ def _has_trusted_logout_origin(request: Request) -> bool:
     return origin is not None and origin in _trusted_logout_origins()
 
 
+def _frontend_origin(frontend: str) -> str | None:
+    """Resolve a fixed frontend key through server-owned origin configuration."""
+    setting = 'BUDDY_FRONTEND_URL' if frontend == _BUDDY_FRONTEND else 'REACT_LANDING_URL'
+    configured = os.environ.get(setting)
+    if not configured:
+        return None if frontend == _BUDDY_FRONTEND else _SAFE_WEBSITE_FALLBACK
+    candidate = configured
+    try:
+        parsed = urlsplit(configured)
+    except ValueError:
+        return None
+    if parsed.path == '/' and not parsed.query and not parsed.fragment:
+        candidate = f'{parsed.scheme}://{parsed.netloc}'
+    return _canonical_http_origin(candidate)
+
+
+def _website_fallback_url(return_path: str = '/') -> str:
+    """Build a fallback using only the server-owned website origin and safe path."""
+    origin = _frontend_origin(_WEBSITE_FRONTEND) or _SAFE_WEBSITE_FALLBACK
+    return origin + _safe_frontend_return_path(return_path)
+
+
+def _frontend_error_path(return_path: str, frontend: str, error: str) -> str:
+    """Append a bounded auth error code while retaining safe route state."""
+    safe_path = _safe_frontend_return_path(return_path)
+    parsed = urlsplit(safe_path)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != 'auth_error'
+    ]
+    error_value = 'true' if frontend == _WEBSITE_FRONTEND else error
+    query.append(('auth_error', error_value))
+    return urlunsplit(('', '', parsed.path or '/', urlencode(query, doseq=True), parsed.fragment))
+
+
+def _requested_frontend(request: Request) -> str:
+    values = request.query_params.getlist('frontend')
+    return _BUDDY_FRONTEND if values == [_BUDDY_FRONTEND] else _WEBSITE_FRONTEND
+
+
+def _callback_state(request: Request) -> str | None:
+    values = request.query_params.getlist('state')
+    if len(values) != 1 or not values[0] or len(values[0]) > 512:
+        return None
+    if _RETURN_PATH_CONTROL.search(values[0]):
+        return None
+    return values[0]
+
+
+def _validated_auth_return(value: object, expected_state: str) -> tuple[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    state = value.get('state')
+    frontend = value.get('frontend')
+    return_path = value.get('return_to')
+    if (
+        not isinstance(state, str)
+        or not state
+        or state != expected_state
+        or len(state) > 512
+        or _RETURN_PATH_CONTROL.search(state)
+        or not isinstance(frontend, str)
+        or frontend not in {_WEBSITE_FRONTEND, _BUDDY_FRONTEND}
+        or not isinstance(return_path, str)
+    ):
+        return None
+    return frontend, _safe_frontend_return_path(return_path)
+
+
+def _stored_auth_returns(session: dict) -> dict[str, dict[str, str]]:
+    """Return at most four validated pending login intents from the signed session."""
+    value = session.get(_AUTH_RETURN_SESSION_KEY)
+    if not isinstance(value, dict):
+        return {}
+    pending: dict[str, dict[str, str]] = {}
+    for state, intent in value.items():
+        if not isinstance(state, str) or not state or len(state) > 512:
+            continue
+        validated = _validated_auth_return(intent, state)
+        if validated is None:
+            continue
+        frontend, return_to = validated
+        pending[state] = {
+            'state': state,
+            'frontend': frontend,
+            'return_to': return_to,
+        }
+    return dict(list(pending.items())[-_MAX_AUTH_RETURN_FLOWS:])
+
+
+def _callback_error_redirect(frontend: str, return_path: str, error: str) -> RedirectResponse:
+    if frontend == _WEBSITE_FRONTEND:
+        # Preserve the existing website callback error landing behavior.
+        return RedirectResponse(url=_website_fallback_url('/?auth_error=true'))
+    origin = _frontend_origin(frontend)
+    if origin is None:
+        # A missing or malformed Buddy origin must never become redirect authority.
+        return RedirectResponse(url=_website_fallback_url('/?auth_error=true'))
+    path = _frontend_error_path(return_path, frontend, error)
+    return RedirectResponse(url=origin + path)
+
+
 @router.get('/login')
 async def login(request: Request):
     if not _oauth_configured:
         raise HTTPException(status_code=503, detail="OAuth is not configured on this server")
 
     redirect_uri = redirect_callback
-    
-    # Store the return URL in session so we can redirect back after OAuth
-    return_to = _safe_frontend_return_path(request.query_params.get('redirect', '/'))
-    request.session['return_to'] = return_to
-    
+    frontend = _requested_frontend(request)
+    frontend_origin = _frontend_origin(frontend)
+    if frontend_origin is None:
+        return RedirectResponse(url=_website_fallback_url('/?auth_error=true'))
+
+    redirect_values = request.query_params.getlist('redirect')
+    return_to = _safe_frontend_return_path(
+        redirect_values[0] if len(redirect_values) == 1 else '/'
+    )
     logger.info(
-        "Login request: host=%s return_to_set=%s",
-        request.headers.get("host", "unknown"),
+        "Login request: frontend=%s return_to_set=%s",
+        frontend,
         bool(return_to),
     )
-    return await oauth.google.authorize_redirect(request, redirect_uri, nonce=request.session.get('nonce'))
+    response = await oauth.google.authorize_redirect(
+        request, redirect_uri, nonce=request.session.get('nonce')
+    )
+    location = response.headers.get('location', '')
+    try:
+        states = parse_qs(urlsplit(location).query).get('state', [])
+    except ValueError:
+        states = []
+    if (
+        len(states) != 1
+        or not states[0]
+        or len(states[0]) > 512
+        or _RETURN_PATH_CONTROL.search(states[0])
+    ):
+        pending = _stored_auth_returns(request.session)
+        if pending:
+            request.session[_AUTH_RETURN_SESSION_KEY] = pending
+        else:
+            request.session.pop(_AUTH_RETURN_SESSION_KEY, None)
+        raise HTTPException(status_code=503, detail='OAuth state could not be established')
+    pending = _stored_auth_returns(request.session)
+    pending.pop(states[0], None)
+    pending[states[0]] = {
+        'state': states[0],
+        'frontend': frontend,
+        'return_to': return_to,
+    }
+    while len(pending) > _MAX_AUTH_RETURN_FLOWS:
+        pending.pop(next(iter(pending)))
+    request.session[_AUTH_RETURN_SESSION_KEY] = pending
+    return response
 
 @router.get('/callback')
 async def auth_callback(request: Request):
+    callback_state = _callback_state(request)
+    pending = _stored_auth_returns(request.session)
+    intent = pending.pop(callback_state, None) if callback_state is not None else None
+    if pending:
+        request.session[_AUTH_RETURN_SESSION_KEY] = pending
+    else:
+        request.session.pop(_AUTH_RETURN_SESSION_KEY, None)
+    validated = (
+        _validated_auth_return(intent, callback_state)
+        if intent is not None and callback_state is not None
+        else None
+    )
+    if callback_state is None or validated is None:
+        logger.warning('Auth callback rejected because OAuth state did not match the return intent')
+        return RedirectResponse(url=_website_fallback_url('/?auth_error=true'))
+
+    frontend, return_to = validated
+    provider_errors = request.query_params.getlist('error')
+    provider_error = provider_errors[0] if len(provider_errors) == 1 else None
+    if len(provider_errors) > 1:
+        return _callback_error_redirect(frontend, return_to, 'failed')
+    if provider_error:
+        cancelled = provider_error == 'access_denied'
+        logger.info('OAuth provider returned an error (cancelled=%s)', cancelled)
+        return _callback_error_redirect(
+            frontend, return_to, 'cancelled' if cancelled else 'failed'
+        )
+
     try:
         # Never log headers, cookies, session dicts, or full URL (may contain code/state)
         logger.info("Auth callback processing")
@@ -225,20 +401,17 @@ async def auth_callback(request: Request):
         
         logger.info("User authenticated successfully (sub present=%s)", bool(user_dict.get("sub")))
         
-        # Get the return URL from session (stored during login)
-        return_to = _safe_frontend_return_path(request.session.pop('return_to', '/'))
-        
-        # Redirect back to the frontend application at the original page
-        frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
-        redirect_url = frontend_url.rstrip('/') + return_to
+        frontend_url = _frontend_origin(frontend)
+        if frontend_url is None:
+            logger.error('Buddy frontend origin became unavailable during OAuth callback')
+            return RedirectResponse(url=_website_fallback_url('/?auth_error=true'))
+        redirect_url = frontend_url + return_to
         logger.info("Auth callback redirecting to frontend")
         return RedirectResponse(url=redirect_url)
         
     except Exception as e:
         logger.error("Error during authorization: %s", type(e).__name__, exc_info=True)
-        # Redirect to frontend with error parameter
-        frontend_url = os.environ.get('REACT_LANDING_URL', 'http://localhost:3000')
-        return RedirectResponse(url=f"{frontend_url}?auth_error=true")
+        return _callback_error_redirect(frontend, return_to, 'failed')
 
 @router.get('/profile')
 async def profile(request: Request):
@@ -266,7 +439,7 @@ async def logout(request: Request):
     return Response(status_code=204)
 
 # Import centralized auth service
-from auth_service import auth_service, AuthResult, User
+from auth_service import auth_service, User  # noqa: E402
 
 # Dependency to get current user
 async def get_current_user(request: Request) -> User:
