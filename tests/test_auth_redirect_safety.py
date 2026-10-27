@@ -3,7 +3,8 @@ from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI
-from httpx import ASGITransport, AsyncClient, QueryParams
+from httpx import ASGITransport, AsyncClient
+from starlette.datastructures import QueryParams
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import RedirectResponse
 
