@@ -518,7 +518,14 @@ def _validate_action_economy(
                 f"{path}.activation",
                 "A reaction needs a trigger or timing expression.",
             )
-        if element.section is RuleSection.legendary_action:
+        manually_adjudicated = (
+            isinstance(element.mechanic, HumanAdjudicatedMechanic)
+            and element.automation_support is AutomationSupport.manual
+            and element.usage.kind is UsageKind.manual
+        )
+        if element.section is RuleSection.legendary_action and (
+            not manually_adjudicated or element.costs
+        ):
             if not element.costs or element.usage.kind is not UsageKind.resource:
                 issue(
                     "LEGENDARY_RESOURCE_REQUIRED",
@@ -564,7 +571,7 @@ def _validate_action_economy(
                     path,
                     "A lair action requires a lair profile.",
                 )
-            if not element.activation.timing_text and not (
+            if not manually_adjudicated and not element.activation.timing_text and not (
                 definition.lair and definition.lair.initiative_count is not None
             ):
                 issue(
