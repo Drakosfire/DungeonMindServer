@@ -578,3 +578,4 @@ def test_manual_actions_can_preserve_missing_economy(load_fixture, fixture, sect
         StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
     )
     assert manual.is_persistence_ready
+    assert manual.validator_version == "statblock-validator-v1.2"

@@ -9,7 +9,7 @@ from pydantic import Field
 
 from statblocks_v1.domain.primitives import StrictModel
 
-VALIDATOR_VERSION = "statblock-validator-v1.1"
+VALIDATOR_VERSION = "statblock-validator-v1.2"
 
 
 class ValidationMode(str, Enum):
