@@ -12,7 +12,7 @@ Use the smallest authority needed:
 
 - [../README.md](../README.md) — repository role and runtime shape.
 - [Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md](Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md) — current startup/composition debt.
-- [Plans/ANCHOR-dungeonmind-net-platform-refresh.md](Plans/ANCHOR-dungeonmind-net-platform-refresh.md) — local anchor for OverMind platform-refresh stewardship.
+- [Plans/ANCHOR-dungeonmind-net-platform-refresh.md](Plans/ANCHOR-dungeonmind-net-platform-refresh.md) — local anchor for OverMind platform-refresh coordination.
 
 ### DungeonBuddy statblock v1
 

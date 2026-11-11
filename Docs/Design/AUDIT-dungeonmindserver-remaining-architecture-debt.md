@@ -3,7 +3,7 @@
 **Status:** ACTIVE — revalidated against `main` 2026-09-25  
 **Repository anchor:** current main at audit refresh descended from `4d3c96668425db40af95e1850a20d43cd1baa74d`  
 **Scope:** application composition, lifecycle, persistence/runtime efficiency, and deployment debt outside bounded feature contracts.  
-**Cross-repository steward:** DungeonOverMind platform-refresh lane.
+**Cross-repository coordination:** DungeonOverMind platform-refresh lane.
 
 ## Verified current debt
 
@@ -26,7 +26,7 @@
    The v1 bounded context explicitly offloads synchronous repository operations where needed. Legacy Firestore-backed routes still require a focused inventory before claiming the event loop is free of synchronous I/O.
 
 7. **Global tool/session state is process memory.**
-   `EnhancedGlobalSessionManager` owns a Python `dict` of sessions in-process. Restart/multi-worker semantics therefore cannot be treated as durable product authority. The platform-refresh steward is explicitly evaluating this boundary.
+   `EnhancedGlobalSessionManager` owns a Python `dict` of sessions in-process. Restart/multi-worker semantics therefore cannot be treated as durable product authority. The assigned platform-refresh owner evaluates this boundary.
 
 8. **The Docker build is not lockfile-reproducible.**
    A Dockerfile now exists, but it copies only `pyproject.toml`, runs `uv pip compile ... pyproject.toml`, and installs the freshly compiled requirements. It does not consume the committed `uv.lock`. Local `uv sync --locked` and image dependency resolution can therefore drift.

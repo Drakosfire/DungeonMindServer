@@ -38,7 +38,7 @@ Current high-value authority includes:
 - `Docs/Guides/CONFIG-dungeonbuddy-statblock-v1.md` — operational configuration;
 - `Docs/Runbooks/RUNBOOK-dungeonbuddy-statblock-v1.md` — deployment/rollback/smoke procedure;
 - `Docs/Design/AUDIT-dungeonmindserver-remaining-architecture-debt.md` — current server composition/startup debt;
-- `Docs/Plans/ANCHOR-dungeonmind-net-platform-refresh.md` — local anchor for the cross-repository platform-refresh stewardship lane.
+- `Docs/Plans/ANCHOR-dungeonmind-net-platform-refresh.md` — local anchor for the cross-repository platform-refresh workstream.
 
 Executable contract fixtures under `Docs/Design/fixtures/` are evidence, not generic prose documentation; keep them aligned with the owning schema/tests.
 

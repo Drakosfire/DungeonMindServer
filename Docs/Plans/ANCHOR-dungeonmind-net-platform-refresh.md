@@ -3,7 +3,9 @@
 **Status:** ACTIVE REFERENCE / NO IMPLEMENTATION DISPATCH  
 **Created:** 2026-09-25  
 **Cross-repository authority:** `Drakosfire/DungeonOverMind/Docs/roadmaps/ROADMAP-dungeonmind-net-platform-refresh.md`  
-**Steward handoff:** `Drakosfire/DungeonOverMind/Docs/Plans/STEWARDS-HANDOFF-dungeonmind-net-platform-refresh.md`
+**Platform handoff:** `Drakosfire/DungeonOverMind/Docs/Plans/STEWARDS-HANDOFF-dungeonmind-net-platform-refresh.md`
+
+The named platform task has only its explicitly assigned scope. The legacy handoff filename remains a link target, not a standing role or new authority. Independent review and existing merge, runtime, data, model-allocation, and deployment limits remain unchanged.
 
 ## Why this exists
 
@@ -15,7 +17,7 @@ OverMind owns the cross-repository platform-refresh architecture and sequencing.
 
 ## Current working questions for this repository
 
-The steward will deeper-audit:
+The assigned platform-refresh owner will audit:
 
 - FastAPI application composition and import-time lifecycle;
 - Google OAuth/session behavior;
@@ -48,4 +50,4 @@ This anchor authorizes no code by itself.
 
 Current statblock work and other owner-repository lanes continue under their existing handoffs.
 
-When the platform steward dispatches a server slice, the complete implementation handoff will be checked into this repository and will own its exact file lease/evidence.
+When an authorized platform-refresh owner dispatches a server slice, the complete implementation handoff will be checked into this repository and will own its exact file lease/evidence.
