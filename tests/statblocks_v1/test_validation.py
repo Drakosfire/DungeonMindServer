@@ -548,3 +548,34 @@ def test_attack_validation_detects_inverted_range_window(load_fixture) -> None:
 
     receipt = validate_definition(mutated, ValidationMode.persistence)
     assert "ATTACK_RANGE_ORDER_INCOHERENT" in {issue.code for issue in receipt.issues}
+
+
+@pytest.mark.parametrize(
+    ("fixture", "section", "missing_code"),
+    [
+        ("legendary_creature", "legendary_action", "LEGENDARY_RESOURCE_REQUIRED"),
+        ("lair_creature", "lair_action", "LAIR_TIMING_REQUIRED"),
+    ],
+)
+def test_manual_actions_can_preserve_missing_economy(load_fixture, fixture, section, missing_code):
+    payload = load_fixture(fixture)
+    element = next(item for item in payload["rule_elements"] if item["section"] == section)
+    element["costs"] = []
+    element["usage"] = {"kind": "manual"}
+    element["automation_support"] = "full"
+    element["activation"]["timing_text"] = None
+    if section == "lair_action":
+        payload["lair"]["initiative_count"] = None
+
+    automated = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert missing_code in {issue.code for issue in automated.issues}
+
+    element["automation_support"] = "manual"
+    element["mechanic"] = {"kind": "human_adjudicated"}
+    manual = validate_definition(
+        StatblockDefinitionV1.model_validate(payload), ValidationMode.persistence
+    )
+    assert manual.is_persistence_ready
+    assert manual.validator_version == "statblock-validator-v1.2"
