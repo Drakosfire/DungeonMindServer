@@ -59,6 +59,13 @@ uv run pytest
 
 The focused statblock-v1 lane also has repository scripts/tests documented by its config and runbook.
 
+### Verification scope
+
+Use a focused `uv run --locked pytest <path>` while iterating. The
+[red-team workflow](.github/workflows/redteam-hardening.yml) defines its targeted
+Python 3.11 gate. Use the active handoff and affected contract or runbook to
+identify additional checks for the change.
+
 ## Current caution
 
 Open statblock PRs may contain branch-only contract evolution. Treat `main` plus merged PR evidence as current repository authority; do not update active docs to describe a stacked/open branch as shipped behavior.
