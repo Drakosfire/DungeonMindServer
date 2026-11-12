@@ -44,13 +44,7 @@ async def list_saved_stores(current_user: User = Depends(get_current_user)):
     # Retrieve a list of all store names for the user, using store_name = extract_title(store_data) from each store    
     try:
         stores = firestore_utils.query_collection('stores', 'user_id', '==', user_id)
-        logger.info(f"Store 0: {stores[0]}")
-        if stores:
-            store_names = [extract_title(list(store.values())[0]) for store in stores]
-            logger.info(f"Stores: {store_names}")
-            return {"stores": store_names}
-        else:
-            return {"stores": []}
+        return {"stores": [extract_title(next(iter(store.values()))) for store in stores]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

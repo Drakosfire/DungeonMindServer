@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="/static/storegenerator/css/all.css" rel="stylesheet">
+    <link href="/static/storegenerator/css/css.css?family=Open+Sans:400,300,600,700" rel="stylesheet">
+    <link href="/static/storegenerator/css/bundle.css" rel="stylesheet">
+    <link href="/static/storegenerator/css/style.css" rel="stylesheet">
+    <link href="/static/storegenerator/css/5ePHBstyle.css" rel="stylesheet">
+    <link href="/static/storegenerator/css/storeUI.css" rel="stylesheet">
+    <title>DnD Store Generator</title>
+    <meta http-equiv="Content-Security-Policy" content="
+        default-src 'self';
+        script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.youtube.com https://www.youtube-nocookie.com;
+        frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com;
+        img-src 'self' https://imagedelivery.net https://www.youtube.com https://www.youtube-nocookie.com https://fal.media;
+        style-src 'self' 'unsafe-inline';
+        connect-src 'self';
+    ">
+
+    <style>
+        @media print {
+
+            /* Hide everything by default */
+            body * {
+                visibility: hidden;
+            }
+
+            /* Specifically show the section you want to print */
+            #brewRenderer,
+            #brewRenderer * {
+                visibility: visible;
+                page-break-before: auto;
+                page-break-after: avoid;
+                page-break-inside: avoid;
+            }
+
+            /* Ensure the printable section takes up the full page */
+            #brewRenderer {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: auto;
+                padding-bottom: 20px;
+                /* Add some padding at the bottom to prevent cropping */
+                box-sizing: border-box;
+            }
+
+            /* Add space between pages */
+            .page {
+                page-break-after: always;
+                margin-bottom: 40px;
+                /* Adjust this to control the space between pages */
+                margin-top: 40px;
+                /* Adjust this to control the space between pages */
+            }
+
+            /* Optional: Add more space to ensure content doesn't get too close to the top of the next page */
+            .page:last-child {
+                margin-bottom: 0;
+                /* Avoid extra space after the last page */
+            }
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            /* Hidden by default */
+            position: fixed;
+            /* Stay in place */
+            z-index: 1002;
+            /* Sit on top */
+            left: 0;
+            top: 0;
+            width: 100%;
+            /* Full width */
+            height: 100%;
+            /* Full height */
+            overflow: auto;
+            /* Enable scroll if needed */
+            background-color: rgb(0, 0, 0);
+            /* Fallback color */
+            background-color: rgba(0, 0, 0, 0.4);
+            /* Black w/ opacity */
+        }
+
+        /* Modal image */
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            /* Restrict image width to 90% of the viewport width */
+            max-height: 90%;
+            /* Restrict image height to 90% of the viewport height */
+            width: auto;
+            /* Ensure aspect ratio is maintained */
+            height: auto;
+            /* Ensure aspect ratio is maintained */
+            box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.8);
+            border-radius: 5px;
+        }
+
+        /* Close button */
+        .close {
+            position: absolute;
+            top: 20px;
+            right: 35px;
+            color: #fff;
+            font-size: 40px;
+            font-weight: bold;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        #dungeonmindButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/835fa1b3-3c77-4037-d451-fae0ccace800/public');
+            width: 150px;
+        }
+
+        #loginButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/fccdc1ea-6c72-42bb-ce9f-274d53e69c00/blogpost');
+            width: 150px;
+        }
+
+        #logoutButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/c4baa970-f040-4be2-f323-4f774374c900/blogpost');
+            width: 150px;
+        }
+
+        #submitButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/ced7a981-4f86-46d4-312b-bcdb460cce00/blogpost');
+
+        }
+
+        #autofillButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/aa52480c-3856-4305-d31d-a5597c2c7600/blogpost');
+        }
+
+        #toggleButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/daf5c39a-7d5d-43a2-f7ff-7466da8dae00/blogpost');
+            width: 75px;
+        }
+
+        #addPageButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/9a162fd7-f247-45bc-90cd-a54c8e573100/blogpost');
+            width: 60px;
+        }
+
+        #removePageButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/23bbcbe5-0af1-4279-826a-b1c51a6bf500/blogpost');
+            width: 60px;
+        }
+
+        #resetButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/9bd98051-44d1-42ae-3411-5dfdfe2e6c00/blogpost');
+        }
+
+        #printButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/d76b0924-0110-4099-7ac3-4edd76291e00/blogpost');
+            width: 80px;
+        }
+
+        #shareButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/e004baee-72b0-46b5-1a5b-3a6ddd8a3500/public');
+            width: 80px;
+        }
+
+        #saveButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/c5d91c0d-d757-4bbc-e086-dfecef2b6000/blogpost');
+            width: 80px;
+        }
+
+        #loadButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/b45d096d-a2c0-4ea5-5f09-20d759f42400/blogpost');
+            width: 80px;
+        }
+
+        .generate-image-button {
+            display: inline-flex;
+            /* Use flexbox for better control */
+            align-items: center;
+            /* Center the image vertically */
+            justify-content: center;
+            /* Center the image horizontally */
+            background-color: transparent;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            width: 100%;
+            /* Set the width of the button */
+            max-width: 100%;
+            /* Make sure it’s responsive if needed */
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        /* Ensure the image fits inside the button */
+        .generate-image-button img {
+            width: 50%;
+            /* The image will adapt to the width of the button */
+            height: auto;
+            /* Maintain aspect ratio */
+
+        }
+
+        /* Hover and active effects */
+        .generate-image-button:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
+            background-color: transparent;
+        }
+
+        .generate-image-button:active {
+            transform: scale(0.95);
+            opacity: 0.8;
+            background-color: transparent;
+        }
+
+        /* Video Modal specific styles */
+        #videoModal .modal-content {
+            background-color: #fefefe;
+            margin: 5% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 853px;
+        }
+
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%;
+            /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+        }
+
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .close-video {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        .close-video:hover,
+        .close-video:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        #tutorialButton {
+            background-image: url('https://imagedelivery.net/SahcvrNe_-ej4lTB6vsAZA/9d748d92-9d6a-404e-d123-5e76b7ed3300/blogpost');
+            width: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div id="floatingToolbar" class="floatingToolbar">
+            <div class="navigation-container">
+                <button id="dungeonmindButton" class="button-with-image"></button>
+                <button id="loginButton" class="button-with-image">Login</button>
+                <button id="logoutButton" class="button-with-image" style="display: none;">Logout</button>
+                <button id="tutorialButton" class="button-with-image">Tutorial</button>
+            </div>
+
+            <div class="button-container">
+                <textarea id="user-description" class="user-description-textarea"
+                    title="As much or as little description as you want to provide. You can provide specific employees, inventory etc">A very standard gear store run by a fae potted plant named Gorgeous
+                </textarea>
+                <button id="submitButton" class="button-with-image">
+                    <img src="/static/storegenerator/images/StoreGeneratorSubmitButton.png" alt="Submit Button"
+                        aria-hidden="true">
+                </button>
+                <button id="autofillButton" class="button-with-image">Autofill Pages</button>
+                <button id="addPageButton" class="button-with-image">Add New Page</button>
+                <button id="removePageButton" class="button-with-image">Remove Last Page</button>
+                <button id="printButton" class="button-with-image">Print</button>
+                <button id="resetButton" class="button-with-image">Reset</button>
+                <button id="toggleButton" class="button-with-image">Toggle Image Descriptions</button>
+
+                <button id="shareButton" class="button-with-image">Share</button>
+                <button id="saveButton" class="button-with-image" style="display: none;">Save</button>
+                <button id="loadButton" class="button-with-image" style="display: none;">Load</button>
+                <select id="savedStoresDropdown" style="display: none;">
+                    <option value="">Select a saved store</option>
+                </select>
+
+            </div>
+        </div>
+        <div class="grid-container">
+            <div class="block-container" id="blockContainer">
+                <div id="loadingAnimation" class="blockContainer-loading-animation">
+                    <img id="loadingImage" src="/static/storegenerator/images/loadingMimic/MimicChest1.png"
+                        alt="Loading...">
+                </div>
+                <div class="page" id="block-page" data-page-id="block-container">
+                    <!-- Blocks will be wrapped in a page div and loaded here -->
+                </div>
+            </div>
+
+            <div class="page-container" id="pageContainer">
+
+
+                <div class="brewRenderer" id="brewRenderer">
+
+                    <div class="pages" id="pages">
+                        <div id="page-1" class="page" data-page-id="page-0">
+                            <div class="columnWrapper">
+                                <div class="block monster frame wide">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="trash-area" id="trashArea"></div>
+
+        <!-- The Modal -->
+        <div id="imageModal" class="modal">
+            <span id="closeModal" class="close">&times;</span>
+            <img class="modal-content" id="modalImage">
+            <div id="caption"></div>
+        </div>
+        <!-- <div id="printModal" class="modal">
+            <div class="modal-content">
+                <span class="close">&times;</span>
+                <div id="modalPreviewContent"></div>
+            </div>
+        </div> -->
+
+        <!-- YouTube Video Modal -->
+        <div id="videoModal" class="modal">
+            <div class="modal-content">
+                <span class="close-video">&times;</span>
+                <div class="video-container">
+                    <iframe id="youtubeFrame" width="853" height="480"
+                        src="https://www.youtube-nocookie.com/embed/n9lj8wRDVgE?rel=0&modestbranding=1&enablejsapi=0&origin=https://dungeonmind.net"
+                        frameborder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="/static/storegenerator/scripts/main.js"></script>
+
+</body>
+
+</html>
