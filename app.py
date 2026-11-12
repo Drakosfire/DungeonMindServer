@@ -1,3 +1,4 @@
+from fastapi.responses import FileResponse
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -379,6 +380,12 @@ async def get_config():
 
 
 # Static files
+@app.get("/storegenerator", include_in_schema=False)
+@app.get("/storegenerator/", include_in_schema=False)
+async def store_editor():
+    return FileResponse("static/storegenerator/index.html", media_type="text/html")
+
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

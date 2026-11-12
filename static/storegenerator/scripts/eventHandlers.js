@@ -61,8 +61,7 @@ export function handleClick(event, elements) {
 
     if (event.target.id === 'dungeonmindButton') {
         console.log('DungeonMind button clicked. Element ID:', event.target.id);
-        // Redirect to the DUNGEONMIND_API_URL that is stored in the window object
-        window.location.href = window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL;
+        window.location.href = '/';
     }
 
     if (event.target.id === 'loginButton') {
