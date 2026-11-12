@@ -33,3 +33,22 @@ def test_store_editor_keeps_store_api_authenticated(test_app):
     client = TestClient(test_app)
     response = client.get("/api/store/list-saved-stores")
     assert response.status_code == 401
+
+
+def test_new_account_has_no_saved_stores(test_app, monkeypatch):
+    from types import SimpleNamespace
+
+    from routers.auth_router import get_current_user
+    from routers.store_router import firestore_utils
+
+    monkeypatch.setattr(firestore_utils, "query_collection", lambda *args: [])
+    monkeypatch.setitem(
+        test_app.dependency_overrides,
+        get_current_user,
+        lambda: SimpleNamespace(user_id="new-user"),
+    )
+
+    response = TestClient(test_app).get("/api/store/list-saved-stores")
+
+    assert response.status_code == 200
+    assert response.json() == {"stores": []}

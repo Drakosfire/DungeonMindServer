@@ -17,7 +17,7 @@ import { getConfig } from './config.js';
 import { preloadedLoadingGeneratedImage } from './loadingImage.js';
 
 // Function to handle click events
-export function handleClick(event, elements) {
+export async function handleClick(event, elements) {
     console.log('Click detected:', event.target);
 
     const videoModal = document.getElementById('videoModal');
@@ -66,13 +66,26 @@ export function handleClick(event, elements) {
 
     if (event.target.id === 'loginButton') {
         console.log('Login button clicked. Element ID:', event.target.id);
-        window.location.href = `${window.DUNGEONMIND_CONFIG.DUNGEONMIND_API_URL}/api/auth/login`;
+        window.location.href = '/api/auth/login?redirect=%2Fstoregenerator';
     }
 
     if (event.target.id === 'logoutButton') {
         console.log('Logout button clicked. Element ID:', event.target.id);
-        resetState();
-        window.location.href = '/api/auth/logout';
+        const button = event.target;
+        button.disabled = true;
+        try {
+            const response = await fetch('/api/auth/logout', { method: 'POST' });
+            if (!response.ok) {
+                throw new Error(`Logout failed: ${response.status}`);
+            }
+            resetState();
+            window.location.reload();
+        } catch (error) {
+            console.error('Could not sign out:', error);
+            alert('Could not sign out. Please try again.');
+            button.disabled = false;
+        }
+        return;
     }
     // Handle modal close button
     if (event.target.id === 'closeModal') {
