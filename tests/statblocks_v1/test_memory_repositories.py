@@ -1871,3 +1871,20 @@ def test_generate_ops_begin_rejects_pending_with_foreign_candidate(load_fixture)
             lease_owner="owner-b",
             lease_duration_seconds=60,
         )
+
+
+def test_revision_preserves_explicit_unknown_mechanics_on_read_and_retry(load_fixture):
+    payload = load_fixture("simple_bruiser")
+    payload.update(ruleset=None, movement=None)
+    payload["challenge"]["proficiency_bonus"] = None
+    definition = StatblockDefinitionV1.model_validate(payload)
+    repository = _repository()
+    command = _create(definition)
+
+    statblock, revision = repository.create_statblock(command)
+    reopened = repository.get_revision(statblock.statblock_id, revision.revision_id)
+    _, replayed = repository.create_statblock(command)
+
+    assert reopened.definition == definition
+    assert reopened.definition_digest == compute_definition_digest(definition)
+    assert replayed.revision_id == revision.revision_id
