@@ -315,9 +315,16 @@
       "additionalProperties": false,
       "properties": {
         "proficiency_bonus": {
-          "description": "Must match rating on the standard 5e challenge-rating table.",
-          "minimum": 0,
-          "type": "integer"
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Must match rating on the standard 5e challenge-rating table."
         },
         "rating": {
           "minLength": 1,
@@ -2303,7 +2310,14 @@
       ]
     },
     "movement": {
-      "$ref": "#/$defs/MovementProfile"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MovementProfile"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "phases": {
       "items": {
@@ -2328,7 +2342,14 @@
       "type": "array"
     },
     "ruleset": {
-      "$ref": "#/$defs/RulesetRef"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RulesetRef"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "senses": {
       "$ref": "#/$defs/SenseProfile"

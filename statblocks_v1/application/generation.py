@@ -1191,9 +1191,10 @@ def _verified_source_digest(source: SourceSnapshotV1) -> str | GenerationFailure
     return computed
 
 
-def _ruleset_matches(actual: RulesetRef, requested: RulesetRef) -> bool:
+def _ruleset_matches(actual: RulesetRef | None, requested: RulesetRef) -> bool:
     return (
-        actual.system == requested.system
+        actual is not None
+        and actual.system == requested.system
         and actual.edition == requested.edition
         and actual.house_ruleset_id == requested.house_ruleset_id
     )

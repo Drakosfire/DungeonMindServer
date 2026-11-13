@@ -5,7 +5,7 @@
       "is_persistence_ready": false,
       "validation_receipt": {
         "canonicalizer_version": "statblock-canonicalizer-v1",
-        "definition_digest": "sha256:ffa75f84c36431706a8e3dc3409c0b8371ed1ef403b6dd52704181aa6a88aac1",
+        "definition_digest": "sha256:bb4b4d476dd6961bea5da59a10098f313404f3e3263ba0b00091203ad6881e61",
         "issues": [
           {
             "code": "UNKNOWN_RESOURCE_REFERENCE",
@@ -18,7 +18,7 @@
         "mode": "persistence",
         "status": "invalid",
         "validated_at": "2026-01-01T00:00:00Z",
-        "validator_version": "statblock-validator-v1.1"
+        "validator_version": "statblock-validator-v1.2"
       }
     },
     "message": "Definition is not persistence-ready"

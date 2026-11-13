@@ -128,6 +128,19 @@ def validate_definition(
             )
         )
 
+    for field_path, value in (
+        ("ruleset", definition.ruleset),
+        ("movement", definition.movement),
+        ("challenge.proficiency_bonus", definition.challenge.proficiency_bonus),
+    ):
+        if value is None:
+            issue(
+                "MECHANICS_FIELD_UNSPECIFIED",
+                ValidationSeverity.warning,
+                field_path,
+                "This field is unspecified in the saved statblock.",
+            )
+
     _validate_profiles(definition, issue)
     _validate_local_keys(definition, issue)
     _validate_references(definition, issue)
@@ -198,7 +211,7 @@ def _validate_profiles(definition: StatblockDefinitionV1, issue: IssueEmitter) -
             "challenge.rating",
             "Challenge rating is not a canonical D&D 5e CR value.",
         )
-    elif challenge.proficiency_bonus != expected_bonus:
+    elif challenge.proficiency_bonus is not None and challenge.proficiency_bonus != expected_bonus:
         issue(
             "RULESET_CR_PROFICIENCY_MISMATCH",
             ValidationSeverity.error,
@@ -250,8 +263,10 @@ def _expected_proficiency_bonus(
     abilities: AbilityScores,
     ability: AbilityName,
     derivation: ProficiencyDerivation,
-    proficiency_bonus: int,
+    proficiency_bonus: int | None,
 ) -> int | None:
+    if proficiency_bonus is None:
+        return None
     modifier = _ability_modifier(abilities, ability)
     if derivation is ProficiencyDerivation.standard:
         return modifier + proficiency_bonus
@@ -328,7 +343,7 @@ def _validate_local_keys(definition: StatblockDefinitionV1, issue: IssueEmitter)
     groups = (
         ("defenses.armor_classes", [item.key for item in definition.defenses.armor_classes]),
         ("defenses.damage_interactions", [item.key for item in definition.defenses.damage_interactions]),
-        ("movement.modes", [item.key for item in definition.movement.modes]),
+        ("movement.modes", [item.key for item in (definition.movement.modes if definition.movement else [])]),
         ("resources", [item.key for item in definition.resources]),
         ("rule_elements", [item.key for item in definition.rule_elements]),
         ("phases", [item.key for item in definition.phases]),
@@ -356,7 +371,7 @@ def _validate_references(definition: StatblockDefinitionV1, issue: IssueEmitter)
     element_keys = {item.key for item in definition.rule_elements}
     resource_keys = {item.key for item in definition.resources}
     phase_keys = {phase.key for phase in definition.phases}
-    movement_keys = {mode.key for mode in definition.movement.modes}
+    movement_keys = {mode.key for mode in (definition.movement.modes if definition.movement else [])}
 
     for index, element in enumerate(definition.rule_elements):
         path = f"rule_elements[{index}]"
