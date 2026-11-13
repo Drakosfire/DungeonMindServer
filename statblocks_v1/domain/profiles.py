@@ -186,7 +186,7 @@ class CommunicationProfile(StrictModel):
 
 class ChallengeProfile(StrictModel):
     rating: str = Field(min_length=1)
-    proficiency_bonus: int = Field(
+    proficiency_bonus: int | None = Field(
         ge=0,
         description="Must match rating on the standard 5e challenge-rating table.",
     )

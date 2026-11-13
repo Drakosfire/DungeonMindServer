@@ -888,10 +888,17 @@
         "additionalProperties": false,
         "properties": {
           "proficiency_bonus": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Must match rating on the standard 5e challenge-rating table.",
-            "minimum": 0.0,
-            "title": "Proficiency Bonus",
-            "type": "integer"
+            "title": "Proficiency Bonus"
           },
           "rating": {
             "minLength": 1,
@@ -1864,6 +1871,33 @@
           "revision_id"
         ],
         "title": "ExactRevisionLocatorV1",
+        "type": "object"
+      },
+      "ExplainsEdge": {
+        "additionalProperties": false,
+        "description": "Descriptive-only cross-reference; the combat engine ignores this edge.\n\nKept on the domain model so revisions sealed while the field existed\n(often ``explains: []``) still load under ``extra=forbid``. New content\nshould omit the key; empty lists are legacy seal noise, not a signal.",
+        "properties": {
+          "element_key": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Element Key",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "element_key"
+        ],
+        "title": "ExplainsEdge",
         "type": "object"
       },
       "ForcedMovementEffect-Input": {
@@ -3392,6 +3426,20 @@
             "title": "Costs",
             "type": "array"
           },
+          "explains": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExplainsEdge"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explains"
+          },
           "key": {
             "pattern": "^[a-z][a-z0-9_]*$",
             "title": "Key",
@@ -3502,6 +3550,20 @@
             },
             "title": "Costs",
             "type": "array"
+          },
+          "explains": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ExplainsEdge"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explains"
           },
           "key": {
             "pattern": "^[a-z][a-z0-9_]*$",
@@ -4574,7 +4636,14 @@
             ]
           },
           "movement": {
-            "$ref": "#/components/schemas/MovementProfile-Input"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovementProfile-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "phases": {
             "items": {
@@ -4602,7 +4671,14 @@
             "type": "array"
           },
           "ruleset": {
-            "$ref": "#/components/schemas/RulesetRef"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "senses": {
             "$ref": "#/components/schemas/SenseProfile-Input"
@@ -4666,7 +4742,14 @@
             ]
           },
           "movement": {
-            "$ref": "#/components/schemas/MovementProfile-Output"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovementProfile-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "phases": {
             "items": {
@@ -4694,7 +4777,14 @@
             "type": "array"
           },
           "ruleset": {
-            "$ref": "#/components/schemas/RulesetRef"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RulesetRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "senses": {
             "$ref": "#/components/schemas/SenseProfile-Output"

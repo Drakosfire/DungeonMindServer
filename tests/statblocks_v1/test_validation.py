@@ -579,3 +579,21 @@ def test_manual_actions_can_preserve_missing_economy(load_fixture, fixture, sect
     )
     assert manual.is_persistence_ready
     assert manual.validator_version == "statblock-validator-v1.2"
+
+
+def test_explicit_unknown_mechanics_preserve_other_validation(load_fixture) -> None:
+    payload = load_fixture("simple_bruiser")
+    payload.update(ruleset=None, movement=None)
+    payload["challenge"]["proficiency_bonus"] = None
+    definition = StatblockDefinitionV1.model_validate(payload)
+    receipt = validate_definition(definition, ValidationMode.persistence)
+
+    assert receipt.is_persistence_ready
+    assert {
+        item.field_path for item in receipt.issues
+        if item.code == "MECHANICS_FIELD_UNSPECIFIED"
+    } == {"ruleset", "movement", "challenge.proficiency_bonus"}
+    assert definition.model_dump(mode="json")["ruleset"] is None
+    payload["challenge"]["rating"] = "unknown"
+    invalid = StatblockDefinitionV1.model_validate(payload)
+    assert not validate_definition(invalid, ValidationMode.persistence).is_persistence_ready

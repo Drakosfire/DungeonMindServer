@@ -189,11 +189,11 @@ class RuleElement(StrictModel):
 
 
 class StatblockDefinitionV1(StrictModel):
-    ruleset: RulesetRef
+    ruleset: RulesetRef | None
     identity: CreatureIdentity
     defenses: DefenseProfile
     vitality: VitalityProfile
-    movement: MovementProfile
+    movement: MovementProfile | None
     abilities: AbilityScores
     proficiencies: ProficiencyProfile
     senses: SenseProfile
