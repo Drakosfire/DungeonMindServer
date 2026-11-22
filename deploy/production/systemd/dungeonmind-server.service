@@ -1,0 +1,31 @@
+[Unit]
+Description=DungeonMind Web API
+After=network.target
+
+[Service]
+Type=simple
+User=dungeonmindserver
+Group=dungeonmindserver
+WorkingDirectory=/opt/dungeonmindserver/current
+EnvironmentFile=/etc/dungeonmindserver/dms.env
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HOME=/var/cache/dungeonmindserver/huggingface
+Environment=EMBEDDING_MODEL_PATH=/var/cache/dungeonmindserver/huggingface
+Environment=XDG_CACHE_HOME=/var/cache/dungeonmindserver
+ExecStart=/opt/dungeonmindserver/current/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 7860
+Restart=on-failure
+RestartSec=5s
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/dungeonmindserver /var/cache/dungeonmindserver
+
+[Install]
+WantedBy=multi-user.target
