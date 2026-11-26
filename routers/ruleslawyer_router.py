@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
+from html import escape
 import logging
+import re
+from threading import RLock
 from ruleslawyer.index_manifest import RulesIndexManifest
 from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response_stream
 from models.ruleslawyer_models import (
@@ -23,9 +26,10 @@ from security_limits.input_limits import (
 from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
-from openai import AsyncOpenAI
+from shared.generation import get_generation_client
 import os
 from pathlib import Path
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
@@ -41,42 +45,6 @@ RULESLAWYER_DATA_DIR = Path(
 # Global variables for single embedding set
 current_embeddings = None
 current_pages_and_chunks = None
-openai_client = AsyncOpenAI()
-SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Format every response using Markdown so the UI can render it properly. Follow these Markdown rules:
-
-    • Start with a succinct sentence that answers the question.
-    • Use headings (## or ###) for sections such as "Explanation", "Example", or "References".
-    • CRITICAL: Always start headings on a NEW LINE. Use a blank line before ## or ###.
-    • Use bullet lists for steps, rulings, or options.
-    • CRITICAL: Always start list items on a NEW LINE. Use a blank line before - or *.
-    • Use inline code (`like this`) or fenced code blocks for dice expressions or formulas when helpful.
-    • End with "Citations: p.XX" (or multiple pages) on its own line, followed by "What else can I help with?"
-
-IMPORTANT MARKDOWN FORMATTING RULES:
-    - Headers MUST be on their own line with a blank line before them: "\n\n## Explanation\n"
-    - List items MUST be on their own line with a blank line before them: "\n\n- Item 1\n- Item 2\n"
-    - NEVER concatenate markdown syntax directly after text: WRONG: "text.## Header" CORRECT: "text.\n\n## Header"
-    - Always use proper line breaks (\n) between paragraphs, headers, and list items.
-
-When responding:
-
-    1. Identify the key point of the query.
-    2. Provide a straightforward answer, omitting the thought process.
-    3. Avoid additional advice or extended explanations.
-    4. Answer in an informative manner, aiding the user's understanding without overwhelming them or quoting the source.
-    5. DO NOT SUMMARIZE YOURSELF. DO NOT REPEAT YOURSELF. 
-    6. End with page citations, a line break and "What else can I help with?" 
-
-    Example:
-    Query: Explain how the player should think about balance and lethality in this game. Explain how the game master should think about balance and lethality?
-    Answer: In "Swords & Wizardry: WhiteBox," players and the game master should consider balance and lethality from different perspectives. For players, understanding that this game encourages creativity and flexibility is key. The rules are intentionally streamlined, allowing for a potentially high-risk environment where player decisions significantly impact outcomes. The players should think carefully about their actions and strategy, knowing that the game can be lethal, especially without reliance on intricate rules for safety. Page 33 discusses the possibility of characters dying when their hit points reach zero, although alternative, less harsh rules regarding unconsciousness and recovery are mentioned.
-
-For the game master (referred to as the Referee), balancing the game involves providing fair yet challenging scenarios. The role of the Referee isn't to defeat players but to present interesting and dangerous challenges that enhance the story collaboratively. Page 39 outlines how the Referee and players work together to craft a narrative, with the emphasis on creating engaging and potentially perilous experiences without making it a zero-sum competition. Referees can choose how lethal the game will be, considering their group's preferred play style, including implementing house rules to soften deaths or adjust game balance accordingly.
-
-Pages: 33, 39
-
-Use the context provided to answer the user's query concisely. """
-
 class EmbeddingRequest(BaseModel):
     embedding: str
     embeddings_file_path: str
@@ -131,35 +99,37 @@ class RulesLawyerService:
         self.loader: Optional[EmbeddingLoader] = None
         self.active_rulebook_id: str | None = None
         self.loaders: dict[str, EmbeddingLoader] = {}
+        self.load_lock = RLock()
     
     def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
-        embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
-        json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
-        if rulebook_id:
-            RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
-        loader = EmbeddingLoader(
-            embeddings_file_path=str(embeddings_resolved),
-            enhanced_json_path=str(json_resolved),
-        )
-        if rulebook_id:
-            self.loaders[rulebook_id] = loader
-            self.active_rulebook_id = rulebook_id
-        self.loader = loader
+        with self.load_lock:
+            embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
+            json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
+            if rulebook_id:
+                RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
+            loader = EmbeddingLoader(
+                embeddings_file_path=str(embeddings_resolved),
+                enhanced_json_path=str(json_resolved),
+            )
+            if rulebook_id:
+                self.loaders[rulebook_id] = loader
+                self.active_rulebook_id = rulebook_id
+            self.loader = loader
 
     def get_loader(self, rulebook_id: str | None = None) -> EmbeddingLoader:
-        if rulebook_id and (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
-            if rulebook_id not in self.loaders:
-                manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
-                if rulebook_id not in manifest.books:
-                    raise HTTPException(status_code=404, detail="Rulebook is unavailable")
-                self.load_embeddings(f"{rulebook_id}_embeddings.csv", f"{rulebook_id}.json", rulebook_id)
-            return self.loaders[rulebook_id]
-        if not self.loader:
-            raise HTTPException(status_code=400, detail="No embeddings loaded")
-        if rulebook_id and self.active_rulebook_id and rulebook_id != self.active_rulebook_id:
-            raise HTTPException(status_code=409, detail="The requested rulebook is not loaded")
-        return self.loader
-
+        with self.load_lock:
+            if rulebook_id and (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
+                if rulebook_id not in self.loaders:
+                    manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
+                    if rulebook_id not in manifest.books:
+                        raise HTTPException(status_code=404, detail="Rulebook is unavailable")
+                    self.load_embeddings(f"{rulebook_id}_embeddings.csv", f"{rulebook_id}.json", rulebook_id)
+                return self.loaders[rulebook_id]
+            if not self.loader:
+                raise HTTPException(status_code=400, detail="No embeddings loaded")
+            if rulebook_id and self.active_rulebook_id and rulebook_id != self.active_rulebook_id:
+                raise HTTPException(status_code=409, detail="The requested rulebook is not loaded")
+            return self.loader
 
 # Create a single instance of the service
 rules_lawyer_service = RulesLawyerService()
@@ -334,6 +304,36 @@ async def load_embedding(request: EmbeddingRequest):
             detail="Failed to load embeddings. Please try again later.",
         ) from e
 
+@router.get("/evidence/{rulebook_id}/{unit_id}", response_class=HTMLResponse)
+async def open_evidence(rulebook_id: str, unit_id: str):
+    manifest_path = RULESLAWYER_DATA_DIR / "manifest.json"
+    if not re.fullmatch(r"[0-9a-f]{64}", unit_id) or not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    book = RulesIndexManifest(RULESLAWYER_DATA_DIR).books.get(rulebook_id)
+    if not book or not book.get("source_sha256"):
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    loader = await run_in_threadpool(rules_lawyer_service.get_loader, rulebook_id)
+    position = loader.indices_by_id.get(unit_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    passage = loader.pages_and_chunks[position]
+    if passage.get("source_sha256") != book["source_sha256"]:
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    title = escape(book["title"])
+    heading = escape(str(passage.get("section", "")))
+    printed = escape(str(passage.get("printed_page", "")))
+    pdf = escape(str(passage.get("pdf_page", "")))
+    text = escape(str(passage["content"]))
+    return HTMLResponse(
+        '<!doctype html><html lang="en"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{title} — Source citation</title><main><h1>{title}</h1>'
+        f'<h2>{heading}</h2><p>Printed page {printed} · PDF page {pdf}</p>'
+        f'<pre style="white-space:pre-wrap">{text}</pre></main></html>',
+        headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"},
+    )
+
+
 @router.post("/query")
 async def query_rules(
     request: RulesQueryRequest,
@@ -357,7 +357,7 @@ async def query_rules(
     
     try:
         loader_start_time = time_module.time()
-        loader = rules_lawyer_service.get_loader(request.rulebookId)
+        loader = await run_in_threadpool(rules_lawyer_service.get_loader, request.rulebookId)
         loader_duration = (time_module.time() - loader_start_time) * 1000
         logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
@@ -367,8 +367,7 @@ async def query_rules(
             message=request.message,
             chat_history=chat_history,
             embeddings_loader=loader,
-            client=openai_client,
-            system_prompt=SYSTEM_PROMPT,
+            client=get_generation_client(),
             request_start_time=request_start_time,
             rulebook_id=request.rulebookId
         )

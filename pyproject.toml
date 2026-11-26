@@ -62,8 +62,8 @@ packages = [
 ]
 
 [tool.uv.sources]
-# Accepted GenerationEngine default-temperature omission from PR #7.
-generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "80288d7b467ac3c3586f4e3c964385cefe69f931" }
+# GenerationEngine revision with explicit text reasoning effort.
+generationengine = { git = "https://github.com/Drakosfire/GenerationEngine.git", rev = "53d50539c125913a476d368d4f05cf9de909c4c3" }
 
 [dependency-groups]
 dev = [
