@@ -49,6 +49,38 @@ def build_app(registry=None):
     return app
 
 
+def test_list_rulebooks_uses_mounted_manifest_when_registry_is_down(monkeypatch, tmp_path):
+    from ruleslawyer.mpnet import MAX_TOKENS, MODEL_ID, MODEL_REVISION, VECTOR_DIMENSION
+
+    class OfflineRegistry:
+        def list_rulebooks(self):
+            pytest.fail("Mounted rulebooks must be listed without querying MongoDB")
+
+    books = {
+        "DnD_PHB_55": "PHB 2024",
+        "PathGM": "Pathfinder GMG",
+        "swcr": "Swords & Wizardry Complete Revised",
+        "swon": "Stars Without Number",
+        "WWN_Free_Edition": "Worlds Without Number Free Edition",
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "model": MODEL_ID, "revision": MODEL_REVISION, "dimension": VECTOR_DIMENSION,
+        "max_tokens": MAX_TOKENS, "pooling": "attention_mask_mean",
+        "normalization": "l2", "forward_dtype": "bfloat16", "vector_dtype": "float32",
+        "books": {book: {"title": title} for book, title in books.items()},
+    }))
+    monkeypatch.setattr(ruleslawyer_router, "RULESLAWYER_DATA_DIR", tmp_path)
+    client = TestClient(build_app(OfflineRegistry()))
+
+    response = client.get("/api/ruleslawyer/rulebooks")
+
+    assert response.status_code == 200
+    assert response.json() == {"rulebooks": [
+        {"id": book, "title": title, "availabilityStatus": "available"}
+        for book, title in books.items()
+    ]}
+
+
 def test_query_stream_includes_citations_and_example(monkeypatch):
     async def fake_generate_bot_response_stream(*args, **kwargs):
         async def generator():

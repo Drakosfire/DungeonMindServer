@@ -1,4 +1,7 @@
+import html
 import json
+import re
+from collections import defaultdict
 import os
 import textwrap
 import threading
@@ -8,8 +11,8 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from openai import OpenAI
-from sentence_transformers import SentenceTransformer
 from ruleslawyer.hybrid_retriever import HybridRetriever
+from ruleslawyer.mpnet import VECTOR_DIMENSION, load_encoder
 
 class EmbeddingLoader:
     def __init__(self, embeddings_file_path=None, enhanced_json_path=None, cached_data=None):
@@ -21,45 +24,6 @@ class EmbeddingLoader:
             enhanced_json_path (str, optional): Path to the enhanced JSON file.
             cached_data (dict, optional): Preloaded embeddings and pages/chunks.
         """
-        print("🔧 [EmbeddingLoader] Initializing SentenceTransformer model...")
-        try:
-            cache_folder = (
-                os.getenv("EMBEDDING_MODEL_PATH")
-                or os.getenv("HF_HOME")
-                or os.getenv("HUGGINGFACE_HUB_CACHE")
-                or os.getenv("SENTENCE_TRANSFORMERS_HOME")
-            )
-            if cache_folder:
-                os.makedirs(cache_folder, exist_ok=True)
-                print(f"📦 [EmbeddingLoader] Using cache folder: {cache_folder}")
-                os.environ.setdefault("HF_HOME", cache_folder)
-                os.environ.setdefault("HUGGINGFACE_HUB_CACHE", cache_folder)
-                os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", cache_folder)
-            else:
-                default_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface")
-                print(f"📦 [EmbeddingLoader] Using default cache folder: {default_cache}")
-                cache_folder = default_cache
-
-            expected_model_dir = os.path.join(cache_folder, "hub", "models--BAAI--bge-m3")
-            if os.path.isdir(expected_model_dir):
-                print(f"✅ [EmbeddingLoader] Found cached model directory: {expected_model_dir}")
-            else:
-                print(f"⚠️ [EmbeddingLoader] Cached model directory not found at: {expected_model_dir}")
-
-            model_kwargs = {
-                "model_name_or_path": "BAAI/bge-m3",
-                "device": "cpu",
-            }
-            if cache_folder:
-                model_kwargs["cache_folder"] = cache_folder
-
-            self.embedding_model = SentenceTransformer(**model_kwargs)
-            print("✅ [EmbeddingLoader] SentenceTransformer model loaded successfully")
-        except Exception as e:
-            error_msg = f"Failed to load SentenceTransformer model: {str(e)}"
-            print(f"❌ [EmbeddingLoader] {error_msg}")
-            raise Exception(error_msg)
-        
         self.document_summary = None
         self.page_summaries = None
 
@@ -76,22 +40,55 @@ class EmbeddingLoader:
                 self.document_summary, self.page_summaries = self._load_enhanced_json()
             print("✅ [EmbeddingLoader] Initialization complete")
 
+        if (
+            self.embeddings.ndim != 2
+            or self.embeddings.shape[1] != VECTOR_DIMENSION
+            or not len(self.embeddings)
+            or len(self.pages_and_chunks) != len(self.embeddings)
+            or not np.isfinite(self.embeddings).all()
+        ):
+            raise ValueError("Expected a finite Rules Lawyer MPNet index with 768 dimensions")
+        self.embedding_model = load_encoder()
+
+        self.table_aliases = defaultdict(set)
+        self.exact_links = {}
+        retrieval_chunks = []
+        for i, chunk in enumerate(self.pages_and_chunks):
+            text = str(chunk.get("content", ""))
+            if chunk.get("unit_type") == "table":
+                for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", text, re.I | re.S):
+                    cell = re.search(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", row, re.I | re.S)
+                    if cell and re.search(r"<td\b", row, re.I):
+                        label = html.unescape(re.sub(r"<[^>]+>", " ", cell[1])).strip()
+                        for alias in (label, " ".join(reversed(label.split(", ", 1)))):
+                            tokens = HybridRetriever._tokenize(alias)
+                            if 2 <= len(tokens) <= 5:
+                                self.table_aliases[tuple(tokens)].add(i)
+                                self.table_aliases[("".join(tokens),)].add(i)
+                text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+            related = chunk.get("related")
+            if related:
+                self.exact_links[i] = json.loads(related)
+            retrieval_chunks.append({**chunk, "content": text, "_row": i})
+        self.indices_by_id = {chunk.get("id"): i for i, chunk in enumerate(self.pages_and_chunks)}
+        self.retriever = HybridRetriever(retrieval_chunks, self.embeddings, self.embedding_model.encode)
+
     def _load_embeddings(self):
         """Load and process the embeddings CSV file."""
         print(f"Loading embeddings from: {self.embeddings_file_path}")
         try:
             # Load the CSV file
-            df = pd.read_csv(self.embeddings_file_path)
+            df = pd.read_csv(self.embeddings_file_path, keep_default_na=False)
             print("Embedding file loaded")
 
             # Convert stringified embeddings to numpy arrays
-            df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x), dtype=np.float64))
+            df['embedding'] = df['embedding'].apply(lambda x: np.array(json.loads(x), dtype=np.float32))
             
             # Combine all embeddings into a single numpy array
             embeddings = np.vstack(df['embedding'].to_numpy())
             
             # Convert to list of dicts for pages and chunks
-            pages_and_chunks = df.to_dict(orient="records")
+            pages_and_chunks = df.drop(columns=["embedding"]).to_dict(orient="records")
             
             # Debug info
             # print("DataFrame columns:", df.columns)
@@ -124,12 +121,24 @@ class EmbeddingLoader:
         search_start_time = time.time()
         print(f"🔍 [retrieve_relevant_resources] Starting: query_length={len(query)}, n_results={n_resources_to_return}")
 
-        retriever = HybridRetriever(
-            pages_and_chunks=self.pages_and_chunks,
-            embeddings=self.embeddings,
-            encode_fn=self.embedding_model.encode,
-        )
-        results = retriever.retrieve(query, top_k=n_resources_to_return)
+        results = self.retriever.retrieve(query, top_k=n_resources_to_return)
+        for result in results:
+            result["chunk"] = self.pages_and_chunks[result["chunk"]["_row"]]
+        tokens = HybridRetriever._tokenize(query)
+        seed = next((
+            next(iter(matches))
+            for size in range(5, 0, -1)
+            for i in range(len(tokens) - size + 1)
+            if len(matches := self.table_aliases.get(tuple(tokens[i:i + size]), ())) == 1
+        ), None)
+        if seed is not None:
+            rows = [seed]
+            related = self.exact_links.get(seed, [])
+            if related and related[0] in self.indices_by_id:
+                rows.append(self.indices_by_id[related[0]])
+            promoted = [self.pages_and_chunks[row] for row in rows]
+            results = ([{"chunk": chunk, "score": 1.0} for chunk in promoted]
+                       + [result for result in results if result["chunk"] not in promoted])[:n_resources_to_return]
 
         total_duration = (time.time() - search_start_time) * 1000
         print(f"✅ [retrieve_relevant_resources] Total search completed in {total_duration:.2f}ms")

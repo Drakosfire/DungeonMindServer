@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
 import logging
+from ruleslawyer.index_manifest import RulesIndexManifest
 from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response_stream
 from models.ruleslawyer_models import (
     RulesQueryRequest,
@@ -129,21 +130,36 @@ class RulesLawyerService:
     def __init__(self):
         self.loader: Optional[EmbeddingLoader] = None
         self.active_rulebook_id: str | None = None
+        self.loaders: dict[str, EmbeddingLoader] = {}
     
     def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
         embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
         json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
-        self.loader = EmbeddingLoader(
+        if rulebook_id:
+            RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
+        loader = EmbeddingLoader(
             embeddings_file_path=str(embeddings_resolved),
             enhanced_json_path=str(json_resolved),
         )
         if rulebook_id:
+            self.loaders[rulebook_id] = loader
             self.active_rulebook_id = rulebook_id
-    
-    def get_loader(self) -> EmbeddingLoader:
+        self.loader = loader
+
+    def get_loader(self, rulebook_id: str | None = None) -> EmbeddingLoader:
+        if rulebook_id and (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
+            if rulebook_id not in self.loaders:
+                manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
+                if rulebook_id not in manifest.books:
+                    raise HTTPException(status_code=404, detail="Rulebook is unavailable")
+                self.load_embeddings(f"{rulebook_id}_embeddings.csv", f"{rulebook_id}.json", rulebook_id)
+            return self.loaders[rulebook_id]
         if not self.loader:
             raise HTTPException(status_code=400, detail="No embeddings loaded")
+        if rulebook_id and self.active_rulebook_id and rulebook_id != self.active_rulebook_id:
+            raise HTTPException(status_code=409, detail="The requested rulebook is not loaded")
         return self.loader
+
 
 # Create a single instance of the service
 rules_lawyer_service = RulesLawyerService()
@@ -176,6 +192,12 @@ async def list_rulebooks(
     registry: RulesLawyerRegistry = Depends(get_ruleslawyer_registry),
 ):
     try:
+        if (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
+            local = RulesIndexManifest(RULESLAWYER_DATA_DIR)
+            return {"rulebooks": [
+                {"id": book, "title": data["title"], "availabilityStatus": "available"}
+                for book, data in local.books.items()
+            ]}
         return {"rulebooks": registry.list_rulebooks()}
     except Exception as e:
         logger.error("❌ [RulesLawyer] Failed to list rulebooks", exc_info=True)
@@ -335,7 +357,7 @@ async def query_rules(
     
     try:
         loader_start_time = time_module.time()
-        loader = rules_lawyer_service.get_loader()
+        loader = rules_lawyer_service.get_loader(request.rulebookId)
         loader_duration = (time_module.time() - loader_start_time) * 1000
         logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
