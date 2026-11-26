@@ -1,3 +1,4 @@
+import hashlib
 import html
 import json
 import re
@@ -19,7 +20,7 @@ from ruleslawyer.mpnet import VECTOR_DIMENSION, load_encoder
 logger = logging.getLogger(__name__)
 
 class EmbeddingLoader:
-    def __init__(self, embeddings_file_path=None, enhanced_json_path=None, cached_data=None):
+    def __init__(self, embeddings_file_path=None, enhanced_json_path=None, cached_data=None, *, legacy_evidence_hash=None):
         """
         Initialize the EmbeddingLoader with paths or cached data.
 
@@ -59,6 +60,9 @@ class EmbeddingLoader:
         retrieval_chunks = []
         for i, chunk in enumerate(self.pages_and_chunks):
             text = str(chunk.get("content", ""))
+            if legacy_evidence_hash and text.strip():
+                chunk["id"] = hashlib.sha256(f"{legacy_evidence_hash}:{i}".encode()).hexdigest()
+                chunk["legacy_evidence_hash"] = legacy_evidence_hash
             if chunk.get("unit_type") == "table":
                 for row in re.findall(r"<tr\b[^>]*>(.*?)</tr>", text, re.I | re.S):
                     cell = re.search(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", row, re.I | re.S)
@@ -202,6 +206,18 @@ WRITER_INSTRUCTIONS = (
 _CITATION_LABEL = re.compile(r"\[E[0-9]{1,3}\]")
 
 
+def citation_section(chunk):
+    section = chunk.get("section") or chunk.get("sections")
+    if isinstance(section, str) and section.lstrip().startswith("["):
+        try:
+            section = json.loads(section)
+        except ValueError:
+            return None
+    if isinstance(section, list):
+        return " / ".join(part.strip() for part in section if isinstance(part, str) and part.strip()) or None
+    return section.strip() or None if isinstance(section, str) else None
+
+
 class CitationOutput:
     """Bind model-visible labels to host evidence across arbitrary stream deltas."""
 
@@ -224,9 +240,9 @@ class CitationOutput:
             "pdfPage": chunk.get("pdf_page"),
             "sourceId": chunk.get("id"),
             "sourceHash": chunk.get("source_sha256"),
-            "section": chunk.get("section", chunk.get("sections")),
+            "section": citation_section(chunk),
         }
-        if self.rulebook_id and chunk.get("source_sha256") and re.fullmatch(r"[0-9a-f]{64}", str(chunk.get("id"))):
+        if self.rulebook_id and (chunk.get("source_sha256") or chunk.get("legacy_evidence_hash")) and re.fullmatch(r"[0-9a-f]{64}", str(chunk.get("id"))):
             book_path = quote(self.rulebook_id, safe="")
             self.used[label]["link"] = f"/api/ruleslawyer/evidence/{book_path}/{chunk['id']}"
         return f"[p. {page}]"

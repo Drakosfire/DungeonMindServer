@@ -7,7 +7,7 @@ import logging
 import re
 from threading import RLock
 from ruleslawyer.index_manifest import RulesIndexManifest
-from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response_stream
+from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, citation_section, generate_bot_response_stream
 from models.ruleslawyer_models import (
     RulesQueryRequest,
     RulebookRefreshRequest,
@@ -105,11 +105,17 @@ class RulesLawyerService:
         with self.load_lock:
             embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
             json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
+            legacy_evidence_hash = None
             if rulebook_id:
-                RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
+                manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
+                manifest.verify(rulebook_id, embeddings_resolved, json_resolved)
+                book = manifest.books[rulebook_id]
+                if not book.get("source_sha256"):
+                    legacy_evidence_hash = book.get("source_index_sha256")
             loader = EmbeddingLoader(
                 embeddings_file_path=str(embeddings_resolved),
                 enhanced_json_path=str(json_resolved),
+                legacy_evidence_hash=legacy_evidence_hash,
             )
             if rulebook_id:
                 self.loaders[rulebook_id] = loader
@@ -310,25 +316,29 @@ async def open_evidence(rulebook_id: str, unit_id: str):
     if not re.fullmatch(r"[0-9a-f]{64}", unit_id) or not manifest_path.is_file():
         raise HTTPException(status_code=404, detail="Source evidence is unavailable")
     book = RulesIndexManifest(RULESLAWYER_DATA_DIR).books.get(rulebook_id)
-    if not book or not book.get("source_sha256"):
+    if not book:
         raise HTTPException(status_code=404, detail="Source evidence is unavailable")
     loader = await run_in_threadpool(rules_lawyer_service.get_loader, rulebook_id)
     position = loader.indices_by_id.get(unit_id)
     if position is None:
         raise HTTPException(status_code=404, detail="Source evidence is unavailable")
     passage = loader.pages_and_chunks[position]
-    if passage.get("source_sha256") != book["source_sha256"]:
+    source_hash = book.get("source_sha256")
+    expected = source_hash or book.get("source_index_sha256")
+    actual = passage.get("source_sha256" if source_hash else "legacy_evidence_hash")
+    if not expected or actual != expected:
         raise HTTPException(status_code=404, detail="Source evidence is unavailable")
     title = escape(book["title"])
-    heading = escape(str(passage.get("section", "")))
-    printed = escape(str(passage.get("printed_page", "")))
-    pdf = escape(str(passage.get("pdf_page", "")))
+    heading = escape(citation_section(passage) or "Source passage")
+    printed = escape(str(passage.get("printed_page", passage.get("page", ""))))
+    pdf = passage.get("pdf_page")
+    pdf_label = f" · PDF page {escape(str(pdf))}" if pdf else ""
     text = escape(str(passage["content"]))
     return HTMLResponse(
         '<!doctype html><html lang="en"><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>{title} — Source citation</title><main><h1>{title}</h1>'
-        f'<h2>{heading}</h2><p>Printed page {printed} · PDF page {pdf}</p>'
+        f'<h2>{heading}</h2><p>Printed page {printed}{pdf_label}</p>'
         f'<pre style="white-space:pre-wrap">{text}</pre></main></html>',
         headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"},
     )
