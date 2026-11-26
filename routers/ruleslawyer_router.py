@@ -23,7 +23,7 @@ from security_limits.input_limits import (
 from firestore.firebase_config import db as firestore_db
 from ruleslawyer.ruleslawyer_registry import RulesLawyerRegistry
 from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
-from openai import AsyncOpenAI
+from shared.generation import get_generation_client
 import os
 from pathlib import Path
 
@@ -41,42 +41,6 @@ RULESLAWYER_DATA_DIR = Path(
 # Global variables for single embedding set
 current_embeddings = None
 current_pages_and_chunks = None
-openai_client = AsyncOpenAI()
-SYSTEM_PROMPT = """You are a friendly and technical answering system, answering questions with accurate, grounded, descriptive, clear, and specific responses. ALWAYS provide a page number citation. Provide a story example. Avoid extraneous details and focus on direct answers. Format every response using Markdown so the UI can render it properly. Follow these Markdown rules:
-
-    • Start with a succinct sentence that answers the question.
-    • Use headings (## or ###) for sections such as "Explanation", "Example", or "References".
-    • CRITICAL: Always start headings on a NEW LINE. Use a blank line before ## or ###.
-    • Use bullet lists for steps, rulings, or options.
-    • CRITICAL: Always start list items on a NEW LINE. Use a blank line before - or *.
-    • Use inline code (`like this`) or fenced code blocks for dice expressions or formulas when helpful.
-    • End with "Citations: p.XX" (or multiple pages) on its own line, followed by "What else can I help with?"
-
-IMPORTANT MARKDOWN FORMATTING RULES:
-    - Headers MUST be on their own line with a blank line before them: "\n\n## Explanation\n"
-    - List items MUST be on their own line with a blank line before them: "\n\n- Item 1\n- Item 2\n"
-    - NEVER concatenate markdown syntax directly after text: WRONG: "text.## Header" CORRECT: "text.\n\n## Header"
-    - Always use proper line breaks (\n) between paragraphs, headers, and list items.
-
-When responding:
-
-    1. Identify the key point of the query.
-    2. Provide a straightforward answer, omitting the thought process.
-    3. Avoid additional advice or extended explanations.
-    4. Answer in an informative manner, aiding the user's understanding without overwhelming them or quoting the source.
-    5. DO NOT SUMMARIZE YOURSELF. DO NOT REPEAT YOURSELF. 
-    6. End with page citations, a line break and "What else can I help with?" 
-
-    Example:
-    Query: Explain how the player should think about balance and lethality in this game. Explain how the game master should think about balance and lethality?
-    Answer: In "Swords & Wizardry: WhiteBox," players and the game master should consider balance and lethality from different perspectives. For players, understanding that this game encourages creativity and flexibility is key. The rules are intentionally streamlined, allowing for a potentially high-risk environment where player decisions significantly impact outcomes. The players should think carefully about their actions and strategy, knowing that the game can be lethal, especially without reliance on intricate rules for safety. Page 33 discusses the possibility of characters dying when their hit points reach zero, although alternative, less harsh rules regarding unconsciousness and recovery are mentioned.
-
-For the game master (referred to as the Referee), balancing the game involves providing fair yet challenging scenarios. The role of the Referee isn't to defeat players but to present interesting and dangerous challenges that enhance the story collaboratively. Page 39 outlines how the Referee and players work together to craft a narrative, with the emphasis on creating engaging and potentially perilous experiences without making it a zero-sum competition. Referees can choose how lethal the game will be, considering their group's preferred play style, including implementing house rules to soften deaths or adjust game balance accordingly.
-
-Pages: 33, 39
-
-Use the context provided to answer the user's query concisely. """
-
 class EmbeddingRequest(BaseModel):
     embedding: str
     embeddings_file_path: str
@@ -367,8 +331,7 @@ async def query_rules(
             message=request.message,
             chat_history=chat_history,
             embeddings_loader=loader,
-            client=openai_client,
-            system_prompt=SYSTEM_PROMPT,
+            client=get_generation_client(),
             request_start_time=request_start_time,
             rulebook_id=request.rulebookId
         )

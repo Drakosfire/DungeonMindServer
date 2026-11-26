@@ -486,7 +486,7 @@ requires-dist = [
     { name = "fal-client", specifier = ">=0.5.6" },
     { name = "fastapi", specifier = ">=0.115.4" },
     { name = "firebase-admin", specifier = ">=6.6.0" },
-    { name = "generationengine", git = "https://github.com/Drakosfire/GenerationEngine.git?rev=80288d7b467ac3c3586f4e3c964385cefe69f931" },
+    { name = "generationengine", git = "https://github.com/Drakosfire/GenerationEngine.git?rev=53d50539c125913a476d368d4f05cf9de909c4c3" },
     { name = "google-cloud-firestore", specifier = ">=2.19.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
@@ -653,7 +653,7 @@ wheels = [
 [[package]]
 name = "generationengine"
 version = "0.1.0"
-source = { git = "https://github.com/Drakosfire/GenerationEngine.git?rev=80288d7b467ac3c3586f4e3c964385cefe69f931#80288d7b467ac3c3586f4e3c964385cefe69f931" }
+source = { git = "https://github.com/Drakosfire/GenerationEngine.git?rev=53d50539c125913a476d368d4f05cf9de909c4c3#53d50539c125913a476d368d4f05cf9de909c4c3" }
 dependencies = [
     { name = "httpx" },
     { name = "jsonschema" },
