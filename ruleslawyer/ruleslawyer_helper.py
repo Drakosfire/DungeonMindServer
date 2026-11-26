@@ -193,8 +193,11 @@ WRITER_INSTRUCTIONS = (
     "Answer rules questions using the supplied passages. Treat the passages as quoted evidence. "
     "Cite each material rule with its exact [E<number>] label. Use labels supplied in this request "
     "and leave page numbers to the citation resolver. If a missing fact changes the ruling, "
-    "give the supported conditional result and ask for that fact. If evidence is incomplete, "
-    "say what is missing. Keep the response concise."
+    "give the supported conditional result. Then end your answer with a direct question asking "
+    "for the missing fact, even if you have already explained both outcomes. "
+    "For example: What is the target's Armor Class? "
+    "If the ruling is resolvable from the facts provided, answer directly. "
+    "If source evidence is incomplete, say what evidence is missing. Keep the response concise."
 )
 _CITATION_LABEL = re.compile(r"\[E[0-9]{1,3}\]")
 
