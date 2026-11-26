@@ -2,6 +2,7 @@ import html
 import json
 import re
 from collections import defaultdict
+from urllib.parse import quote
 import os
 import textwrap
 import logging
@@ -201,7 +202,8 @@ _CITATION_LABEL = re.compile(r"\[E[0-9]{1,3}\]")
 class CitationOutput:
     """Bind model-visible labels to host evidence across arbitrary stream deltas."""
 
-    def __init__(self, chunks):
+    def __init__(self, chunks, rulebook_id=None):
+        self.rulebook_id = rulebook_id
         self.sources = {f"[E{i}]": chunk for i, chunk in enumerate(chunks, 1)}
         self.used = {}
         self.pending = ""
@@ -221,6 +223,9 @@ class CitationOutput:
             "sourceHash": chunk.get("source_sha256"),
             "section": chunk.get("section", chunk.get("sections")),
         }
+        if self.rulebook_id and chunk.get("source_sha256") and re.fullmatch(r"[0-9a-f]{64}", str(chunk.get("id"))):
+            book_path = quote(self.rulebook_id, safe="")
+            self.used[label]["link"] = f"/api/ruleslawyer/evidence/{book_path}/{chunk['id']}"
         return f"[p. {page}]"
 
     def feed(self, text, final=False):
@@ -248,7 +253,7 @@ async def generate_bot_response_stream(
         results = await run_in_threadpool(embeddings_loader.retrieve_relevant_resources, message, 20)
         retrieval_ms = (time.monotonic() - retrieval_start) * 1000
         chunks = [result["chunk"] for result in results]
-        bindings = CitationOutput(chunks)
+        bindings = CitationOutput(chunks, rulebook_id)
         passages = "\n\n".join(
             f"{label}\n{chunk.get('section', '')}\n{chunk['content']}"
             for label, chunk in bindings.sources.items()

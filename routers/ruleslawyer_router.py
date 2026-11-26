@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from typing import Optional
 from pydantic import BaseModel
+from html import escape
 import logging
+import re
+from threading import RLock
 from ruleslawyer.index_manifest import RulesIndexManifest
 from ruleslawyer.ruleslawyer_helper import EmbeddingLoader, generate_bot_response_stream
 from models.ruleslawyer_models import (
@@ -26,6 +29,7 @@ from ruleslawyer.ruleslawyer_saved_rules import RulesLawyerSavedRulesRepository
 from shared.generation import get_generation_client
 import os
 from pathlib import Path
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
 logging.basicConfig(level=logging.INFO)
@@ -95,35 +99,37 @@ class RulesLawyerService:
         self.loader: Optional[EmbeddingLoader] = None
         self.active_rulebook_id: str | None = None
         self.loaders: dict[str, EmbeddingLoader] = {}
+        self.load_lock = RLock()
     
     def load_embeddings(self, embeddings_file_path: str, enhanced_json_path: str, rulebook_id: str | None = None) -> None:
-        embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
-        json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
-        if rulebook_id:
-            RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
-        loader = EmbeddingLoader(
-            embeddings_file_path=str(embeddings_resolved),
-            enhanced_json_path=str(json_resolved),
-        )
-        if rulebook_id:
-            self.loaders[rulebook_id] = loader
-            self.active_rulebook_id = rulebook_id
-        self.loader = loader
+        with self.load_lock:
+            embeddings_resolved = _resolve_under_ruleslawyer_data_dir(embeddings_file_path)
+            json_resolved = _resolve_under_ruleslawyer_data_dir(enhanced_json_path)
+            if rulebook_id:
+                RulesIndexManifest(RULESLAWYER_DATA_DIR).verify(rulebook_id, embeddings_resolved, json_resolved)
+            loader = EmbeddingLoader(
+                embeddings_file_path=str(embeddings_resolved),
+                enhanced_json_path=str(json_resolved),
+            )
+            if rulebook_id:
+                self.loaders[rulebook_id] = loader
+                self.active_rulebook_id = rulebook_id
+            self.loader = loader
 
     def get_loader(self, rulebook_id: str | None = None) -> EmbeddingLoader:
-        if rulebook_id and (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
-            if rulebook_id not in self.loaders:
-                manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
-                if rulebook_id not in manifest.books:
-                    raise HTTPException(status_code=404, detail="Rulebook is unavailable")
-                self.load_embeddings(f"{rulebook_id}_embeddings.csv", f"{rulebook_id}.json", rulebook_id)
-            return self.loaders[rulebook_id]
-        if not self.loader:
-            raise HTTPException(status_code=400, detail="No embeddings loaded")
-        if rulebook_id and self.active_rulebook_id and rulebook_id != self.active_rulebook_id:
-            raise HTTPException(status_code=409, detail="The requested rulebook is not loaded")
-        return self.loader
-
+        with self.load_lock:
+            if rulebook_id and (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
+                if rulebook_id not in self.loaders:
+                    manifest = RulesIndexManifest(RULESLAWYER_DATA_DIR)
+                    if rulebook_id not in manifest.books:
+                        raise HTTPException(status_code=404, detail="Rulebook is unavailable")
+                    self.load_embeddings(f"{rulebook_id}_embeddings.csv", f"{rulebook_id}.json", rulebook_id)
+                return self.loaders[rulebook_id]
+            if not self.loader:
+                raise HTTPException(status_code=400, detail="No embeddings loaded")
+            if rulebook_id and self.active_rulebook_id and rulebook_id != self.active_rulebook_id:
+                raise HTTPException(status_code=409, detail="The requested rulebook is not loaded")
+            return self.loader
 
 # Create a single instance of the service
 rules_lawyer_service = RulesLawyerService()
@@ -298,6 +304,36 @@ async def load_embedding(request: EmbeddingRequest):
             detail="Failed to load embeddings. Please try again later.",
         ) from e
 
+@router.get("/evidence/{rulebook_id}/{unit_id}", response_class=HTMLResponse)
+async def open_evidence(rulebook_id: str, unit_id: str):
+    manifest_path = RULESLAWYER_DATA_DIR / "manifest.json"
+    if not re.fullmatch(r"[0-9a-f]{64}", unit_id) or not manifest_path.is_file():
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    book = RulesIndexManifest(RULESLAWYER_DATA_DIR).books.get(rulebook_id)
+    if not book or not book.get("source_sha256"):
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    loader = await run_in_threadpool(rules_lawyer_service.get_loader, rulebook_id)
+    position = loader.indices_by_id.get(unit_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    passage = loader.pages_and_chunks[position]
+    if passage.get("source_sha256") != book["source_sha256"]:
+        raise HTTPException(status_code=404, detail="Source evidence is unavailable")
+    title = escape(book["title"])
+    heading = escape(str(passage.get("section", "")))
+    printed = escape(str(passage.get("printed_page", "")))
+    pdf = escape(str(passage.get("pdf_page", "")))
+    text = escape(str(passage["content"]))
+    return HTMLResponse(
+        '<!doctype html><html lang="en"><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{title} — Source citation</title><main><h1>{title}</h1>'
+        f'<h2>{heading}</h2><p>Printed page {printed} · PDF page {pdf}</p>'
+        f'<pre style="white-space:pre-wrap">{text}</pre></main></html>',
+        headers={"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"},
+    )
+
+
 @router.post("/query")
 async def query_rules(
     request: RulesQueryRequest,
@@ -321,7 +357,7 @@ async def query_rules(
     
     try:
         loader_start_time = time_module.time()
-        loader = rules_lawyer_service.get_loader(request.rulebookId)
+        loader = await run_in_threadpool(rules_lawyer_service.get_loader, request.rulebookId)
         loader_duration = (time_module.time() - loader_start_time) * 1000
         logger.info(f"⏱️ [RulesLawyer] Loader retrieved in {loader_duration:.2f}ms")
         
