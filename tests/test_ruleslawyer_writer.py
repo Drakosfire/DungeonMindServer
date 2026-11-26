@@ -79,3 +79,37 @@ async def test_source_open_is_bound_to_book_and_exact_unit(monkeypatch, tmp_path
     with pytest.raises(HTTPException) as caught:
         await routes.open_evidence("Other_book", unit)
     assert caught.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_legacy_rows_cite_exact_passages_without_serialized_headings(monkeypatch, tmp_path):
+    import numpy as np
+    from routers import ruleslawyer_router as routes
+    from ruleslawyer import ruleslawyer_helper as helper
+
+    book = "DnD_PHB_55"
+    source = "b" * 64
+    chunks = [
+        {"page": 215, "sections": "[]", "content": "| Club | 1d4 |"},
+        {"page": 215, "sections": '["Equipment", "Weapons"]', "content": "| Dagger | 1d4 |"},
+    ]
+    monkeypatch.setattr(helper, "load_encoder", lambda: SimpleNamespace(encode=lambda _: np.ones(768)))
+    loader = helper.EmbeddingLoader(cached_data=(chunks, np.ones((2, 768))), legacy_evidence_hash=source)
+    assert chunks[0]["id"] != chunks[1]["id"]
+    citations = helper.CitationOutput(chunks, book)
+    assert citations.feed("[E1][E2]", final=True) == "[p. 215][p. 215]"
+    assert citations.used["[E1]"]["section"] is None
+    assert citations.used["[E2]"]["section"] == "Equipment / Weapons"
+
+    (tmp_path / "manifest.json").touch()
+    monkeypatch.setattr(routes, "RULESLAWYER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(routes, "RulesIndexManifest", lambda root: SimpleNamespace(books={
+        book: {"title": "PHB 2024", "source_index_sha256": source},
+    }))
+    monkeypatch.setattr(routes.rules_lawyer_service, "get_loader", lambda book: loader)
+    for label, chunk in zip(("[E1]", "[E2]"), chunks, strict=True):
+        assert citations.used[label]["link"].endswith(chunk["id"])
+        response = await routes.open_evidence(book, chunk["id"])
+        assert chunk["content"] in response.body.decode()
+        assert "Printed page 215" in response.body.decode()
+        assert "<h2>[]</h2>" not in response.body.decode()
