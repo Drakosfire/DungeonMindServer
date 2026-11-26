@@ -192,15 +192,13 @@ async def list_rulebooks(
     registry: RulesLawyerRegistry = Depends(get_ruleslawyer_registry),
 ):
     try:
-        books = registry.list_rulebooks()
         if (RULESLAWYER_DATA_DIR / "manifest.json").is_file():
             local = RulesIndexManifest(RULESLAWYER_DATA_DIR)
-            existing = {row["id"] for row in books}
-            books.extend(
+            return {"rulebooks": [
                 {"id": book, "title": data["title"], "availabilityStatus": "available"}
-                for book, data in local.books.items() if book not in existing and "title" in data
-            )
-        return {"rulebooks": books}
+                for book, data in local.books.items()
+            ]}
+        return {"rulebooks": registry.list_rulebooks()}
     except Exception as e:
         logger.error("❌ [RulesLawyer] Failed to list rulebooks", exc_info=True)
         raise HTTPException(status_code=500, detail="Unable to load rulebooks right now.") from e

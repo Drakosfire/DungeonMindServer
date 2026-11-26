@@ -88,7 +88,9 @@ Hugging Face cache is not mounted. Runtime model loading is offline.
 Point `RULESLAWYER_DATA_DIR` at the mounted release directory with
 `manifest.json`, the CSVs, and their metadata. The manifest identifies the
 model revision, vector dimensions, and encoding recipe and records the SHA-256
-of each book's indexes and metadata. Queries resolve the requested book
+of each book's indexes and metadata. Each book entry also has a public
+`title`. When the manifest is mounted, it supplies the public rulebook list
+without querying the MongoDB registry. Queries resolve the requested book
 against that manifest, and the worker shares a single loaded model across
 editions. WWN CSV rows retain the source evidence ID, edition hash, printed
 page, PDF page, table text, and source links.
